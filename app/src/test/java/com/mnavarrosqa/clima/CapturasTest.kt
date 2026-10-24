@@ -1,7 +1,19 @@
 package com.mnavarrosqa.clima
 
 import android.app.Application
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
+import com.mnavarrosqa.clima.data.WeatherKind
+import com.mnavarrosqa.clima.ui.skyColors
+import com.mnavarrosqa.clima.ui.toGradient
+import com.mnavarrosqa.clima.wallpaper.WallpaperPreview
+import com.mnavarrosqa.clima.wallpaper.WallpaperScene
+import com.mnavarrosqa.clima.wallpaper.WallpaperStyle
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -119,4 +131,31 @@ class CapturasTest {
     @Test
     @Config(qualifiers = "w1280dp-h800dp-xhdpi")
     fun tablet() = capture("tablet-es", "es-AR")
+
+    /** Los cuatro diseños del fondo de pantalla, de día con algo de nubes y de noche con lluvia. */
+    @Test
+    @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    fun fondos() {
+        Locale.setDefault(Locale.forLanguageTag("es-AR"))
+        compose.mainClock.autoAdvance = false
+        val scenes = listOf(
+            WallpaperScene(WeatherKind.PARTLY, true, skyColors(WeatherKind.PARTLY, true).toGradient(), "21°", "Córdoba · Algo nublado"),
+            WallpaperScene(WeatherKind.RAIN, false, skyColors(WeatherKind.RAIN, false).toGradient()),
+        )
+        compose.setContent {
+            ClimaTheme {
+                Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    scenes.forEach { scene ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            WallpaperStyle.entries.forEach { style ->
+                                WallpaperPreview(scene, style, touch = false, modifier = Modifier.weight(1f).aspectRatio(9f / 19.5f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onRoot().captureRoboImage("build/capturas/fondos.png")
+    }
 }

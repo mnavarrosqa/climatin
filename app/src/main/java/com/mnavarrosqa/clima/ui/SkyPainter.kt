@@ -99,21 +99,27 @@ class SkyPainter {
         kind: WeatherKind,
         isDay: Boolean,
         colors: SkyGradient,
+        background: Boolean = true,
+        celestial: Boolean = true,
+        cloudAlpha: Float = 1f,
     ) {
-        paint.shader = LinearGradient(
-            0f, 0f, 0f, height,
-            intArrayOf(colors.top, colors.middle, colors.bottom),
-            floatArrayOf(0f, 0.6f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-        canvas.drawRect(0f, 0f, width, height, paint)
-        paint.shader = null
+        // Los fondos de pantalla "Formas" y "Oscuro" ponen su propio fondo y usan solo algunas capas.
+        if (background) {
+            paint.shader = LinearGradient(
+                0f, 0f, 0f, height,
+                intArrayOf(colors.top, colors.middle, colors.bottom),
+                floatArrayOf(0f, 0.6f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+            canvas.drawRect(0f, 0f, width, height, paint)
+            paint.shader = null
+        }
 
         val clearish = kind == WeatherKind.CLEAR || kind == WeatherKind.PARTLY
-        if (clearish) {
+        if (clearish && celestial) {
             if (isDay) drawSun(canvas, width, height, clock) else drawNight(canvas, width, height, density, clock)
         }
-        if (kind != WeatherKind.CLEAR) drawClouds(canvas, width, height, clock, kind, isDay)
+        if (kind != WeatherKind.CLEAR && cloudAlpha > 0f) drawClouds(canvas, width, height, clock, kind, isDay, cloudAlpha)
         when (kind) {
             WeatherKind.DRIZZLE -> drawRain(canvas, width, height, density, clock, farDrops, 12f, 0.35f, 40, 1f)
             WeatherKind.RAIN, WeatherKind.STORM -> {
@@ -187,7 +193,7 @@ class SkyPainter {
     }
 
     /** Dos capas de nubes: las de atrás más grandes, tenues y lentas. */
-    private fun drawClouds(canvas: Canvas, width: Float, height: Float, clock: Float, kind: WeatherKind, isDay: Boolean) {
+    private fun drawClouds(canvas: Canvas, width: Float, height: Float, clock: Float, kind: WeatherKind, isDay: Boolean, strength: Float) {
         val dark = kind == WeatherKind.STORM || !isDay
         val rgb = if (dark) 0x96A2B6 else 0xFFFFFF
         val layerAlpha = when (kind) {
@@ -202,7 +208,7 @@ class SkyPainter {
             val travel = width + cloudWidth * 1.2f
             val x = ((c.x + clock * laps) % 1f) * travel - cloudWidth * 0.6f
             val y = height * (if (far) 0.06f + 0.12f * c.y else 0.16f + 0.2f * c.y)
-            val alpha = layerAlpha * if (far) 0.55f else 0.9f
+            val alpha = layerAlpha * strength * if (far) 0.55f else 0.9f
             cloudShapes[i].forEach { p ->
                 val r = p.radius * cloudWidth
                 puff(canvas, x + p.dx * cloudWidth, y + p.dy * cloudWidth, r, r, alpha, rgb)

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Miniatura del selector de fondos: el cielo de día con el ícono de algo nublado. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:centerColor="#FF86BDF5"
+                android:endColor="#FFC8E2FA"
+                android:startColor="#FF2A64C8" />
+        </shape>
+    </item>
+    <item
+        android:width="96dp"
+        android:height="96dp"
+        android:drawable="@drawable/ic_weather_partly_cloudy_day"
+        android:gravity="center" />
+</layer-list>

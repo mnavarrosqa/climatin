@@ -27,7 +27,8 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 - **Alertas del SMN** para lugares en Argentina, en la app y como notificación opcional.
 - **Detalle por día** (curva por hora, lluvia total, viento máximo, UV) y pronóstico de **14 días**.
 - **Unidades**: °C/°F, km/h, m/s, mph o nudos, hPa, inHg o mmHg, y 12/24 h.
-- **Fondo de pantalla animado** con el cielo del clima real, y **botón de ajustes rápidos**.
+- **Fondo de pantalla animado** con cuatro diseños (Cielo, Paisaje con sierras, Formas de Material 3 y Oscuro para pantallas OLED). Se corre al pasar de pantalla, deja una onda al tocar, entibia los colores al amanecer y al atardecer, puede mostrar la temperatura y tiene modos Fluida, Ahorro y Quieta. Se configura con vista previa en vivo desde la app o desde el selector de fondos.
+- **Botón de ajustes rápidos** con el clima.
 - **Wear OS** (módulo `wear`): tarjeta y complicación con el clima del reloj.
 - **Plegables y tablets**: en pantallas anchas el pronóstico va en dos paneles.
 - **Temperatura en la barra de estado** (opcional), con notificación silenciosa.

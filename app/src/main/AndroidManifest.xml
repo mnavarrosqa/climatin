@@ -172,6 +172,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".wallpaper.WallpaperSettingsActivity"
+            android:exported="true"
+            android:label="@string/wallpaper_name" />
+
         <service
             android:name=".wallpaper.SkyWallpaperService"
             android:exported="true"
