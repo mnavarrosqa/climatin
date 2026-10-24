@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mnavarrosqa.clima.data.AppRelease
 import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
+import com.mnavarrosqa.clima.data.UpdateInstaller
 import com.mnavarrosqa.clima.data.Updates
 import com.mnavarrosqa.clima.data.NoLocationException
 import com.mnavarrosqa.clima.data.OpenMeteo
@@ -82,6 +83,48 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 tr("Tenés la última versión", "You're up to date")
             }
+        }
+    }
+
+    private val _updateProgress = MutableStateFlow<Float?>(null)
+    /** Avance de la descarga de la actualización (0 a 1), o null si no se está bajando. */
+    val updateProgress: StateFlow<Float?> = _updateProgress.asStateFlow()
+
+    /** APK ya bajado que espera el permiso de instalar apps. */
+    private var pendingApk: java.io.File? = null
+
+    /** Baja la versión nueva y abre el instalador (pidiendo el permiso la primera vez). */
+    fun downloadUpdate(release: AppRelease) {
+        if (_updateProgress.value != null) return
+        viewModelScope.launch {
+            _updateProgress.value = 0f
+            val app = getApplication<Application>()
+            val file = runCatching {
+                UpdateInstaller.download(app, release) { _updateProgress.value = it }
+            }.getOrNull()
+            _updateProgress.value = null
+            if (file == null) {
+                _updateMessage.value = tr("No pude bajar la actualización. Revisá la conexión.", "Couldn't download the update. Check your connection.")
+                return@launch
+            }
+            pendingApk = file
+            resumePendingInstall(askPermission = true)
+        }
+    }
+
+    /** Si hay un APK bajado y Android ya da permiso, abre el instalador (se llama al volver a la app). */
+    fun resumePendingInstall(askPermission: Boolean = false) {
+        val file = pendingApk ?: return
+        val app = getApplication<Application>()
+        if (UpdateInstaller.canInstall(app)) {
+            pendingApk = null
+            UpdateInstaller.install(app, file)
+        } else if (askPermission) {
+            _updateMessage.value = tr(
+                "Permití \"Instalar apps desconocidas\" para Climatin y volvé",
+                "Allow \"Install unknown apps\" for Climatin and come back",
+            )
+            UpdateInstaller.openPermissionSettings(app)
         }
     }
 

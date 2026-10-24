@@ -1,0 +1,1 @@
+Actualizar desde la app: baja la versión nueva con barra de avance y abre el instalador.

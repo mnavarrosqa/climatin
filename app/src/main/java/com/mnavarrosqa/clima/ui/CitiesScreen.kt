@@ -73,6 +73,7 @@ import com.mnavarrosqa.clima.data.WindUnit
 import com.mnavarrosqa.clima.wallpaper.SkyWallpaperService
 import com.mnavarrosqa.clima.work.RainNotifier
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,6 +91,7 @@ fun CitiesScreen(
     val statusTemperature by viewModel.statusTemperature.collectAsStateWithLifecycle()
     val updateMessage by viewModel.updateMessage.collectAsStateWithLifecycle()
     val update by viewModel.update.collectAsStateWithLifecycle()
+    val updateProgress by viewModel.updateProgress.collectAsStateWithLifecycle()
     val installed = remember { Updates.installedVersion(context) }
     val fromPlay = remember { Updates.installedFromPlay(context) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -386,9 +388,14 @@ fun CitiesScreen(
                             {
                                 val release = update
                                 if (release != null) {
-                                    FilledTonalButton(onClick = {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.apkUrl)))
-                                    }) { Text(tr("Bajar", "Download")) }
+                                    val progress = updateProgress
+                                    if (progress != null) {
+                                        Text("${(progress * 100).roundToInt()}%")
+                                    } else {
+                                        FilledTonalButton(onClick = { viewModel.downloadUpdate(release) }) {
+                                            Text(tr("Actualizar", "Update"))
+                                        }
+                                    }
                                 } else {
                                     FilledTonalButton(onClick = viewModel::checkForUpdates) { Text(tr("Buscar", "Check")) }
                                 }

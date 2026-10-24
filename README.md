@@ -37,7 +37,7 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 
 ## Actualizaciones
 
-Cada versión nueva (cuando cambia `versionName`) se publica sola en [climatin-releases](https://github.com/mnavarrosqa/climatin-releases/releases), un repo público que solo tiene los APK. La app consulta ahí cada 12 horas y avisa con un botón para bajarla; también se puede buscar a mano en *Ciudades y ajustes → Acerca de*. Si la app viene de Google Play, no consulta nada.
+Cada versión nueva (cuando cambia `versionName`) se publica sola en [climatin-releases](https://github.com/mnavarrosqa/climatin-releases/releases), un repo público que solo tiene los APK. La app consulta ahí cada 12 horas y avisa; al tocar Actualizar la baja sola (con barra de avance) y abre el instalador de Android (la primera vez pide permitir "Instalar apps desconocidas"); también se puede buscar a mano en *Ciudades y ajustes → Acerca de*. La app tiene dos variantes: `github` (la que se instala a mano, con esta actualización) y `play` (para la tienda, sin el permiso de instalar apps; ahí actualiza Play).
 
 Para que funcione, el repo `climatin` necesita el secreto `RELEASES_TOKEN`: un token de GitHub con permiso de escritura de contenido (*Contents: Read and write*) solo sobre `climatin-releases`.
 
@@ -48,7 +48,7 @@ Los APK se firman con una clave de prueba fija (`keystore/debug.keystore`), así
 Cada push a `main` compila el APK en GitHub Actions. Entrá a **Actions → Build APK → la última corrida → Artifacts → `clima-apk`**, bajalo e instalalo en el teléfono (hay que permitir "instalar apps desconocidas").
 
 - `app-debug.apk`: para probar.
-- `app-release.apk`: minificado y firmado con la clave de debug (o con la propia, si está configurada).
+- `app-github-release.apk`: minificado y firmado con la clave de debug (o con la propia, si está configurada).
 - `wear-release.apk`: la app del reloj. Se instala con `adb install` sobre el reloj en modo depuración.
 
 ## Compilar en tu máquina

@@ -13,10 +13,10 @@ android {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
+        versionCode = 13
         // Solo español e inglés: evita que las librerías sumen traducciones que la app no tiene.
         resourceConfigurations += listOf("es", "en")
-        versionName = "1.8.2"
+        versionName = "1.8.3"
     }
 
     signingConfigs {
@@ -55,6 +55,20 @@ android {
         }
     }
 
+    // Dos variantes: "github" se instala a mano y se actualiza sola desde climatin-releases (pide
+    // permiso para instalar apps); "play" va a la tienda, sin ese permiso, y la actualiza Play.
+    flavorDimensions += "distribucion"
+    productFlavors {
+        create("github") {
+            dimension = "distribucion"
+            buildConfigField("boolean", "SELF_UPDATE", "true")
+        }
+        create("play") {
+            dimension = "distribucion"
+            buildConfigField("boolean", "SELF_UPDATE", "false")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -64,6 +78,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     // Tests de capturas de pantalla (Robolectric + Roborazzi): dibujan la app sin teléfono y
     // guardan las imágenes en app/build/capturas.

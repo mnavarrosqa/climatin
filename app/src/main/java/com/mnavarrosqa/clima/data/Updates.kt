@@ -3,6 +3,7 @@ package com.mnavarrosqa.clima.data
 import android.content.Context
 import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
+import com.mnavarrosqa.clima.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -44,7 +45,7 @@ object Updates {
      * los errores de red se ignoran (no es algo urgente).
      */
     suspend fun check(context: Context, force: Boolean): AppRelease? {
-        if (installedFromPlay(context)) return null
+        if (!BuildConfig.SELF_UPDATE || installedFromPlay(context)) return null
         val prefs = context.getSharedPreferences("clima", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         if (!force && now - prefs.getLong("updates_checked_at", 0L) < CHECK_EVERY_MS) return null
@@ -84,3 +85,64 @@ private data class GitHubAsset(
     val name: String,
     @SerialName("browser_download_url") val url: String,
 )
+
+/**
+ * Baja el APK de una versión nueva y abre el instalador de Android. Solo en la variante "github":
+ * en Play las actualizaciones las maneja la tienda.
+ */
+object UpdateInstaller {
+
+    /** Baja el APK a la caché, informando el avance de 0 a 1. */
+    suspend fun download(context: Context, release: AppRelease, onProgress: (Float) -> Unit): java.io.File =
+        withContext(Dispatchers.IO) {
+            val dir = java.io.File(context.cacheDir, "updates").apply { mkdirs() }
+            // Se borran APK viejos para no ocupar espacio.
+            dir.listFiles()?.forEach { it.delete() }
+            val file = java.io.File(dir, "climatin-${release.versionCode}.apk")
+            val connection = URL(release.apkUrl).openConnection() as HttpURLConnection
+            try {
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 30_000
+                connection.setRequestProperty("User-Agent", "Climatin (Android)")
+                if (connection.responseCode !in 200..299) error("HTTP ${connection.responseCode}")
+                val total = connection.contentLengthLong
+                connection.inputStream.use { input ->
+                    file.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var done = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                            done += read
+                            if (total > 0) onProgress((done.toFloat() / total).coerceIn(0f, 1f))
+                        }
+                    }
+                }
+            } finally {
+                connection.disconnect()
+            }
+            file
+        }
+
+    /** Si Android ya permite que Climatin instale apps (se pide una sola vez). */
+    fun canInstall(context: Context): Boolean = context.packageManager.canRequestPackageInstalls()
+
+    /** Abre el ajuste "Instalar apps desconocidas" de Climatin. */
+    fun openPermissionSettings(context: Context) {
+        val intent = android.content.Intent(
+            android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            android.net.Uri.parse("package:${context.packageName}"),
+        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+
+    /** Abre el instalador de Android con el APK bajado. */
+    fun install(context: Context, file: java.io.File) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.updates", file)
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+}

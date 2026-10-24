@@ -66,6 +66,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -90,6 +91,8 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mnavarrosqa.clima.data.AppRelease
@@ -136,6 +139,7 @@ fun WeatherRoute(
     }
 
     LaunchedEffect(hasPermission, places.size) { viewModel.refreshIfStale() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.resumePendingInstall() }
     // Un acceso directo siempre lleva al pronóstico, aunque estés en otra pantalla.
     LaunchedEffect(deepLink) {
         if (deepLink != null) {
@@ -247,7 +251,7 @@ private fun WeatherPager(
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val update by viewModel.update.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val updateProgress by viewModel.updateProgress.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState { pages.size }
     // Día a abrir en la página de destino del acceso directo.
     var pendingDay by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -296,9 +300,8 @@ private fun WeatherPager(
                             @Composable {
                                 UpdateBanner(
                                     release,
-                                    onUpdate = {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.apkUrl)))
-                                    },
+                                    progress = updateProgress,
+                                    onUpdate = { viewModel.downloadUpdate(release) },
                                     onDismiss = viewModel::dismissUpdate,
                                 )
                             }
@@ -501,7 +504,7 @@ fun ForecastContent(
 
 /** Aviso de versión nueva, arriba del pronóstico. */
 @Composable
-private fun UpdateBanner(release: AppRelease, onUpdate: () -> Unit, onDismiss: () -> Unit) {
+private fun UpdateBanner(release: AppRelease, progress: Float?, onUpdate: () -> Unit, onDismiss: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -516,10 +519,26 @@ private fun UpdateBanner(release: AppRelease, onUpdate: () -> Unit, onDismiss: (
             release.notes?.lineSequence()?.firstOrNull { it.isNotBlank() }?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text(tr("Ahora no", "Not now")) }
-                Spacer(Modifier.width(4.dp))
-                Button(onClick = onUpdate) { Text(tr("Actualizar", "Update")) }
+            if (progress != null) {
+                // Mientras baja: barra de avance en vez de botones.
+                Spacer(Modifier.height(10.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = 8.dp),
+                )
+                Text(
+                    tr("Bajando… ${(progress * 100).roundToInt()}%", "Downloading… ${(progress * 100).roundToInt()}%"),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
+                )
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text(tr("Ahora no", "Not now")) }
+                    Spacer(Modifier.width(4.dp))
+                    Button(onClick = onUpdate) { Text(tr("Actualizar", "Update")) }
+                }
             }
         }
     }

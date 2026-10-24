@@ -27,7 +27,7 @@ jobs:
       - name: Capturas de pantalla
         id: capturas
         continue-on-error: true
-        run: ./gradlew --no-daemon :app:testDebugUnitTest
+        run: ./gradlew --no-daemon :app:testGithubDebugUnitTest
       # Con el secreto CLIMATIN_KEYSTORE_BASE64 cargado, el release sale firmado para Play Store.
       - name: Clave de firma
         if: env.KEYSTORE_BASE64 != ''
@@ -39,13 +39,13 @@ jobs:
           CLIMATIN_KEYSTORE_PASSWORD: ${{ secrets.CLIMATIN_KEYSTORE_PASSWORD }}
           CLIMATIN_KEY_ALIAS: ${{ secrets.CLIMATIN_KEY_ALIAS }}
           CLIMATIN_KEY_PASSWORD: ${{ secrets.CLIMATIN_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon assembleDebug assembleRelease bundleRelease
+        run: ./gradlew --no-daemon :app:assembleGithubDebug :app:assembleGithubRelease :app:bundlePlayRelease :wear:assembleRelease :wear:bundleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: clima-apk
           path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/github/debug/app-github-debug.apk
+            app/build/outputs/apk/github/release/app-github-release.apk
             wear/build/outputs/apk/release/wear-release.apk
       - uses: actions/upload-artifact@v4
         if: always()
@@ -57,7 +57,7 @@ jobs:
         with:
           name: climatin-play
           path: |
-            app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/bundle/playRelease/app-play-release.aab
             wear/build/outputs/bundle/release/wear-release.aab
       # Publica la versión en el repo público de versiones (una sola vez por versionName).
       # La app la encuentra ahí y avisa que hay una nueva. Necesita el secreto RELEASES_TOKEN.
@@ -89,7 +89,7 @@ jobs:
           elif [ "$DRAFT" = "true" ]; then
             gh release delete "$TAG" --repo mnavarrosqa/climatin-releases --yes
           fi
-          cp app/build/outputs/apk/release/app-release.apk "climatin-$CODE.apk"
+          cp app/build/outputs/apk/github/release/app-github-release.apk "climatin-$CODE.apk"
           cp wear/build/outputs/apk/release/wear-release.apk "climatin-wear-$CODE.apk"
           NOTES="fastlane/metadata/android/es-419/changelogs/$CODE.txt"
           [ -f "$NOTES" ] || echo "Climatin $NAME" > "$NOTES"
@@ -101,8 +101,8 @@ jobs:
         if: always() && steps.capturas.outcome == 'failure'
         run: |
           echo "Las capturas fallaron. Primeros errores:"
-          grep -h -A12 "<failure" app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -60 || true
-          ls app/build/test-results/testDebugUnitTest 2>/dev/null || echo "Sin resultados: falló antes de correr los tests (ver el paso Capturas de pantalla)."
+          grep -h -A12 "<failure" app/build/test-results/testGithubDebugUnitTest/*.xml 2>/dev/null | head -60 || true
+          ls app/build/test-results/testGithubDebugUnitTest 2>/dev/null || echo "Sin resultados: falló antes de correr los tests (ver el paso Capturas de pantalla)."
       - name: Resumen de publicación
         if: always() && steps.publicar.outcome == 'failure'
         run: |

@@ -27,7 +27,7 @@ En **Settings → Secrets and variables → Actions → New repository secret** 
 
 Con eso, cada push a `main` genera en **Actions → Artifacts → `climatin-play`** los dos paquetes firmados:
 
-- `app-release.aab`: teléfono.
+- `app-play-release.aab`: teléfono (variante "play", sin auto-actualización).
 - `wear-release.aab`: reloj.
 
 Sin los secretos se siguen generando, pero firmados con la clave de debug (sirven para probar, no para Play).
@@ -40,7 +40,7 @@ Sin los secretos se siguen generando, pero firmados con la clave de debug (sirve
 4. **Seguridad de los datos**: la app recopila *ubicación aproximada*, para *funcionalidad de la app*, no se comparte con terceros para publicidad, se transmite cifrada y no se puede pedir que se borre porque no se guarda en servidores.
 5. **Ubicación en segundo plano**: Play exige una declaración y un video corto mostrando para qué se usa (widgets y fondo animado que siguen tu ubicación). Si preferís evitar ese trámite, se puede quitar el permiso `ACCESS_BACKGROUND_LOCATION` del manifiesto y la opción en ajustes.
 6. **Clasificación de contenido** y **público objetivo**: completar los cuestionarios (app de clima, sin contenido sensible).
-7. **Versiones**: subir `app-release.aab` a *Prueba interna* primero. Para el reloj, en *Configuración avanzada → Factores de forma* agregar Wear OS y subir `wear-release.aab` en su propio track.
+7. **Versiones**: subir `app-play-release.aab` a *Prueba interna* primero. Para el reloj, en *Configuración avanzada → Factores de forma* agregar Wear OS y subir `wear-release.aab` en su propio track.
 
 ## Números de versión
 
