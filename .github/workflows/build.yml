@@ -25,6 +25,7 @@ jobs:
         run: ./gradlew --no-daemon :core:testDebugUnitTest
       # Las capturas no frenan la compilación si algo de Robolectric falla.
       - name: Capturas de pantalla
+        id: capturas
         continue-on-error: true
         run: ./gradlew --no-daemon :app:testDebugUnitTest
       # Con el secreto CLIMATIN_KEYSTORE_BASE64 cargado, el release sale firmado para Play Store.
@@ -83,3 +84,10 @@ jobs:
           [ -f "$NOTES" ] || echo "Climatin $NAME" > "$NOTES"
           gh release create "$TAG" "climatin-$CODE.apk" "climatin-wear-$CODE.apk" \
             --repo mnavarrosqa/climatin-releases --title "Climatin $NAME" --notes-file "$NOTES"
+      # Al final del log, para encontrarlo fácil: por qué fallaron las capturas, si fallaron.
+      - name: Resumen de capturas
+        if: always() && steps.capturas.outcome == 'failure'
+        run: |
+          echo "Las capturas fallaron. Primeros errores:"
+          grep -h -A12 "<failure" app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -60 || true
+          ls app/build/test-results/testDebugUnitTest 2>/dev/null || echo "Sin resultados: falló antes de correr los tests (ver el paso Capturas de pantalla)."
