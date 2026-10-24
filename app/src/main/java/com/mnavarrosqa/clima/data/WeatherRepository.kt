@@ -90,6 +90,16 @@ class WeatherRepository private constructor(private val context: Context) {
         return firstError
     }
 
+    // Las alertas del SMN se piden una vez y sirven para todos los lugares durante 10 minutos.
+    private var capCache: Pair<Long, List<CapAlert>>? = null
+
+    private suspend fun capAlerts(): List<CapAlert> {
+        capCache?.let { (at, alerts) -> if (System.currentTimeMillis() - at < 10 * 60_000) return alerts }
+        val alerts = runCatching { SmnAlerts.fetchAll() }.getOrElse { return capCache?.second.orEmpty() }
+        capCache = System.currentTimeMillis() to alerts
+        return alerts
+    }
+
     suspend fun refreshCurrent(): Result<WeatherSnapshot> = runCatching {
         val previous = cached(CURRENT_PLACE_ID)
         val coordinates = LocationProvider.current(context)
@@ -111,6 +121,11 @@ class WeatherRepository private constructor(private val context: Context) {
     private suspend fun fetch(placeId: String, name: String?, latitude: Double, longitude: Double): WeatherSnapshot {
         val forecast = OpenMeteo.forecast(latitude, longitude)
         val air = OpenMeteo.airQuality(latitude, longitude)
+        val alerts = if (Geo.isInArgentina(latitude, longitude)) {
+            capAlerts().filter { it.covers(latitude, longitude) }.map { it.alert }
+        } else {
+            emptyList()
+        }
         val snapshot = OpenMeteo.toSnapshot(
             forecast = forecast,
             placeId = placeId,
@@ -119,7 +134,7 @@ class WeatherRepository private constructor(private val context: Context) {
             longitude = longitude,
             airQuality = air,
             fetchedAt = System.currentTimeMillis(),
-        )
+        ).copy(alerts = alerts)
         prefs.edit()
             .putString(snapshotKey(placeId), json.encodeToString(WeatherSnapshot.serializer(), snapshot))
             .apply()
@@ -133,6 +148,17 @@ class WeatherRepository private constructor(private val context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_RAIN_ALERTS, value).apply()
 
     val rainAlertsFlow: Flow<Boolean> = prefsFlow(KEY_RAIN_ALERTS) { rainAlertsEnabled }
+
+    var smnAlertsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SMN_ALERTS, false)
+        set(value) = prefs.edit().putBoolean(KEY_SMN_ALERTS, value).apply()
+
+    val smnAlertsFlow: Flow<Boolean> = prefsFlow(KEY_SMN_ALERTS) { smnAlertsEnabled }
+
+    /** Ids de alertas ya notificadas. */
+    var notifiedAlerts: Set<String>
+        get() = prefs.getStringSet(KEY_NOTIFIED_ALERTS, emptySet()).orEmpty()
+        set(value) = prefs.edit().putStringSet(KEY_NOTIFIED_ALERTS, value).apply()
 
     /** Momento hasta el que no se vuelve a avisar de lluvia, para no repetir la notificación. */
     var rainNotifiedUntil: Long
@@ -178,6 +204,8 @@ class WeatherRepository private constructor(private val context: Context) {
         private const val KEY_PLACES = "places"
         private const val KEY_RAIN_ALERTS = "rain_alerts"
         private const val KEY_RAIN_NOTIFIED_UNTIL = "rain_notified_until"
+        private const val KEY_SMN_ALERTS = "smn_alerts"
+        private const val KEY_NOTIFIED_ALERTS = "notified_alerts"
         private const val KEY_UNIT_TEMP = "unit_temp"
         private const val KEY_UNIT_WIND = "unit_wind"
         private const val KEY_UNIT_PRESSURE = "unit_pressure"

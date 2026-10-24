@@ -19,6 +19,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val error = WeatherRepository.get(applicationContext).refreshAll()
         updateWeatherWidgets(applicationContext)
         RainNotifier.check(applicationContext)
+        AlertNotifier.check(applicationContext)
         return when {
             error == null -> Result.success()
             runAttemptCount < 3 -> Result.retry()

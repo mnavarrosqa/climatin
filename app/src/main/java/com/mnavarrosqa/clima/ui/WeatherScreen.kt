@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -31,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -65,6 +67,7 @@ import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.Day
 import com.mnavarrosqa.clima.data.LocationProvider
 import com.mnavarrosqa.clima.data.Moon
+import com.mnavarrosqa.clima.data.WeatherAlert
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.WeatherSnapshot
@@ -88,20 +91,26 @@ fun WeatherRoute(viewModel: WeatherViewModel = viewModel()) {
     val units by viewModel.units.collectAsStateWithLifecycle()
     var hasPermission by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var showCities by rememberSaveable { mutableStateOf(false) }
+    // "lat,lon" del radar abierto, o null.
+    var radarAt by rememberSaveable { mutableStateOf<String?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasPermission = granted
         if (granted) viewModel.refresh()
     }
 
     LaunchedEffect(hasPermission, places.size) { viewModel.refreshIfStale() }
-    BackHandler(enabled = showCities) { showCities = false }
+    BackHandler(enabled = showCities || radarAt != null) {
+        if (radarAt != null) radarAt = null else showCities = false
+    }
 
     val pages = buildList {
         if (hasPermission || viewModel.cached(CURRENT_PLACE_ID) != null) add(CURRENT_PLACE_ID)
         places.forEach { add(it.id) }
     }
 
+    val radar = radarAt?.split(',')?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 2 }
     when {
+        radar != null -> RadarScreen(radar[0], radar[1], onBack = { radarAt = null })
         showCities -> CitiesScreen(
             viewModel = viewModel,
             onBack = { showCities = false },
@@ -115,7 +124,14 @@ fun WeatherRoute(viewModel: WeatherViewModel = viewModel()) {
             onPickCity = { showCities = true },
         )
         // Al cambiar las unidades se rearma el pronóstico para que todos los textos se reformateen.
-        else -> key(units) { WeatherPager(pages, viewModel, onOpenCities = { showCities = true }) }
+        else -> key(units) {
+            WeatherPager(
+                pages,
+                viewModel,
+                onOpenCities = { showCities = true },
+                onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
+            )
+        }
     }
 }
 
@@ -159,7 +175,12 @@ private fun PermissionScreen(onAllow: () -> Unit, onPickCity: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WeatherPager(pages: List<String>, viewModel: WeatherViewModel, onOpenCities: () -> Unit) {
+private fun WeatherPager(
+    pages: List<String>,
+    viewModel: WeatherViewModel,
+    onOpenCities: () -> Unit,
+    onOpenRadar: (Double, Double) -> Unit,
+) {
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState { pages.size }
@@ -179,7 +200,7 @@ private fun WeatherPager(pages: List<String>, viewModel: WeatherViewModel, onOpe
             modifier = Modifier.fillMaxSize(),
         ) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                WeatherPage(placeId = pages[page], viewModel = viewModel, error = error)
+                WeatherPage(placeId = pages[page], viewModel = viewModel, error = error, onOpenRadar = onOpenRadar)
             }
         }
         Row(
@@ -215,7 +236,12 @@ private fun WeatherPager(pages: List<String>, viewModel: WeatherViewModel, onOpe
 }
 
 @Composable
-private fun WeatherPage(placeId: String, viewModel: WeatherViewModel, error: String?) {
+private fun WeatherPage(
+    placeId: String,
+    viewModel: WeatherViewModel,
+    error: String?,
+    onOpenRadar: (Double, Double) -> Unit,
+) {
     val snapshot by remember(placeId) { viewModel.snapshots(placeId) }
         .collectAsStateWithLifecycle(viewModel.cached(placeId))
     val insets = WindowInsets.systemBars.asPaddingValues()
@@ -249,6 +275,7 @@ private fun WeatherPage(placeId: String, viewModel: WeatherViewModel, error: Str
             }
         } else {
             item { Hero(current, isCurrentLocation = placeId == CURRENT_PLACE_ID) }
+            items(current.alerts, key = { "alerta-" + it.id }) { alert -> AlertCard(alert) }
             current.minutesUntilRain()?.let { minutes -> item { RainSoonChip(minutes) } }
             item {
                 GlassCard("Próximas horas") {
@@ -256,6 +283,7 @@ private fun WeatherPage(placeId: String, viewModel: WeatherViewModel, error: Str
                 }
             }
             item { DailyCard(current, onDay = { selectedDay = it }) }
+            item { RadarCard(onClick = { onOpenRadar(current.latitude, current.longitude) }) }
             item { DetailsGrid(current) }
             item {
                 Text(
@@ -339,6 +367,75 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                 )
             }
             AnimatedWeatherIcon(current.code, current.isDay, size = 140.dp)
+        }
+    }
+}
+
+/** Alerta oficial: tocarla muestra u oculta la descripción completa. */
+@Composable
+private fun AlertCard(alert: WeatherAlert) {
+    var expanded by rememberSaveable(alert.id) { mutableStateOf(false) }
+    val severe = alert.isSevere
+    Surface(
+        color = if (severe) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = if (severe) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onTertiaryContainer,
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .clickable { expanded = !expanded },
+    ) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Warning, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Alerta: ${alert.event}", style = MaterialTheme.typography.titleMedium)
+            }
+            alert.headline?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium)
+            }
+            alert.description?.takeIf { expanded }?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (expanded) "Fuente: Servicio Meteorológico Nacional" else "Tocá para ver el detalle",
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RadarCard(onClick: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(WeatherCodes.icon(61)),
+                contentDescription = null,
+                modifier = Modifier.size(40.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Radar de lluvia", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Mirá cómo se mueven las nubes de lluvia",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

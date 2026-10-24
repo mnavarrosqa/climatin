@@ -21,6 +21,7 @@ data class WeatherSnapshot(
     val days: List<Day>,
     val minutely: List<Minutely> = emptyList(),
     val airQuality: AirQuality? = null,
+    val alerts: List<WeatherAlert> = emptyList(),
 ) {
     /** Hora actual en el lugar del pronóstico, no en el teléfono. */
     fun nowAtPlace(): LocalDateTime =

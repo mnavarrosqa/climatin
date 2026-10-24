@@ -75,6 +75,7 @@ fun CitiesScreen(
     val search by viewModel.search.collectAsStateWithLifecycle()
     val rainAlerts by viewModel.rainAlerts.collectAsStateWithLifecycle()
     val units by viewModel.units.collectAsStateWithLifecycle()
+    val smnAlerts by viewModel.smnAlerts.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var hasLocation by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var hasBackground by remember { mutableStateOf(LocationProvider.hasBackgroundPermission(context)) }
@@ -94,9 +95,15 @@ fun CitiesScreen(
     val backgroundLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         hasBackground = it
     }
+    // Qué aviso pidió el permiso de notificaciones, para activarlo cuando lo den.
+    var pendingNotification by remember { mutableStateOf<String?>(null) }
     val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         canNotify = it
-        viewModel.setRainAlerts(it)
+        when (pendingNotification) {
+            "smn" -> viewModel.setSmnAlerts(it)
+            else -> viewModel.setRainAlerts(it)
+        }
+        pendingNotification = null
     }
 
     LaunchedEffect(query) {
@@ -245,9 +252,32 @@ fun CitiesScreen(
                                 checked = rainAlerts && canNotify,
                                 onCheckedChange = { enabled ->
                                     if (enabled && !canNotify && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        pendingNotification = "lluvia"
                                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                     } else {
                                         viewModel.setRainAlerts(enabled)
+                                    }
+                                },
+                            )
+                        },
+                        colors = groupColors(),
+                    )
+                }
+            }
+            item {
+                Group(Modifier.padding(top = 2.dp)) {
+                    ListItem(
+                        headlineContent = { Text("Alertas del SMN") },
+                        supportingContent = { Text("Tormentas, viento, calor y otras alertas oficiales en Argentina") },
+                        trailingContent = {
+                            Switch(
+                                checked = smnAlerts && canNotify,
+                                onCheckedChange = { enabled ->
+                                    if (enabled && !canNotify && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        pendingNotification = "smn"
+                                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        viewModel.setSmnAlerts(enabled)
                                     }
                                 },
                             )

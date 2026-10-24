@@ -11,6 +11,7 @@ import com.mnavarrosqa.clima.data.UnitSettings
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.widget.updateWeatherWidgets
+import com.mnavarrosqa.clima.work.AlertNotifier
 import com.mnavarrosqa.clima.work.RainNotifier
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +39,9 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
     val units: StateFlow<UnitSettings> =
         repository.unitsFlow.stateIn(viewModelScope, SharingStarted.Eagerly, repository.units)
+
+    val smnAlerts: StateFlow<Boolean> =
+        repository.smnAlertsFlow.stateIn(viewModelScope, SharingStarted.Eagerly, repository.smnAlertsEnabled)
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
@@ -71,6 +75,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             val error = repository.refreshAll()
             updateWeatherWidgets(getApplication<Application>())
             RainNotifier.check(getApplication<Application>())
+            AlertNotifier.check(getApplication<Application>())
             _error.value = when (error) {
                 null -> null
                 is NoLocationException -> error.message
@@ -114,6 +119,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     fun setUnits(units: UnitSettings) {
         repository.units = units
         viewModelScope.launch { updateWeatherWidgets(getApplication<Application>()) }
+    }
+
+    fun setSmnAlerts(enabled: Boolean) {
+        repository.smnAlertsEnabled = enabled
+        if (enabled) AlertNotifier.check(getApplication<Application>())
     }
 
     fun setRainAlerts(enabled: Boolean) {
