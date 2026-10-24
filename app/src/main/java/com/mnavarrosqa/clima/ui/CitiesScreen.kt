@@ -110,45 +110,16 @@ fun CitiesScreen(
     val context = LocalContext.current
     val places by viewModel.places.collectAsStateWithLifecycle()
     val search by viewModel.search.collectAsStateWithLifecycle()
-    val rainAlerts by viewModel.rainAlerts.collectAsStateWithLifecycle()
-    val units by viewModel.units.collectAsStateWithLifecycle()
-    val smnAlerts by viewModel.smnAlerts.collectAsStateWithLifecycle()
-    val statusTemperature by viewModel.statusTemperature.collectAsStateWithLifecycle()
-    val updateMessage by viewModel.updateMessage.collectAsStateWithLifecycle()
-    val update by viewModel.update.collectAsStateWithLifecycle()
-    val updateProgress by viewModel.updateProgress.collectAsStateWithLifecycle()
-    val cardLayout by viewModel.cards.collectAsStateWithLifecycle()
-    val installed = remember { Updates.installedVersion(context) }
-    val fromPlay = remember { Updates.installedFromPlay(context) }
     var query by rememberSaveable { mutableStateOf("") }
     var hasLocation by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
-    var hasBackground by remember { mutableStateOf(LocationProvider.hasBackgroundPermission(context)) }
-    var canNotify by remember { mutableStateOf(RainNotifier.canNotify(context)) }
-
-    // Los permisos se pueden cambiar desde Ajustes del sistema: se releen al volver.
+    // El permiso se puede cambiar desde Ajustes del sistema: se relee al volver.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasLocation = LocationProvider.hasPermission(context)
-        hasBackground = LocationProvider.hasBackgroundPermission(context)
-        canNotify = RainNotifier.canNotify(context)
     }
 
     val locationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         hasLocation = it
         onLocationPermission(it)
-    }
-    val backgroundLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        hasBackground = it
-    }
-    // Qué aviso pidió el permiso de notificaciones, para activarlo cuando lo den.
-    var pendingNotification by remember { mutableStateOf<String?>(null) }
-    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        canNotify = it
-        when (pendingNotification) {
-            "smn" -> viewModel.setSmnAlerts(it)
-            "temperatura" -> viewModel.setStatusTemperature(it)
-            else -> viewModel.setRainAlerts(it)
-        }
-        pendingNotification = null
     }
 
     LaunchedEffect(query) {
@@ -173,7 +144,7 @@ fun CitiesScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             LargeTopAppBar(
-                title = { Text(tr("Ciudades y ajustes", "Cities and settings")) },
+                title = { Text(tr("Ciudades", "Cities")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Volver", "Back"))
@@ -344,247 +315,8 @@ fun CitiesScreen(
                 }
             }
 
-            item { SectionTitle(tr("Pantalla del clima", "Weather screen")) }
             item {
-                Group {
-                    Column {
-                        cardLayout.order.forEachIndexed { index, card ->
-                            ListItem(
-                                headlineContent = { Text(card.label) },
-                                leadingContent = {
-                                    Switch(
-                                        checked = card !in cardLayout.hidden,
-                                        onCheckedChange = { viewModel.setCards(cardLayout.toggle(card, it)) },
-                                    )
-                                },
-                                trailingContent = {
-                                    Row {
-                                        IconButton(onClick = { viewModel.setCards(cardLayout.move(card, -1)) }, enabled = index > 0) {
-                                            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = tr("Subir", "Move up"))
-                                        }
-                                        IconButton(onClick = { viewModel.setCards(cardLayout.move(card, 1)) }, enabled = index < cardLayout.order.lastIndex) {
-                                            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = tr("Bajar", "Move down"))
-                                        }
-                                    }
-                                },
-                                colors = groupColors(),
-                            )
-                        }
-                    }
-                }
-            }
-
-            item { SectionTitle(tr("Ajustes", "Settings")) }
-            item {
-                Group {
-                    ListItem(
-                        headlineContent = { Text(tr("Ubicación con la app cerrada", "Location while closed")) },
-                        supportingContent = {
-                            Text(
-                                if (hasBackground && hasLocation) {
-                                    tr("Los widgets siguen tu ubicación aunque no abras la app", "Widgets follow your location even when the app is closed")
-                                } else {
-                                    tr("Elegí \"Permitir todo el tiempo\" para que los widgets te sigan", "Choose \"Allow all the time\" so widgets follow you")
-                                },
-                            )
-                        },
-                        trailingContent = if (hasBackground && hasLocation) null else {
-                            {
-                                FilledTonalButton(onClick = {
-                                    if (!hasLocation) {
-                                        locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-                                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                        backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                                    }
-                                }) { Text(tr("Permitir", "Allow")) }
-                            }
-                        },
-                        colors = groupColors(),
-                    )
-                }
-            }
-            item {
-                Group(Modifier.padding(top = 2.dp)) {
-                    ListItem(
-                        headlineContent = { Text(tr("Avisos de lluvia", "Rain alerts")) },
-                        supportingContent = { Text(tr("Una notificación cuando va a llover donde estás", "A notification when rain is coming where you are")) },
-                        trailingContent = {
-                            Switch(
-                                checked = rainAlerts && canNotify,
-                                onCheckedChange = { enabled ->
-                                    if (enabled && !canNotify && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        pendingNotification = "lluvia"
-                                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    } else {
-                                        viewModel.setRainAlerts(enabled)
-                                    }
-                                },
-                            )
-                        },
-                        colors = groupColors(),
-                    )
-                }
-            }
-            item {
-                Group(Modifier.padding(top = 2.dp)) {
-                    ListItem(
-                        headlineContent = { Text(tr("Alertas del SMN", "Official alerts (Argentina)")) },
-                        supportingContent = { Text(tr("Tormentas, viento, calor y otras alertas oficiales en Argentina", "Storms, wind, heat and other official alerts in Argentina")) },
-                        trailingContent = {
-                            Switch(
-                                checked = smnAlerts && canNotify,
-                                onCheckedChange = { enabled ->
-                                    if (enabled && !canNotify && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        pendingNotification = "smn"
-                                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    } else {
-                                        viewModel.setSmnAlerts(enabled)
-                                    }
-                                },
-                            )
-                        },
-                        colors = groupColors(),
-                    )
-                }
-            }
-            item {
-                Group(Modifier.padding(top = 2.dp)) {
-                    ListItem(
-                        headlineContent = { Text(tr("Fondo de pantalla animado", "Live wallpaper")) },
-                        supportingContent = { Text(tr("Cielo, paisaje, formas u oscuro, según el clima y la hora", "Sky, landscape, shapes or dark, matching the weather and time of day")) },
-                        trailingContent = {
-                            FilledTonalButton(onClick = {
-                                context.startActivity(Intent(context, WallpaperSettingsActivity::class.java))
-                            }) { Text(tr("Elegir", "Choose")) }
-                        },
-                        colors = groupColors(),
-                    )
-                }
-            }
-            item {
-                Group(Modifier.padding(top = 2.dp)) {
-                    ListItem(
-                        headlineContent = { Text(tr("Temperatura en la barra de estado", "Temperature in the status bar")) },
-                        supportingContent = { Text(tr("Los grados al lado de la hora, siempre a la vista", "The temperature next to the clock, always visible")) },
-                        trailingContent = {
-                            Switch(
-                                checked = statusTemperature && canNotify,
-                                onCheckedChange = { enabled ->
-                                    if (enabled && !canNotify && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        pendingNotification = "temperatura"
-                                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    } else {
-                                        viewModel.setStatusTemperature(enabled)
-                                    }
-                                },
-                            )
-                        },
-                        colors = groupColors(),
-                    )
-                }
-            }
-            item { SectionTitle(tr("Unidades", "Units")) }
-            item {
-                Group {
-                    Column(Modifier.padding(vertical = 8.dp)) {
-                        ChoiceRow(tr("Temperatura", "Temperature"), TemperatureUnit.entries, units.temperature, { it.label }) {
-                            viewModel.setUnits(units.copy(temperature = it))
-                        }
-                        ChoiceRow(tr("Viento", "Wind"), WindUnit.entries, units.wind, { it.label }) {
-                            viewModel.setUnits(units.copy(wind = it))
-                        }
-                        ChoiceRow(tr("Presión", "Pressure"), PressureUnit.entries, units.pressure, { it.label }) {
-                            viewModel.setUnits(units.copy(pressure = it))
-                        }
-                        ListItem(
-                            headlineContent = { Text(tr("Formato de 24 horas", "24-hour time")) },
-                            trailingContent = {
-                                Switch(
-                                    checked = units.use24h,
-                                    onCheckedChange = { viewModel.setUnits(units.copy(use24h = it)) },
-                                )
-                            },
-                            colors = groupColors(),
-                        )
-                    }
-                }
-            }
-            item { SectionTitle(tr("Acerca de", "About")) }
-            item {
-                Group {
-                    ListItem(
-                        headlineContent = { Text("Climatin ${installed.first}") },
-                        supportingContent = {
-                            Text(
-                                updateMessage ?: if (fromPlay) {
-                                    tr("Se actualiza desde Google Play", "Updated through Google Play")
-                                } else {
-                                    tr("Versión ${installed.second}", "Build ${installed.second}")
-                                },
-                            )
-                        },
-                        trailingContent = if (fromPlay) null else {
-                            {
-                                val release = update
-                                if (release != null) {
-                                    val progress = updateProgress
-                                    if (progress != null) {
-                                        Text("${(progress * 100).roundToInt()}%")
-                                    } else {
-                                        FilledTonalButton(onClick = { viewModel.downloadUpdate(release) }) {
-                                            Text(tr("Actualizar", "Update"))
-                                        }
-                                    }
-                                } else {
-                                    FilledTonalButton(onClick = viewModel::checkForUpdates) { Text(tr("Buscar", "Check")) }
-                                }
-                            }
-                        },
-                        colors = groupColors(),
-                    )
-                }
-            }
-            item {
-                Group(Modifier.padding(top = 2.dp)) {
-                    ListItem(
-                        headlineContent = { Text(tr("Widgets", "Widgets")) },
-                        supportingContent = { Text(tr("Ver los 11 widgets, agregarlos a la pantalla de inicio y personalizar los que ya pusiste", "See all 11 widgets, add them to your home screen and customize the ones you placed")) },
-                        trailingContent = {
-                            FilledTonalButton(onClick = {
-                                context.startActivity(Intent(context, WidgetGalleryActivity::class.java))
-                            }) { Text(tr("Ver", "Open")) }
-                        },
-                        colors = groupColors(),
-                    )
-                }
-            }
-            item {
-                Hint(tr("Los widgets se configuran al agregarlos: mantené apretado uno y tocá el lápiz para cambiar la ciudad.", "Widgets are set up when you add them: long-press one and tap the pencil to change its city or style."))
-            }
-        }
-    }
-}
-
-@Composable
-private fun <T> ChoiceRow(
-    label: String,
-    options: List<T>,
-    selected: T,
-    labelOf: (T) -> String,
-    onSelect: (T) -> Unit,
-) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-        Text(label, style = MaterialTheme.typography.bodyLarge)
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            options.forEach { option ->
-                FilterChip(
-                    selected = option == selected,
-                    onClick = { onSelect(option) },
-                    label = { Text(labelOf(option)) },
-                )
+                Hint(tr("Las alertas, la ubicación con la app cerrada, las unidades y lo demás están en Ajustes (el engranaje, arriba a la derecha del pronóstico).", "Alerts, background location, units and everything else are in Settings (the gear, top right of the forecast)."))
             }
         }
     }

@@ -71,7 +71,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -147,6 +148,7 @@ fun WeatherRoute(
     val units by viewModel.units.collectAsStateWithLifecycle()
     var hasPermission by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var showCities by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     // "lat,lon" del radar abierto, o null.
     var radarAt by rememberSaveable { mutableStateOf<String?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -160,6 +162,7 @@ fun WeatherRoute(
     LaunchedEffect(deepLink) {
         if (deepLink != null) {
             showCities = false
+            showSettings = false
             // Un widget puede pedir abrir directo el mapa de lluvia de su ciudad.
             val place = if (deepLink.radar) viewModel.cached(deepLink.placeId) ?: viewModel.cached(CURRENT_PLACE_ID) else null
             radarAt = place?.let { "${it.latitude},${it.longitude}" }
@@ -168,10 +171,14 @@ fun WeatherRoute(
     }
     // Gesto "atrás" predictivo: mientras se desliza, la pantalla se achica y deja ver que vuelve.
     var backProgress by remember { mutableFloatStateOf(0f) }
-    PredictiveBackHandler(enabled = showCities || radarAt != null) { events ->
+    PredictiveBackHandler(enabled = showCities || showSettings || radarAt != null) { events ->
         try {
             events.collect { backProgress = it.progress }
-            if (radarAt != null) radarAt = null else showCities = false
+            when {
+                radarAt != null -> radarAt = null
+                showSettings -> showSettings = false
+                else -> showCities = false
+            }
         } finally {
             backProgress = 0f
         }
@@ -185,6 +192,7 @@ fun WeatherRoute(
     val radar = radarAt?.split(',')?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 2 }
     val screen = when {
         radar != null -> "radar"
+        showSettings -> "ajustes"
         showCities -> "ciudades"
         pages.isEmpty() -> "permiso"
         else -> "clima"
@@ -214,6 +222,14 @@ fun WeatherRoute(
                     if (granted) viewModel.refresh()
                 },
             )
+            "ajustes" -> SettingsScreen(
+                viewModel = viewModel,
+                onBack = { showSettings = false },
+                onLocationPermission = { granted ->
+                    hasPermission = granted
+                    if (granted) viewModel.refresh()
+                },
+            )
             "permiso" -> PermissionScreen(
                 onAllow = { launcher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
                 onPickCity = { showCities = true },
@@ -224,6 +240,7 @@ fun WeatherRoute(
                     pages,
                     viewModel,
                     onOpenCities = { showCities = true },
+                    onOpenSettings = { showSettings = true },
                     onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
                     deepLink = deepLink,
                     onDeepLinkHandled = onDeepLinkHandled,
@@ -277,6 +294,7 @@ private fun WeatherPager(
     pages: List<String>,
     viewModel: WeatherViewModel,
     onOpenCities: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenRadar: (Double, Double) -> Unit,
     deepLink: DeepLinkTarget?,
     onDeepLinkHandled: () -> Unit,
@@ -382,7 +400,9 @@ private fun WeatherPager(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Spacer(Modifier.width(48.dp))
+            IconButton(onClick = onOpenCities) {
+                Icon(Icons.AutoMirrored.Rounded.List, contentDescription = tr("Ciudades", "Cities"), tint = OnSky)
+            }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 CompactHeader(
                     skySnapshot,
@@ -421,8 +441,8 @@ private fun WeatherPager(
                     }
                 }
             }
-            IconButton(onClick = onOpenCities) {
-                Icon(Icons.Rounded.Menu, contentDescription = tr("Ciudades y ajustes", "Cities and settings"), tint = OnSky)
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Rounded.Settings, contentDescription = tr("Ajustes", "Settings"), tint = OnSky)
             }
         }
     }
@@ -569,7 +589,7 @@ fun ForecastContent(
             }
         }
     }
-    // Cada tarjeta, en el orden que eligió la persona (Ciudades y ajustes → Pantalla del clima).
+    // Cada tarjeta, en el orden que eligió la persona (Ajustes → Pantalla del clima).
     val card: LazyListScope.(ForecastCard, Int) -> Unit = { which, index ->
         if (snapshot != null) {
             item(key = which.name) {

@@ -4,7 +4,8 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 
 - **Kotlin + Jetpack Compose** con Material 3 y colores dinámicos (toman el fondo de pantalla en Android 12+).
 - **Cielo animado** detrás del pronóstico: sol, nubes, lluvia, nieve, niebla, estrellas o relámpagos según el clima.
-- **Varias ciudades**: buscador, se desliza entre ellas. En *Ciudades y ajustes* son tarjetas con su cielo y temperatura: se quitan deslizando (con deshacer) y se reordenan manteniéndolas apretadas.
+- **Varias ciudades**: buscador, se desliza entre ellas. En *Ciudades* (ícono de lista, arriba a la izquierda) son tarjetas con su cielo y temperatura: se quitan deslizando (con deshacer) y se reordenan manteniéndolas apretadas.
+- **Ajustes ordenados por categoría** (engranaje, arriba a la derecha): pantalla del clima, unidades, notificaciones, ubicación, fondo de pantalla, widgets y acerca de, cada una con un resumen de cómo está.
 - **Datos**: temperatura por hora en gráfico (tocá una hora para ver sensación térmica, viento y lluvia), humedad, viento, UV, calidad del aire, presión, visibilidad, amanecer/atardecer y fase lunar, con medidores, brújula, arco del sol y dibujo de la luna.
 - **Diseño Material 3 Expressive**: tipografía Google Sans Flex (descargable, con Roboto Flex de respaldo), encabezado que se achica al bajar, carga con esqueleto animado, vibración leve y gesto "atrás" predictivo.
 - **Aviso de lluvia**: "Lluvia en unos 30 min" en la app y en "De un vistazo"; notificación opcional.
@@ -22,7 +23,7 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
   - **Indicador**: índice UV, calidad del aire, humedad o viento (con brújula) en un medidor.
 - **En los widgets**: frase del momento ("Llevá paraguas a las 17", "UV alto", "Mañana 6° más fresco"…), ⟳ para actualizar, › para pasar de ciudad, y tocar un día u hora abre su detalle en la app.
 - **Estilos de widget**: Sistema (colores del fondo de pantalla), Color (más intenso), Transparente (texto blanco sobre el fondo de pantalla) o Cielo (degradado del clima actual). Se eligen con vista previa al agregar el widget.
-- **Personalización de widgets** con el widget real como vista previa (tres tamaños, sobre fondo claro, oscuro, foto o cielo): estilo, color fijo o del fondo de pantalla, opacidad, esquinas, partes visibles (frase, ciudad, máx/mín, ⟳ y ›), qué hace al tocarlo, ciudad fija o que rota, y copiar de otro widget. En *Ciudades y ajustes → Widgets* están los 11 para agregarlos sin pasar por el launcher.
+- **Personalización de widgets** con el widget real como vista previa (tres tamaños, sobre fondo claro, oscuro, foto o cielo): estilo, color fijo o del fondo de pantalla, opacidad, esquinas, partes visibles (frase, ciudad, máx/mín, ⟳ y ›), qué hace al tocarlo, ciudad fija o que rota, y copiar de otro widget. En *Ajustes → Widgets* están los 11 para agregarlos sin pasar por el launcher.
 - **Vistas previas reales** en el selector de widgets, con los colores del sistema en claro y oscuro; en Android 15+, con tus datos.
 - **Mapa de lluvia** animado: la lluvia de Open-Meteo (de 3 horas atrás a 9 adelante, sin clave) sobre el mapa gris de Esri. Es lluvia calculada por el modelo, no radar.
 - **Alertas del SMN** para lugares en Argentina, en la app y como notificación opcional.
@@ -40,7 +41,7 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 
 ## Actualizaciones
 
-Cada versión nueva (cuando cambia `versionName`) se publica sola en [climatin-releases](https://github.com/mnavarrosqa/climatin-releases/releases), un repo público que solo tiene los APK. La app consulta ahí cada 12 horas y avisa; al tocar Actualizar la baja sola (con barra de avance) y abre el instalador de Android (la primera vez pide permitir "Instalar apps desconocidas"); también se puede buscar a mano en *Ciudades y ajustes → Acerca de*. La app tiene dos variantes: `github` (la que se instala a mano, con esta actualización) y `play` (para la tienda, sin el permiso de instalar apps; ahí actualiza Play).
+Cada versión nueva (cuando cambia `versionName`) se publica sola en [climatin-releases](https://github.com/mnavarrosqa/climatin-releases/releases), un repo público que solo tiene los APK. La app consulta ahí cada 12 horas y avisa; al tocar Actualizar la baja sola (con barra de avance) y abre el instalador de Android (la primera vez pide permitir "Instalar apps desconocidas"); también se puede buscar a mano en *Ajustes → Acerca de y actualizaciones*. La app tiene dos variantes: `github` (la que se instala a mano, con esta actualización) y `play` (para la tienda, sin el permiso de instalar apps; ahí actualiza Play).
 
 Para que funcione, el repo `climatin` necesita el secreto `RELEASES_TOKEN`: un token de GitHub con permiso de escritura de contenido (*Contents: Read and write*) solo sobre `climatin-releases`.
 
@@ -82,4 +83,4 @@ Los tests corren con `./gradlew :core:testDebugUnitTest`. Las capturas de pantal
 
 ## Ubicación en segundo plano
 
-Sin el permiso "Permitir todo el tiempo", Android no siempre entrega la ubicación con la app cerrada y el widget usa la última conocida. Se activa en *Ciudades y ajustes → Ubicación con la app cerrada*.
+Sin el permiso "Permitir todo el tiempo", Android no siempre entrega la ubicación con la app cerrada y el widget usa la última conocida. Se activa en *Ajustes → Ubicación → Con la app cerrada*.

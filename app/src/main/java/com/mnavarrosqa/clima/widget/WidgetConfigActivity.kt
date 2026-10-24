@@ -360,7 +360,7 @@ private fun ConfigScreen(
             if (places.isEmpty()) {
                 item {
                     Text(
-                        tr("Podés agregar más ciudades desde la app, en Ciudades y ajustes.", "You can add more cities in the app, under Cities and settings."),
+                        tr("Podés agregar más ciudades desde la app, en Ciudades.", "You can add more cities in the app, under Cities."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp, start = 4.dp),

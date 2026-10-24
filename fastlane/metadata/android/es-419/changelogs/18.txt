@@ -1,0 +1,1 @@
+Ciudades y Ajustes separados. Ciudades está en el ícono de lista (arriba a la izquierda) y Ajustes en el engranaje (arriba a la derecha), ordenados por categoría: pantalla del clima, unidades, notificaciones, ubicación, fondo de pantalla, widgets y acerca de, cada una con un resumen de cómo está.
