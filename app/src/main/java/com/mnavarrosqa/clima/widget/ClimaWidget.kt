@@ -34,10 +34,13 @@ import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.shortHour
 import com.mnavarrosqa.clima.work.WeatherWorker
 
-/** Widget "Clima ahora": se adapta del 1x1 al 4x2 como los del Pixel. */
+/**
+ * Widget "Clima ahora": se adapta del 1x1 al 4x2 como los del Pixel. Usa el tamaño exacto para
+ * elegir el diseño según el espacio real y el tamaño de letra del teléfono, así nada se corta.
+ */
 class ClimaWidget : GlanceAppWidget() {
 
-    override val sizeMode = SizeMode.Responsive(setOf(TINY, SQUARE, WIDE, WIDE_TALL))
+    override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         provideContent {
@@ -52,17 +55,21 @@ class ClimaWidget : GlanceAppWidget() {
         val TINY = DpSize(50.dp, 40.dp)
         val SQUARE = DpSize(110.dp, 110.dp)
         val WIDE = DpSize(220.dp, 90.dp)
-        val WIDE_TALL = DpSize(250.dp, 180.dp)
     }
 }
 
 @Composable
 private fun ClimaContent(snapshot: WeatherSnapshot) {
     val size = LocalSize.current
+    // Alturas que necesita cada diseño, corregidas por el tamaño de letra del sistema.
+    val scale = fontScale()
     when {
-        size.width >= ClimaWidget.WIDE_TALL.width && size.height >= ClimaWidget.WIDE_TALL.height ->
-            WideContent(snapshot, showHours = true)
-        size.width >= ClimaWidget.WIDE.width -> WideContent(snapshot, showHours = false)
+        size.width >= ClimaWidget.WIDE.width -> when {
+            size.height >= 236.dp * scale -> WideContent(snapshot, compact = false, showHours = true)
+            size.height >= 176.dp * scale -> WideContent(snapshot, compact = true, showHours = true)
+            size.height >= 132.dp * scale -> WideContent(snapshot, compact = false, showHours = false)
+            else -> WideContent(snapshot, compact = true, showHours = false)
+        }
         size.height >= ClimaWidget.SQUARE.height && size.width >= ClimaWidget.SQUARE.width -> SquareContent(snapshot)
         else -> TinyContent(snapshot)
     }
@@ -113,40 +120,58 @@ private fun SquareContent(snapshot: WeatherSnapshot) {
 }
 
 @Composable
-private fun WideContent(snapshot: WeatherSnapshot, showHours: Boolean) {
+private fun WideContent(snapshot: WeatherSnapshot, compact: Boolean, showHours: Boolean) {
     val colors = widgetColors()
     val current = snapshot.current
     val today = snapshot.today()
-    WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
+    val minMax = today?.let { "Máx ${it.max.degrees()} · Mín ${it.min.degrees()}" }
+    WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 20.dp, vertical = if (compact) 10.dp else 14.dp)) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = GlanceModifier.defaultWeight()) {
                     PlaceLabel(snapshot, colors, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Text(
-                        current.temperature.degrees(),
-                        style = TextStyle(color = colors.text, fontSize = 44.sp),
-                    )
-                    Text(
-                        WeatherCodes.description(current.code),
-                        maxLines = 1,
-                        style = TextStyle(color = colors.text, fontSize = 14.sp),
-                    )
-                    if (today != null) {
+                    if (compact) {
+                        // Temperatura y estado lado a lado para ahorrar alto.
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                current.temperature.degrees(),
+                                style = TextStyle(color = colors.text, fontSize = 34.sp),
+                            )
+                            Spacer(GlanceModifier.width(10.dp))
+                            Column {
+                                Text(
+                                    WeatherCodes.description(current.code),
+                                    maxLines = 1,
+                                    style = TextStyle(color = colors.text, fontSize = 13.sp),
+                                )
+                                if (minMax != null) {
+                                    Text(minMax, maxLines = 1, style = TextStyle(color = colors.textVariant, fontSize = 12.sp))
+                                }
+                            }
+                        }
+                    } else {
                         Text(
-                            "Máx ${today.max.degrees()} · Mín ${today.min.degrees()}",
-                            maxLines = 1,
-                            style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
+                            current.temperature.degrees(),
+                            style = TextStyle(color = colors.text, fontSize = 44.sp),
                         )
+                        Text(
+                            WeatherCodes.description(current.code),
+                            maxLines = 1,
+                            style = TextStyle(color = colors.text, fontSize = 14.sp),
+                        )
+                        if (minMax != null) {
+                            Text(minMax, maxLines = 1, style = TextStyle(color = colors.textVariant, fontSize = 12.sp))
+                        }
                     }
                 }
                 Image(
                     provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
                     contentDescription = WeatherCodes.description(current.code),
-                    modifier = GlanceModifier.size(72.dp),
+                    modifier = GlanceModifier.size(if (compact) 52.dp else 72.dp),
                 )
             }
             if (showHours) {
-                Spacer(GlanceModifier.height(12.dp))
+                Spacer(GlanceModifier.height(if (compact) 8.dp else 12.dp))
                 HoursRow(snapshot, count = 5, colors = colors)
             }
         }
@@ -162,7 +187,7 @@ fun HoursRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {
             .fillMaxWidth()
             .background(colors.chip)
             .cornerRadius(16.dp)
-            .padding(vertical = 8.dp),
+            .padding(vertical = 6.dp),
     ) {
         hours.forEachIndexed { index, hour ->
             Column(
@@ -176,7 +201,7 @@ fun HoursRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {
                 Image(
                     provider = ImageProvider(WeatherCodes.icon(hour.code, hour.isDay)),
                     contentDescription = null,
-                    modifier = GlanceModifier.size(24.dp).padding(vertical = 2.dp),
+                    modifier = GlanceModifier.size(22.dp).padding(vertical = 1.dp),
                 )
                 Text(
                     hour.temperature.degrees(),

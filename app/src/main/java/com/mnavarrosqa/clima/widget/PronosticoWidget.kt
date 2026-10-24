@@ -36,7 +36,7 @@ import com.mnavarrosqa.clima.work.WeatherWorker
 /** Widget "Pronóstico": ahora + próximos días; si es alto, también las próximas horas. */
 class PronosticoWidget : GlanceAppWidget() {
 
-    override val sizeMode = SizeMode.Responsive(setOf(MEDIUM, LARGE))
+    override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         provideContent {
@@ -57,7 +57,8 @@ class PronosticoWidget : GlanceAppWidget() {
 private fun PronosticoContent(snapshot: WeatherSnapshot) {
     val colors = widgetColors()
     val size = LocalSize.current
-    val large = size.height >= PronosticoWidget.LARGE.height
+    // Con las horas además de los días hace falta más alto; se corrige por el tamaño de letra.
+    val large = size.height >= 270.dp * fontScale()
     val dayCount = if (size.width >= 300.dp) 5 else 4
     val current = snapshot.current
     WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {

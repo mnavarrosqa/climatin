@@ -136,6 +136,10 @@ fun EmptyWidget() {
     }
 }
 
+/** Tamaño de letra del sistema (1 = normal) para reservar el alto que ocupan los textos. */
+@Composable
+fun fontScale(): Float = LocalContext.current.resources.configuration.fontScale.coerceAtLeast(1f)
+
 /** Ciudad y estilo de cada widget, guardados en el estado de Glance de esa instancia. */
 object WidgetPrefs {
     val PLACE = stringPreferencesKey("place")
