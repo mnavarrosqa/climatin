@@ -95,11 +95,7 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
                             fontWeight = FontWeight.Medium,
                         ),
                     )
-                    Text(
-                        snapshot.place ?: "Tu ubicación",
-                        maxLines = 1,
-                        style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
-                    )
+                    PlaceLabel(snapshot, colors, fontSize = 12.sp)
                 }
                 snapshot.today()?.let { today ->
                     Text(

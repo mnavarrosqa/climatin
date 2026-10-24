@@ -7,6 +7,7 @@ import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.NoLocationException
 import com.mnavarrosqa.clima.data.OpenMeteo
 import com.mnavarrosqa.clima.data.Place
+import com.mnavarrosqa.clima.data.UnitSettings
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.widget.updateWeatherWidgets
@@ -34,6 +35,9 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         repository.placesFlow.stateIn(viewModelScope, SharingStarted.Eagerly, repository.places())
     val rainAlerts: StateFlow<Boolean> =
         repository.rainAlertsFlow.stateIn(viewModelScope, SharingStarted.Eagerly, repository.rainAlertsEnabled)
+
+    val units: StateFlow<UnitSettings> =
+        repository.unitsFlow.stateIn(viewModelScope, SharingStarted.Eagerly, repository.units)
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
@@ -106,6 +110,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun movePlace(id: String, offset: Int) = repository.movePlace(id, offset)
+
+    fun setUnits(units: UnitSettings) {
+        repository.units = units
+        viewModelScope.launch { updateWeatherWidgets(getApplication<Application>()) }
+    }
 
     fun setRainAlerts(enabled: Boolean) {
         repository.rainAlertsEnabled = enabled

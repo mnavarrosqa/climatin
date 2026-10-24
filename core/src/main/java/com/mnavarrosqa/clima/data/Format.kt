@@ -8,14 +8,14 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
-import kotlin.math.roundToInt
 
 private val spanish: Locale = Locale.forLanguageTag("es-AR")
 private val hourMinute: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+private val hourMinute12: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a", spanish)
 
-fun Double.degrees(): String = "${roundToInt()}°"
+private fun timeFormatter(): DateTimeFormatter = if (Units.current.use24h) hourMinute else hourMinute12
 
-fun shortHour(dateTime: LocalDateTime): String = dateTime.format(hourMinute)
+fun shortHour(dateTime: LocalDateTime): String = dateTime.format(timeFormatter())
 
 fun timeOf(isoDateTime: String): String = shortHour(LocalDateTime.parse(isoDateTime))
 
@@ -44,4 +44,4 @@ fun rainSoonText(minutes: Int): String = when {
 }
 
 fun updatedAt(epochMillis: Long): String =
-    Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(hourMinute)
+    Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(timeFormatter())

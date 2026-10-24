@@ -194,11 +194,7 @@ class SemanaWidget : SimpleWeatherWidget() {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = GlanceModifier.defaultWeight()) {
-                        Text(
-                            snapshot.place ?: "Tu ubicación",
-                            maxLines = 1,
-                            style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
-                        )
+                        PlaceLabel(snapshot, colors, fontSize = 12.sp)
                         Text(
                             current.temperature.degrees(),
                             style = TextStyle(color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Medium),

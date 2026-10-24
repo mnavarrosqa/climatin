@@ -26,9 +26,9 @@ object OpenMeteo {
                 "weather_code,wind_speed_10m,precipitation,surface_pressure,visibility,uv_index" +
                 "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" +
                 "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset," +
-                "uv_index_max,precipitation_probability_max" +
+                "uv_index_max,precipitation_probability_max,precipitation_sum,wind_speed_10m_max" +
                 "&minutely_15=precipitation&forecast_minutely_15=8" +
-                "&timezone=auto&forecast_days=7",
+                "&timezone=auto&forecast_days=14",
             latitude,
             longitude,
         ),
@@ -105,7 +105,7 @@ object OpenMeteo {
                 precipitationProbability = h.precipitationProbability.getOrNull(i),
                 isDay = h.isDay.getOrNull(i) == 1,
             )
-        }.take(48)
+        }
         val d = forecast.daily
         val days = d.time.indices.mapNotNull { i ->
             Day(
@@ -117,6 +117,8 @@ object OpenMeteo {
                 sunset = d.sunset.getOrNull(i) ?: return@mapNotNull null,
                 uvIndex = d.uvIndex.getOrNull(i),
                 precipitationProbability = d.precipitationProbability.getOrNull(i),
+                precipitationSum = d.precipitationSum.getOrNull(i),
+                windMax = d.windMax.getOrNull(i),
             )
         }
         val minutely = forecast.minutely?.let { m ->
@@ -195,6 +197,8 @@ data class DailyDto(
     val sunset: List<String?>,
     @SerialName("uv_index_max") val uvIndex: List<Double?> = emptyList(),
     @SerialName("precipitation_probability_max") val precipitationProbability: List<Int?> = emptyList(),
+    @SerialName("precipitation_sum") val precipitationSum: List<Double?> = emptyList(),
+    @SerialName("wind_speed_10m_max") val windMax: List<Double?> = emptyList(),
 )
 
 @Serializable

@@ -39,6 +39,12 @@ data class WeatherSnapshot(
 
     fun today(): Day? = upcomingDays(1).firstOrNull()
 
+    /** Horas de un día; para hoy, solo desde la hora actual. */
+    fun hoursOf(date: LocalDate): List<Hour> {
+        val from = nowAtPlace().truncatedTo(ChronoUnit.HOURS)
+        return hours.filter { it.dateTime.toLocalDate() == date && !it.dateTime.isBefore(from) }
+    }
+
     /**
      * Minutos hasta que empiece a llover, si va a llover en las próximas dos horas y ahora no llueve.
      * Usa el pronóstico cada 15 minutos y, si no hay, la probabilidad por hora.
@@ -100,6 +106,8 @@ data class Day(
     val sunset: String,
     val uvIndex: Double?,
     val precipitationProbability: Int?,
+    val precipitationSum: Double? = null,
+    val windMax: Double? = null,
 ) {
     val localDate: LocalDate get() = LocalDate.parse(date)
 }

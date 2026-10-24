@@ -5,6 +5,10 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +28,7 @@ import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
@@ -52,6 +57,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mnavarrosqa.clima.data.LocationProvider
+import com.mnavarrosqa.clima.data.PressureUnit
+import com.mnavarrosqa.clima.data.TemperatureUnit
+import com.mnavarrosqa.clima.data.WindUnit
 import com.mnavarrosqa.clima.work.RainNotifier
 import kotlinx.coroutines.delay
 
@@ -66,6 +74,7 @@ fun CitiesScreen(
     val places by viewModel.places.collectAsStateWithLifecycle()
     val search by viewModel.search.collectAsStateWithLifecycle()
     val rainAlerts by viewModel.rainAlerts.collectAsStateWithLifecycle()
+    val units by viewModel.units.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var hasLocation by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var hasBackground by remember { mutableStateOf(LocationProvider.hasBackgroundPermission(context)) }
@@ -247,8 +256,59 @@ fun CitiesScreen(
                     )
                 }
             }
+            item { SectionTitle("Unidades") }
+            item {
+                Group {
+                    Column(Modifier.padding(vertical = 8.dp)) {
+                        ChoiceRow("Temperatura", TemperatureUnit.entries, units.temperature, { it.label }) {
+                            viewModel.setUnits(units.copy(temperature = it))
+                        }
+                        ChoiceRow("Viento", WindUnit.entries, units.wind, { it.label }) {
+                            viewModel.setUnits(units.copy(wind = it))
+                        }
+                        ChoiceRow("Presión", PressureUnit.entries, units.pressure, { it.label }) {
+                            viewModel.setUnits(units.copy(pressure = it))
+                        }
+                        ListItem(
+                            headlineContent = { Text("Formato de 24 horas") },
+                            trailingContent = {
+                                Switch(
+                                    checked = units.use24h,
+                                    onCheckedChange = { viewModel.setUnits(units.copy(use24h = it)) },
+                                )
+                            },
+                            colors = groupColors(),
+                        )
+                    }
+                }
+            }
             item {
                 Hint("Los widgets se configuran al agregarlos: mantené apretado uno y tocá el lápiz para cambiar la ciudad.")
+            }
+        }
+    }
+}
+
+@Composable
+private fun <T> ChoiceRow(
+    label: String,
+    options: List<T>,
+    selected: T,
+    labelOf: (T) -> String,
+    onSelect: (T) -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            options.forEach { option ->
+                FilterChip(
+                    selected = option == selected,
+                    onClick = { onSelect(option) },
+                    label = { Text(labelOf(option)) },
+                )
             }
         }
     }

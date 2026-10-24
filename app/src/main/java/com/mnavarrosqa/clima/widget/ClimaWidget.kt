@@ -121,15 +121,7 @@ private fun WideContent(snapshot: WeatherSnapshot, showHours: Boolean) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = GlanceModifier.defaultWeight()) {
-                    Text(
-                        snapshot.place ?: "Tu ubicación",
-                        maxLines = 1,
-                        style = TextStyle(
-                            color = colors.textVariant,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                    )
+                    PlaceLabel(snapshot, colors, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     Text(
                         current.temperature.degrees(),
                         style = TextStyle(color = colors.text, fontSize = 44.sp),

@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -69,9 +71,11 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.dayLabel
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.longDate
+import com.mnavarrosqa.clima.data.pressureText
 import com.mnavarrosqa.clima.data.rainSoonText
 import com.mnavarrosqa.clima.data.timeOf
 import com.mnavarrosqa.clima.data.updatedAt
+import com.mnavarrosqa.clima.data.windText
 import kotlin.math.roundToInt
 
 private val OnSky = Color.White
@@ -81,6 +85,7 @@ private val OnSkyVariant = Color.White.copy(alpha = 0.85f)
 fun WeatherRoute(viewModel: WeatherViewModel = viewModel()) {
     val context = LocalContext.current
     val places by viewModel.places.collectAsStateWithLifecycle()
+    val units by viewModel.units.collectAsStateWithLifecycle()
     var hasPermission by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var showCities by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -109,7 +114,8 @@ fun WeatherRoute(viewModel: WeatherViewModel = viewModel()) {
             onAllow = { launcher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
             onPickCity = { showCities = true },
         )
-        else -> WeatherPager(pages, viewModel, onOpenCities = { showCities = true })
+        // Al cambiar las unidades se rearma el pronóstico para que todos los textos se reformateen.
+        else -> key(units) { WeatherPager(pages, viewModel, onOpenCities = { showCities = true }) }
     }
 }
 
@@ -214,6 +220,10 @@ private fun WeatherPage(placeId: String, viewModel: WeatherViewModel, error: Str
         .collectAsStateWithLifecycle(viewModel.cached(placeId))
     val insets = WindowInsets.systemBars.asPaddingValues()
     val current = snapshot
+    var selectedDay by remember { mutableStateOf<Day?>(null) }
+    if (current != null) {
+        selectedDay?.let { day -> DaySheet(current, day, onDismiss = { selectedDay = null }) }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -245,7 +255,7 @@ private fun WeatherPage(placeId: String, viewModel: WeatherViewModel, error: Str
                     HourlyChart(current.upcomingHours(24))
                 }
             }
-            item { DailyCard(current) }
+            item { DailyCard(current, onDay = { selectedDay = it }) }
             item { DetailsGrid(current) }
             item {
                 Text(
@@ -328,11 +338,7 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                     color = OnSkyVariant,
                 )
             }
-            Image(
-                painter = painterResource(WeatherCodes.icon(current.code, current.isDay)),
-                contentDescription = WeatherCodes.description(current.code),
-                modifier = Modifier.size(140.dp),
-            )
+            AnimatedWeatherIcon(current.code, current.isDay, size = 140.dp)
         }
     }
 }
@@ -383,22 +389,33 @@ fun GlassCard(title: String?, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DailyCard(snapshot: WeatherSnapshot) {
-    val days = snapshot.upcomingDays(7)
+private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
+    val days = snapshot.upcomingDays(14)
     if (days.isEmpty()) return
     val weekMin = days.minOf { it.min }
     val weekMax = days.maxOf { it.max }
     val today = snapshot.nowAtPlace().toLocalDate()
-    GlassCard("Próximos días") {
-        Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            days.forEach { day -> DayRow(day, dayLabel(day.localDate, today), weekMin, weekMax) }
+    GlassCard("Próximos ${days.size} días") {
+        Column(Modifier.padding(horizontal = 8.dp)) {
+            days.forEach { day ->
+                DayRow(
+                    day,
+                    dayLabel(day.localDate, today),
+                    weekMin,
+                    weekMax,
+                    Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onDay(day) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(72.dp))
         Image(
             painter = painterResource(WeatherCodes.icon(day.code)),
@@ -470,14 +487,14 @@ private fun DetailsGrid(snapshot: WeatherSnapshot) {
     val today = snapshot.today()
     val details = buildList {
         add(Detail("Humedad", "${current.humidity}%"))
-        add(Detail("Viento", "${current.windSpeed.roundToInt()} km/h"))
+        add(Detail("Viento", windText(current.windSpeed)))
         (current.uvIndex ?: today?.uvIndex)?.let {
             add(Detail("Índice UV", "${it.roundToInt()}", WeatherCodes.uvLabel(it).replaceFirstChar { c -> c.uppercase() }))
         }
         snapshot.airQuality?.europeanAqi?.let {
             add(Detail("Calidad del aire", WeatherCodes.airQualityLabel(it), "Índice $it"))
         }
-        current.pressure?.let { add(Detail("Presión", "${it.roundToInt()} hPa")) }
+        current.pressure?.let { add(Detail("Presión", pressureText(it))) }
         current.visibility?.let {
             val km = it / 1000
             add(Detail("Visibilidad", if (km >= 10) "+10 km" else "${km.roundToInt()} km"))

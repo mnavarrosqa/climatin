@@ -23,6 +23,10 @@ class WeatherRepository private constructor(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
     private val placesSerializer = ListSerializer(Place.serializer())
 
+    init {
+        Units.current = readUnits()
+    }
+
     // --- Lugares ---
 
     fun places(): List<Place> =
@@ -135,9 +139,35 @@ class WeatherRepository private constructor(private val context: Context) {
         get() = prefs.getLong(KEY_RAIN_NOTIFIED_UNTIL, 0L)
         set(value) = prefs.edit().putLong(KEY_RAIN_NOTIFIED_UNTIL, value).apply()
 
-    private fun <T> prefsFlow(key: String, read: () -> T): Flow<T> = callbackFlow {
+    // --- Unidades ---
+
+    private fun readUnits() = UnitSettings(
+        temperature = enumOr(prefs.getString(KEY_UNIT_TEMP, null), TemperatureUnit.CELSIUS),
+        wind = enumOr(prefs.getString(KEY_UNIT_WIND, null), WindUnit.KMH),
+        pressure = enumOr(prefs.getString(KEY_UNIT_PRESSURE, null), PressureUnit.HPA),
+        use24h = prefs.getBoolean(KEY_USE_24H, true),
+    )
+
+    var units: UnitSettings
+        get() = Units.current
+        set(value) {
+            Units.current = value
+            prefs.edit()
+                .putString(KEY_UNIT_TEMP, value.temperature.name)
+                .putString(KEY_UNIT_WIND, value.wind.name)
+                .putString(KEY_UNIT_PRESSURE, value.pressure.name)
+                .putBoolean(KEY_USE_24H, value.use24h)
+                .apply()
+        }
+
+    val unitsFlow: Flow<UnitSettings> = prefsFlow(KEY_USE_24H, KEY_UNIT_TEMP, KEY_UNIT_WIND, KEY_UNIT_PRESSURE) { readUnits() }
+
+    private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =
+        enumValues<E>().firstOrNull { it.name == name } ?: default
+
+    private fun <T> prefsFlow(vararg keys: String, read: () -> T): Flow<T> = callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, changed ->
-            if (changed == key) trySend(read())
+            if (changed in keys) trySend(read())
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         trySend(read())
@@ -148,6 +178,10 @@ class WeatherRepository private constructor(private val context: Context) {
         private const val KEY_PLACES = "places"
         private const val KEY_RAIN_ALERTS = "rain_alerts"
         private const val KEY_RAIN_NOTIFIED_UNTIL = "rain_notified_until"
+        private const val KEY_UNIT_TEMP = "unit_temp"
+        private const val KEY_UNIT_WIND = "unit_wind"
+        private const val KEY_UNIT_PRESSURE = "unit_pressure"
+        private const val KEY_USE_24H = "use_24h"
 
         private fun snapshotKey(placeId: String) = "snapshot:$placeId"
 
