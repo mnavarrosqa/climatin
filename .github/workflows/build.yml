@@ -75,9 +75,19 @@ jobs:
             echo "::warning::No encuentro mnavarrosqa/climatin-releases: creá el repo público (con README) y dale acceso al token RELEASES_TOKEN (Contents: Read and write)."
             exit 1
           fi
-          if gh release view "$TAG" --repo mnavarrosqa/climatin-releases > /dev/null 2>&1; then
+          # Un repo sin commits no acepta versiones: se le agrega un README la primera vez.
+          if ! gh api repos/mnavarrosqa/climatin-releases/commits?per_page=1 > /dev/null 2>&1; then
+            printf '# Climatin\n\nVersiones de [Climatin](https://github.com/mnavarrosqa/climatin) para instalar en Android. Cada una trae el APK del teléfono y el del reloj.\n' > README.md.tmp
+            gh api -X PUT repos/mnavarrosqa/climatin-releases/contents/README.md \
+              -f message="README" -f content="$(base64 -w0 README.md.tmp)" > publicar.log 2>&1
+          fi
+          # Si quedó un borrador de un intento anterior, se borra; si ya está publicada, no se repite.
+          DRAFT=$(gh release view "$TAG" --repo mnavarrosqa/climatin-releases --json isDraft -q .isDraft 2>/dev/null || echo "none")
+          if [ "$DRAFT" = "false" ]; then
             echo "La versión $TAG ya está publicada"
             exit 0
+          elif [ "$DRAFT" = "true" ]; then
+            gh release delete "$TAG" --repo mnavarrosqa/climatin-releases --yes
           fi
           cp app/build/outputs/apk/release/app-release.apk "climatin-$CODE.apk"
           cp wear/build/outputs/apk/release/wear-release.apk "climatin-wear-$CODE.apk"
