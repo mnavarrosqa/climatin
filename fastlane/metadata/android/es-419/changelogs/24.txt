@@ -1,1 +1,1 @@
-Preparada para Android 16: aviso de lluvia con cuenta regresiva y barra de las próximas horas (lluvia en azul), pedido de Live Update en la barra de estado, indicador de carga y barra de descarga de Material 3 Expressive, animaciones con más vida y vibraciones de gotas al actualizar y en los avisos de lluvia.
+Preparada para Android 16: aviso de lluvia con cuenta regresiva y barra de las próximas horas (lluvia en azul), pedido de Live Update en la barra de estado, barra ondulada al bajar actualizaciones y vibraciones de gotas al actualizar y en los avisos de lluvia.

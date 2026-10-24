@@ -91,8 +91,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -309,7 +307,7 @@ private fun PermissionScreen(onAllow: () -> Unit, onPickCity: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WeatherPager(
     pages: List<String>,
@@ -363,9 +361,8 @@ private fun WeatherPager(
             },
             state = pullState,
             modifier = Modifier.fillMaxSize(),
-            // Indicador de Material 3 Expressive: una forma que se transforma mientras carga.
             indicator = {
-                PullToRefreshDefaults.LoadingIndicator(
+                PullToRefreshDefaults.Indicator(
                     state = pullState,
                     isRefreshing = refreshing,
                     modifier = Modifier
@@ -697,7 +694,6 @@ fun ForecastContent(
 }
 
 /** Aviso de versión nueva, arriba del pronóstico. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun UpdateBanner(release: AppRelease, progress: Float?, onUpdate: () -> Unit, onDismiss: () -> Unit) {
     Surface(
@@ -717,7 +713,7 @@ private fun UpdateBanner(release: AppRelease, progress: Float?, onUpdate: () -> 
             if (progress != null) {
                 // Mientras baja: barra de avance en vez de botones.
                 Spacer(Modifier.height(10.dp))
-                LinearWavyProgressIndicator(
+                WavyProgress(
                     progress = { progress },
                     modifier = Modifier
                         .fillMaxWidth()

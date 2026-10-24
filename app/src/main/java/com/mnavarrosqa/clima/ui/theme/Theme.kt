@@ -13,9 +13,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -103,7 +101,6 @@ object Appearance {
 /** Si la app está en oscuro (por el sistema o por elección). */
 val LocalDarkTheme = staticCompositionLocalOf { false }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ClimaTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
@@ -132,12 +129,6 @@ fun ClimaTheme(content: @Composable () -> Unit) {
         }
     }
     CompositionLocalProvider(LocalDarkTheme provides dark) {
-        // Movimiento de Material 3 Expressive: resortes con un poco más de vida en todos los componentes.
-        MaterialTheme(
-            colorScheme = colors,
-            typography = ClimaTypography,
-            motionScheme = MotionScheme.expressive(),
-            content = content,
-        )
+        MaterialTheme(colorScheme = colors, typography = ClimaTypography, content = content)
     }
 }
