@@ -13,11 +13,22 @@ android {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.7"
+        versionCode = 10
+        // Solo español e inglés: evita que las librerías sumen traducciones que la app no tiene.
+        resourceConfigurations += listOf("es", "en")
+        versionName = "1.8"
     }
 
     signingConfigs {
+        // Clave de prueba fija (en el repo) para que cada APK del CI se pueda instalar encima del
+        // anterior. Sin esto, cada compilación genera una clave distinta y Android rechaza la
+        // actualización. No sirve para Play Store: para eso está la clave "release".
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         // Clave propia para Play Store, si el CI (o tu máquina) define las variables. Ver PUBLICAR.md.
         create("release") {
             System.getenv("CLIMATIN_KEYSTORE")?.let { path ->
@@ -54,6 +65,14 @@ android {
     buildFeatures {
         compose = true
     }
+    // Tests de capturas de pantalla (Robolectric + Roborazzi): dibujan la app sin teléfono y
+    // guardan las imágenes en app/build/capturas.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all { it.systemProperty("roborazzi.test.record", "true") }
+        }
+    }
 }
 
 dependencies {
@@ -81,5 +100,13 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.32.2")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.32.2")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

@@ -20,6 +20,13 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    // Los tests verifican los textos en español; los de inglés cambian el idioma a mano.
+    testOptions {
+        unitTests.all {
+            it.systemProperty("user.language", "es")
+            it.systemProperty("user.country", "AR")
+        }
+    }
 }
 
 dependencies {

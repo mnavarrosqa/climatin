@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.wear
 
+import com.mnavarrosqa.clima.data.tr
 import android.Manifest
 import android.graphics.Typeface
 import android.os.Bundle
@@ -51,7 +52,7 @@ class MainActivity : ComponentActivity() {
             val result = WearStore.refresh(this@MainActivity)
             show(result.getOrNull() ?: WearStore.cached(this@MainActivity))
             if (result.isFailure && WearStore.cached(this@MainActivity) == null) {
-                detail.text = "No pude obtener el clima"
+                detail.text = tr("No pude obtener el clima", "Couldn't get the weather")
             }
         }
     }
@@ -59,14 +60,14 @@ class MainActivity : ComponentActivity() {
     private fun show(snapshot: WeatherSnapshot?) {
         if (snapshot == null) {
             temperature.text = "—"
-            detail.text = "Buscando el clima…"
+            detail.text = tr("Buscando el clima…", "Getting the weather…")
             return
         }
         val today = snapshot.today()
         temperature.text = snapshot.current.temperature.degrees()
         detail.text = buildString {
             append(WeatherCodes.description(snapshot.current.code))
-            if (today != null) append("\nMáx ${today.max.degrees()} · Mín ${today.min.degrees()}")
+            if (today != null) append("\n" + tr("Máx", "High") + " ${today.max.degrees()} · " + tr("Mín", "Low") + " ${today.min.degrees()}")
         }
     }
 }

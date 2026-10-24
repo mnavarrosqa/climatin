@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import android.os.Build
 import androidx.compose.runtime.Composable
@@ -55,12 +56,15 @@ fun ClimaGlanceTheme(content: @Composable () -> Unit) {
 }
 
 /** Estilo de fondo que elige cada widget en su configuración. */
-enum class WidgetStyle(val label: String) {
-    SYSTEM("Sistema"),
-    COLOR("Color"),
-    TRANSPARENT("Transparente"),
-    SKY("Cielo"),
+enum class WidgetStyle(private val es: String, private val en: String) {
+    SYSTEM("Sistema", "System"),
+    COLOR("Color", "Color"),
+    TRANSPARENT("Transparente", "Transparent"),
+    SKY("Cielo", "Sky"),
     ;
+
+    /** Se calcula al usarlo: si cambia el idioma de la app, el nombre cambia también. */
+    val label: String get() = tr(es, en)
 
     companion object {
         fun from(name: String?, default: WidgetStyle = SYSTEM): WidgetStyle =
@@ -152,7 +156,7 @@ fun EmptyWidget() {
     val colors = widgetColors(null)
     WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {
         Text(
-            "Abrí Climatin para ver el pronóstico",
+            tr("Abrí Climatin para ver el pronóstico", "Open Climatin to see the forecast"),
             style = TextStyle(
                 color = colors.text,
                 fontSize = 14.sp,

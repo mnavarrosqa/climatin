@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
@@ -107,7 +108,7 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
             Spacer(GlanceModifier.height(8.dp))
             Image(
                 provider = ImageProvider(bitmap),
-                contentDescription = "Temperatura de las próximas horas",
+                contentDescription = tr("Temperatura de las próximas horas", "Temperature for the next hours"),
                 contentScale = ContentScale.Fit,
                 modifier = GlanceModifier.fillMaxWidth().height(chartHeight),
             )

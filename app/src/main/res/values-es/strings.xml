@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Climatin</string>
+    <string name="widget_clima_name">Clima ahora</string>
+    <string name="widget_clima_description">Temperatura y estado del cielo donde estás</string>
+    <string name="widget_pronostico_name">Pronóstico</string>
+    <string name="widget_pronostico_description">Las próximas horas y los próximos días</string>
+    <string name="widget_vistazo_name">De un vistazo</string>
+    <string name="widget_vistazo_description">Fecha y clima sobre tu fondo de pantalla</string>
+    <string name="widget_grafico_name">Gráfico</string>
+    <string name="widget_grafico_description">La temperatura de las próximas horas</string>
+    <string name="widget_burbuja_name">Burbuja</string>
+    <string name="widget_burbuja_description">Círculo con la temperatura y el cielo</string>
+    <string name="widget_pildora_name">Píldora</string>
+    <string name="widget_pildora_description">Una línea: ícono, temperatura y estado</string>
+    <string name="widget_semana_name">Semana</string>
+    <string name="widget_semana_description">Los próximos días en lista</string>
+    <string name="widget_sol_name">Sol</string>
+    <string name="widget_sol_description">Amanecer, atardecer y dónde está el sol ahora</string>
+    <string name="wallpaper_name">Cielo de Climatin</string>
+    <string name="wallpaper_description">El cielo animado según el clima de donde estás</string>
+    <string name="tile_name">Clima</string>
+    <string name="widget_proxima_hora_name">Próxima hora</string>
+    <string name="widget_proxima_hora_description">Si va a llover en las próximas dos horas</string>
+    <string name="widget_ciudades_name">Ciudades</string>
+    <string name="widget_ciudades_description">Todas tus ciudades de un vistazo</string>
+    <string name="widget_indicador_name">Indicador</string>
+    <string name="widget_indicador_description">Índice UV, calidad del aire, humedad o viento con medidor</string>
+</resources>

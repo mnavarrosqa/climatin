@@ -1,10 +1,12 @@
 package com.mnavarrosqa.clima.ui
 
+import com.mnavarrosqa.clima.data.tr
 import android.Manifest
 import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +19,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,6 +56,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -61,6 +66,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mnavarrosqa.clima.data.LocationProvider
+import com.mnavarrosqa.clima.data.Updates
 import com.mnavarrosqa.clima.data.PressureUnit
 import com.mnavarrosqa.clima.data.TemperatureUnit
 import com.mnavarrosqa.clima.data.WindUnit
@@ -81,6 +87,11 @@ fun CitiesScreen(
     val rainAlerts by viewModel.rainAlerts.collectAsStateWithLifecycle()
     val units by viewModel.units.collectAsStateWithLifecycle()
     val smnAlerts by viewModel.smnAlerts.collectAsStateWithLifecycle()
+    val statusTemperature by viewModel.statusTemperature.collectAsStateWithLifecycle()
+    val updateMessage by viewModel.updateMessage.collectAsStateWithLifecycle()
+    val update by viewModel.update.collectAsStateWithLifecycle()
+    val installed = remember { Updates.installedVersion(context) }
+    val fromPlay = remember { Updates.installedFromPlay(context) }
     var query by rememberSaveable { mutableStateOf("") }
     var hasLocation by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var hasBackground by remember { mutableStateOf(LocationProvider.hasBackgroundPermission(context)) }
@@ -106,6 +117,7 @@ fun CitiesScreen(
         canNotify = it
         when (pendingNotification) {
             "smn" -> viewModel.setSmnAlerts(it)
+            "temperatura" -> viewModel.setStatusTemperature(it)
             else -> viewModel.setRainAlerts(it)
         }
         pendingNotification = null
@@ -121,10 +133,10 @@ fun CitiesScreen(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text("Ciudades y ajustes") },
+                title = { Text(tr("Ciudades y ajustes", "Cities and settings")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Volver")
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Volver", "Back"))
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -132,7 +144,11 @@ fun CitiesScreen(
         },
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            // En plegables y tablets la lista no se estira de punta a punta.
+            modifier = Modifier
+                .fillMaxSize()
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .widthIn(max = 720.dp),
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
@@ -145,23 +161,23 @@ fun CitiesScreen(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Buscar una ciudad") },
+                    placeholder = { Text(tr("Buscar una ciudad", "Search for a city")) },
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                     singleLine = true,
                     shape = RoundedCornerShape(28.dp),
                 )
             }
             when {
-                search.loading -> item { Hint("Buscando…") }
+                search.loading -> item { Hint(tr("Buscando…", "Searching…")) }
                 search.error != null -> item { Hint(search.error.orEmpty()) }
-                query.trim().length >= 2 && search.results.isEmpty() -> item { Hint("No encontré esa ciudad") }
+                query.trim().length >= 2 && search.results.isEmpty() -> item { Hint(tr("No encontré esa ciudad", "City not found")) }
             }
             items(search.results, key = { "r-" + it.id }) { place ->
                 ListItem(
                     headlineContent = { Text(place.name) },
                     supportingContent = place.detail?.let { detail -> @Composable { Text(detail) } },
                     leadingContent = { Icon(Icons.Rounded.Place, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Rounded.Add, contentDescription = "Agregar") },
+                    trailingContent = { Icon(Icons.Rounded.Add, contentDescription = tr("Agregar", "Add")) },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
                     modifier = Modifier.clickable {
                         viewModel.addPlace(place)
@@ -170,20 +186,20 @@ fun CitiesScreen(
                 )
             }
 
-            item { SectionTitle("Tus ciudades") }
+            item { SectionTitle(tr("Tus ciudades", "Your cities")) }
             item {
                 Group {
                     ListItem(
-                        headlineContent = { Text("Donde estoy") },
+                        headlineContent = { Text(tr("Donde estoy", "My location")) },
                         supportingContent = {
-                            Text(if (hasLocation) "Según tu ubicación" else "Sin permiso de ubicación")
+                            Text(if (hasLocation) tr("Según tu ubicación", "Based on your location") else tr("Sin permiso de ubicación", "No location permission"))
                         },
                         leadingContent = { Icon(Icons.Rounded.LocationOn, contentDescription = null) },
                         trailingContent = if (hasLocation) null else {
                             {
                                 FilledTonalButton(onClick = {
                                     locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-                                }) { Text("Permitir") }
+                                }) { Text(tr("Permitir", "Allow")) }
                             }
                         },
                         colors = groupColors(),
@@ -201,16 +217,16 @@ fun CitiesScreen(
                         trailingContent = {
                             Row {
                                 IconButton(onClick = { viewModel.movePlace(place.id, -1) }, enabled = index > 0) {
-                                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Subir")
+                                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = tr("Subir", "Move up"))
                                 }
                                 IconButton(
                                     onClick = { viewModel.movePlace(place.id, 1) },
                                     enabled = index < places.lastIndex,
                                 ) {
-                                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Bajar")
+                                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = tr("Bajar", "Move down"))
                                 }
                                 IconButton(onClick = { viewModel.removePlace(place.id) }) {
-                                    Icon(Icons.Rounded.Delete, contentDescription = "Quitar")
+                                    Icon(Icons.Rounded.Delete, contentDescription = tr("Quitar", "Remove"))
                                 }
                             }
                         },
@@ -219,17 +235,17 @@ fun CitiesScreen(
                 }
             }
 
-            item { SectionTitle("Ajustes") }
+            item { SectionTitle(tr("Ajustes", "Settings")) }
             item {
                 Group {
                     ListItem(
-                        headlineContent = { Text("Ubicación con la app cerrada") },
+                        headlineContent = { Text(tr("Ubicación con la app cerrada", "Location while closed")) },
                         supportingContent = {
                             Text(
                                 if (hasBackground && hasLocation) {
-                                    "Los widgets siguen tu ubicación aunque no abras la app"
+                                    tr("Los widgets siguen tu ubicación aunque no abras la app", "Widgets follow your location even when the app is closed")
                                 } else {
-                                    "Elegí \"Permitir todo el tiempo\" para que los widgets te sigan"
+                                    tr("Elegí \"Permitir todo el tiempo\" para que los widgets te sigan", "Choose \"Allow all the time\" so widgets follow you")
                                 },
                             )
                         },
@@ -241,7 +257,7 @@ fun CitiesScreen(
                                     } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                         backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                                     }
-                                }) { Text("Permitir") }
+                                }) { Text(tr("Permitir", "Allow")) }
                             }
                         },
                         colors = groupColors(),
@@ -251,8 +267,8 @@ fun CitiesScreen(
             item {
                 Group(Modifier.padding(top = 2.dp)) {
                     ListItem(
-                        headlineContent = { Text("Avisos de lluvia") },
-                        supportingContent = { Text("Una notificación cuando va a llover donde estás") },
+                        headlineContent = { Text(tr("Avisos de lluvia", "Rain alerts")) },
+                        supportingContent = { Text(tr("Una notificación cuando va a llover donde estás", "A notification when rain is coming where you are")) },
                         trailingContent = {
                             Switch(
                                 checked = rainAlerts && canNotify,
@@ -273,8 +289,8 @@ fun CitiesScreen(
             item {
                 Group(Modifier.padding(top = 2.dp)) {
                     ListItem(
-                        headlineContent = { Text("Alertas del SMN") },
-                        supportingContent = { Text("Tormentas, viento, calor y otras alertas oficiales en Argentina") },
+                        headlineContent = { Text(tr("Alertas del SMN", "Official alerts (Argentina)")) },
+                        supportingContent = { Text(tr("Tormentas, viento, calor y otras alertas oficiales en Argentina", "Storms, wind, heat and other official alerts in Argentina")) },
                         trailingContent = {
                             Switch(
                                 checked = smnAlerts && canNotify,
@@ -295,30 +311,52 @@ fun CitiesScreen(
             item {
                 Group(Modifier.padding(top = 2.dp)) {
                     ListItem(
-                        headlineContent = { Text("Fondo de pantalla animado") },
-                        supportingContent = { Text("El cielo de la app como fondo, según el clima de donde estás") },
+                        headlineContent = { Text(tr("Fondo de pantalla animado", "Live wallpaper")) },
+                        supportingContent = { Text(tr("El cielo de la app como fondo, según el clima de donde estás", "The app's sky as your wallpaper, matching the weather where you are")) },
                         trailingContent = {
-                            FilledTonalButton(onClick = { openLiveWallpaper(context) }) { Text("Poner") }
+                            FilledTonalButton(onClick = { openLiveWallpaper(context) }) { Text(tr("Poner", "Set")) }
                         },
                         colors = groupColors(),
                     )
                 }
             }
-            item { SectionTitle("Unidades") }
+            item {
+                Group(Modifier.padding(top = 2.dp)) {
+                    ListItem(
+                        headlineContent = { Text(tr("Temperatura en la barra de estado", "Temperature in the status bar")) },
+                        supportingContent = { Text(tr("Los grados al lado de la hora, siempre a la vista", "The temperature next to the clock, always visible")) },
+                        trailingContent = {
+                            Switch(
+                                checked = statusTemperature && canNotify,
+                                onCheckedChange = { enabled ->
+                                    if (enabled && !canNotify && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        pendingNotification = "temperatura"
+                                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        viewModel.setStatusTemperature(enabled)
+                                    }
+                                },
+                            )
+                        },
+                        colors = groupColors(),
+                    )
+                }
+            }
+            item { SectionTitle(tr("Unidades", "Units")) }
             item {
                 Group {
                     Column(Modifier.padding(vertical = 8.dp)) {
-                        ChoiceRow("Temperatura", TemperatureUnit.entries, units.temperature, { it.label }) {
+                        ChoiceRow(tr("Temperatura", "Temperature"), TemperatureUnit.entries, units.temperature, { it.label }) {
                             viewModel.setUnits(units.copy(temperature = it))
                         }
-                        ChoiceRow("Viento", WindUnit.entries, units.wind, { it.label }) {
+                        ChoiceRow(tr("Viento", "Wind"), WindUnit.entries, units.wind, { it.label }) {
                             viewModel.setUnits(units.copy(wind = it))
                         }
-                        ChoiceRow("Presión", PressureUnit.entries, units.pressure, { it.label }) {
+                        ChoiceRow(tr("Presión", "Pressure"), PressureUnit.entries, units.pressure, { it.label }) {
                             viewModel.setUnits(units.copy(pressure = it))
                         }
                         ListItem(
-                            headlineContent = { Text("Formato de 24 horas") },
+                            headlineContent = { Text(tr("Formato de 24 horas", "24-hour time")) },
                             trailingContent = {
                                 Switch(
                                     checked = units.use24h,
@@ -330,8 +368,38 @@ fun CitiesScreen(
                     }
                 }
             }
+            item { SectionTitle(tr("Acerca de", "About")) }
             item {
-                Hint("Los widgets se configuran al agregarlos: mantené apretado uno y tocá el lápiz para cambiar la ciudad.")
+                Group {
+                    ListItem(
+                        headlineContent = { Text("Climatin ${installed.first}") },
+                        supportingContent = {
+                            Text(
+                                updateMessage ?: if (fromPlay) {
+                                    tr("Se actualiza desde Google Play", "Updated through Google Play")
+                                } else {
+                                    tr("Versión ${installed.second}", "Build ${installed.second}")
+                                },
+                            )
+                        },
+                        trailingContent = if (fromPlay) null else {
+                            {
+                                val release = update
+                                if (release != null) {
+                                    FilledTonalButton(onClick = {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.apkUrl)))
+                                    }) { Text(tr("Bajar", "Download")) }
+                                } else {
+                                    FilledTonalButton(onClick = viewModel::checkForUpdates) { Text(tr("Buscar", "Check")) }
+                                }
+                            }
+                        },
+                        colors = groupColors(),
+                    )
+                }
+            }
+            item {
+                Hint(tr("Los widgets se configuran al agregarlos: mantené apretado uno y tocá el lápiz para cambiar la ciudad.", "Widgets are set up when you add them: long-press one and tap the pencil to change its city or style."))
             }
         }
     }

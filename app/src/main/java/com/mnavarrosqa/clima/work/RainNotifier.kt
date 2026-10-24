@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.work
 
+import com.mnavarrosqa.clima.data.tr
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
@@ -24,8 +25,8 @@ object RainNotifier {
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(CHANNEL_ID, "Avisos de lluvia", NotificationManager.IMPORTANCE_DEFAULT)
-            .apply { description = "Te avisa cuando va a llover en las próximas horas" }
+        val channel = NotificationChannel(CHANNEL_ID, tr("Avisos de lluvia", "Rain alerts"), NotificationManager.IMPORTANCE_DEFAULT)
+            .apply { description = tr("Te avisa cuando va a llover en las próximas horas", "Lets you know when rain is coming in the next hours") }
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
@@ -49,11 +50,11 @@ object RainNotifier {
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val where = snapshot.place?.let { " en $it" } ?: ""
+        val where = snapshot.place?.let { " " + tr("en", "in") + " $it" } ?: ""
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_rain)
             .setContentTitle(rainSoonText(minutes))
-            .setContentText("Llevá paraguas$where.")
+            .setContentText(tr("Llevá paraguas", "Bring an umbrella") + "$where.")
             .setContentIntent(intent)
             .setAutoCancel(true)
             .build()

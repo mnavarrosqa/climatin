@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.ui
 
+import com.mnavarrosqa.clima.data.tr
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
@@ -21,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -111,8 +114,16 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
         }
         Row {
             hours.forEachIndexed { index, hour ->
+                val probability = hour.precipitationProbability ?: 0
+                val time = if (index == 0) tr("Ahora", "Now") else shortHour(hour.dateTime)
                 Column(
-                    Modifier.width(SLOT),
+                    // La temperatura está dibujada en el gráfico: TalkBack la lee desde acá.
+                    Modifier
+                        .width(SLOT)
+                        .clearAndSetSemantics {
+                            contentDescription = "$time: ${hour.temperature.degrees()}, ${WeatherCodes.description(hour.code)}" +
+                                if (probability >= 10) ", " + tr("lluvia", "rain") + " $probability%" else ""
+                        },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Image(
@@ -120,7 +131,6 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
                         contentDescription = WeatherCodes.description(hour.code),
                         modifier = Modifier.size(30.dp),
                     )
-                    val probability = hour.precipitationProbability ?: 0
                     Text(
                         if (probability >= 10) "$probability%" else " ",
                         style = MaterialTheme.typography.labelSmall,
@@ -128,7 +138,7 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        if (index == 0) "Ahora" else shortHour(hour.dateTime),
+                        if (index == 0) tr("Ahora", "Now") else shortHour(hour.dateTime),
                         style = MaterialTheme.typography.labelMedium,
                         color = colors.onSurfaceVariant,
                         textAlign = TextAlign.Center,

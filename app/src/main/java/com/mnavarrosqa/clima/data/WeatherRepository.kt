@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.data
 
+import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.channels.awaitClose
@@ -18,7 +19,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlin.math.abs
 
-class NoLocationException : Exception("Todavía no tengo tu ubicación")
+class NoLocationException : Exception(tr("Todavía no tengo tu ubicación", "I don't have your location yet"))
 
 /**
  * Fuente única para la app y los widgets. Guarda las ciudades y el último pronóstico de cada
@@ -203,6 +204,12 @@ class WeatherRepository private constructor(private val context: Context) {
 
     val smnAlertsFlow: Flow<Boolean> = prefsFlow(KEY_SMN_ALERTS) { smnAlertsEnabled }
 
+    var statusTemperatureEnabled: Boolean
+        get() = prefs.getBoolean(KEY_STATUS_TEMP, false)
+        set(value) = prefs.edit().putBoolean(KEY_STATUS_TEMP, value).apply()
+
+    val statusTemperatureFlow: Flow<Boolean> = prefsFlow(KEY_STATUS_TEMP) { statusTemperatureEnabled }
+
     /** Ids de alertas ya notificadas. */
     var notifiedAlerts: Set<String>
         get() = prefs.getStringSet(KEY_NOTIFIED_ALERTS, emptySet()).orEmpty()
@@ -253,6 +260,7 @@ class WeatherRepository private constructor(private val context: Context) {
         private const val KEY_RAIN_ALERTS = "rain_alerts"
         private const val KEY_RAIN_NOTIFIED_UNTIL = "rain_notified_until"
         private const val KEY_SMN_ALERTS = "smn_alerts"
+        private const val KEY_STATUS_TEMP = "status_temperature"
         private const val KEY_NOTIFIED_ALERTS = "notified_alerts"
         private const val KEY_UNIT_TEMP = "unit_temp"
         private const val KEY_UNIT_WIND = "unit_wind"

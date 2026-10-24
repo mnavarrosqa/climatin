@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Inglés (predeterminado). El español está en values-es. -->
 <resources>
     <string name="app_name">Climatin</string>
-    <string name="tile_name">Clima</string>
-    <string name="complication_name">Temperatura</string>
+    <string name="tile_name">Weather</string>
+    <string name="complication_name">Temperature</string>
 </resources>

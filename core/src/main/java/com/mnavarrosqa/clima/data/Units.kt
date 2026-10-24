@@ -4,7 +4,11 @@ import kotlin.math.roundToInt
 
 enum class TemperatureUnit(val label: String) { CELSIUS("°C"), FAHRENHEIT("°F") }
 
-enum class WindUnit(val label: String) { KMH("km/h"), MS("m/s"), MPH("mph"), KNOTS("nudos") }
+enum class WindUnit(private val es: String, private val en: String) {
+    KMH("km/h", "km/h"), MS("m/s", "m/s"), MPH("mph", "mph"), KNOTS("nudos", "kn");
+
+    val label: String get() = tr(es, en)
+}
 
 enum class PressureUnit(val label: String) { HPA("hPa"), INHG("inHg"), MMHG("mmHg") }
 
@@ -35,7 +39,8 @@ fun Double.degreesDelta(): String {
 
 /** Punto cardinal de donde viene el viento. */
 fun windFrom(degrees: Double): String {
-    val names = listOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")
+    val names = if (Lang.isSpanish) listOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")
+    else listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
     return names[(((degrees % 360) + 360) % 360 / 45.0).roundToInt() % 8]
 }
 

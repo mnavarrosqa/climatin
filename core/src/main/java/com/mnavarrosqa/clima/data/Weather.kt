@@ -40,6 +40,12 @@ data class WeatherSnapshot(
 
     fun today(): Day? = upcomingDays(1).firstOrNull()
 
+    /** Ayer (Open-Meteo lo manda con past_days=1), para comparar. */
+    fun yesterday(): Day? {
+        val date = nowAtPlace().toLocalDate().minusDays(1)
+        return days.firstOrNull { it.localDate == date }
+    }
+
     /** Horas de un día; para hoy, solo desde la hora actual. */
     fun hoursOf(date: LocalDate): List<Hour> {
         val from = nowAtPlace().truncatedTo(ChronoUnit.HOURS)

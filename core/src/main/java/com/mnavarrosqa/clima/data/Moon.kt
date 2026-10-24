@@ -20,14 +20,14 @@ object Moon {
     fun phaseName(date: LocalDate): String {
         val a = age(date)
         return when {
-            a < 0.03 || a >= 0.97 -> "Luna nueva"
-            a < 0.22 -> "Creciente"
-            a < 0.28 -> "Cuarto creciente"
-            a < 0.47 -> "Gibosa creciente"
-            a < 0.53 -> "Luna llena"
-            a < 0.72 -> "Gibosa menguante"
-            a < 0.78 -> "Cuarto menguante"
-            else -> "Menguante"
+            a < 0.03 || a >= 0.97 -> tr("Luna nueva", "New moon")
+            a < 0.22 -> tr("Creciente", "Waxing crescent")
+            a < 0.28 -> tr("Cuarto creciente", "First quarter")
+            a < 0.47 -> tr("Gibosa creciente", "Waxing gibbous")
+            a < 0.53 -> tr("Luna llena", "Full moon")
+            a < 0.72 -> tr("Gibosa menguante", "Waning gibbous")
+            a < 0.78 -> tr("Cuarto menguante", "Last quarter")
+            else -> tr("Menguante", "Waning crescent")
         }
     }
 }

@@ -19,7 +19,7 @@ class TemperatureComplicationService : SuspendingComplicationDataSourceService()
         return data(request.complicationType, current.temperature.degrees(), WeatherCodes.description(current.code))
     }
 
-    override fun getPreviewData(type: ComplicationType): ComplicationData? = data(type, "22°", "Parcialmente nublado")
+    override fun getPreviewData(type: ComplicationType): ComplicationData? = data(type, "22°", WeatherCodes.description(2))
 
     private fun data(type: ComplicationType, temperature: String, description: String): ComplicationData? {
         val full = PlainComplicationText.Builder("$temperature $description").build()

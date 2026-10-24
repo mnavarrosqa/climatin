@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.ui
 
+import com.mnavarrosqa.clima.data.tr
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -57,7 +58,7 @@ fun DaySheet(snapshot: WeatherSnapshot, day: Day, onDismiss: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Text(WeatherCodes.description(day.code), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Máx ${day.max.degrees()} · Mín ${day.min.degrees()}",
+                        tr("Máx", "High") + " ${day.max.degrees()} · " + tr("Mín", "Low") + " ${day.min.degrees()}",
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
@@ -68,7 +69,7 @@ fun DaySheet(snapshot: WeatherSnapshot, day: Day, onDismiss: () -> Unit) {
             if (hours.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    "Por hora",
+                    tr("Por hora", "Hourly"),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 24.dp),
@@ -79,13 +80,13 @@ fun DaySheet(snapshot: WeatherSnapshot, day: Day, onDismiss: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
             val facts = buildList {
-                add("Probabilidad de lluvia" to "${day.precipitationProbability ?: 0}%")
-                day.precipitationSum?.let { add("Lluvia total" to String.format(Locale.US, "%.1f mm", it)) }
-                day.windMax?.let { add("Viento máximo" to windText(it)) }
-                day.uvIndex?.let { add("Índice UV máximo" to "${it.roundToInt()} · ${WeatherCodes.uvLabel(it)}") }
-                add("Amanecer" to timeOf(day.sunrise))
-                add("Atardecer" to timeOf(day.sunset))
-                add("Luna" to Moon.phaseName(day.localDate))
+                add(tr("Probabilidad de lluvia", "Chance of rain") to "${day.precipitationProbability ?: 0}%")
+                day.precipitationSum?.let { add(tr("Lluvia total", "Total rain") to String.format(Locale.US, "%.1f mm", it)) }
+                day.windMax?.let { add(tr("Viento máximo", "Max wind") to windText(it)) }
+                day.uvIndex?.let { add(tr("Índice UV máximo", "Max UV index") to "${it.roundToInt()} · ${WeatherCodes.uvLabel(it)}") }
+                add(tr("Amanecer", "Sunrise") to timeOf(day.sunrise))
+                add(tr("Atardecer", "Sunset") to timeOf(day.sunset))
+                add(tr("Luna", "Moon") to Moon.phaseName(day.localDate))
             }
             Column(
                 Modifier.padding(horizontal = 16.dp),

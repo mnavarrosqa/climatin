@@ -1,0 +1,4 @@
+# Perfil de arranque: Android compila estas clases por adelantado al instalar la app,
+# así la primera apertura y el primer dibujado no esperan al compilador JIT.
+HSPLcom/mnavarrosqa/clima/**->**(**)**
+Lcom/mnavarrosqa/clima/**;

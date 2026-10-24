@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.work
 
+import com.mnavarrosqa.clima.data.tr
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -19,8 +20,8 @@ object AlertNotifier {
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(CHANNEL_ID, "Alertas del SMN", NotificationManager.IMPORTANCE_HIGH)
-            .apply { description = "Alertas meteorológicas oficiales para donde estás" }
+        val channel = NotificationChannel(CHANNEL_ID, tr("Alertas del SMN", "Official alerts (Argentina)"), NotificationManager.IMPORTANCE_HIGH)
+            .apply { description = tr("Alertas meteorológicas oficiales para donde estás", "Official weather alerts for where you are") }
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
@@ -42,7 +43,7 @@ object AlertNotifier {
         fresh.forEach { alert ->
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification_rain)
-                .setContentTitle("Alerta: ${alert.event}")
+                .setContentTitle(tr("Alerta", "Alert") + ": ${alert.event}")
                 .setContentText(alert.headline ?: alert.description ?: "")
                 .setStyle(NotificationCompat.BigTextStyle().bigText(alert.description ?: alert.headline ?: ""))
                 .setContentIntent(intent)

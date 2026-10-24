@@ -21,27 +21,27 @@ object WeatherCodes {
     }
 
     fun description(code: Int): String = when (code) {
-        0 -> "Despejado"
-        1 -> "Mayormente despejado"
-        2 -> "Parcialmente nublado"
-        3 -> "Nublado"
-        45, 48 -> "Niebla"
-        51, 53, 55 -> "Llovizna"
-        56, 57 -> "Llovizna helada"
-        61 -> "Lluvia leve"
-        63 -> "Lluvia"
-        65 -> "Lluvia fuerte"
-        66, 67 -> "Lluvia helada"
-        71 -> "Nevada leve"
-        73 -> "Nevada"
-        75 -> "Nevada fuerte"
-        77 -> "Granizo fino"
-        80, 81 -> "Chaparrones"
-        82 -> "Chaparrones fuertes"
-        85, 86 -> "Chaparrones de nieve"
-        95 -> "Tormenta"
-        96, 99 -> "Tormenta con granizo"
-        else -> "Sin datos"
+        0 -> tr("Despejado", "Clear")
+        1 -> tr("Mayormente despejado", "Mostly clear")
+        2 -> tr("Parcialmente nublado", "Partly cloudy")
+        3 -> tr("Nublado", "Cloudy")
+        45, 48 -> tr("Niebla", "Fog")
+        51, 53, 55 -> tr("Llovizna", "Drizzle")
+        56, 57 -> tr("Llovizna helada", "Freezing drizzle")
+        61 -> tr("Lluvia leve", "Light rain")
+        63 -> tr("Lluvia", "Rain")
+        65 -> tr("Lluvia fuerte", "Heavy rain")
+        66, 67 -> tr("Lluvia helada", "Freezing rain")
+        71 -> tr("Nevada leve", "Light snow")
+        73 -> tr("Nevada", "Snow")
+        75 -> tr("Nevada fuerte", "Heavy snow")
+        77 -> tr("Granizo fino", "Snow grains")
+        80, 81 -> tr("Chaparrones", "Showers")
+        82 -> tr("Chaparrones fuertes", "Heavy showers")
+        85, 86 -> tr("Chaparrones de nieve", "Snow showers")
+        95 -> tr("Tormenta", "Thunderstorm")
+        96, 99 -> tr("Tormenta con granizo", "Thunderstorm with hail")
+        else -> tr("Sin datos", "No data")
     }
 
     @DrawableRes
@@ -58,19 +58,19 @@ object WeatherCodes {
 
     /** Índice europeo de calidad del aire. */
     fun airQualityLabel(aqi: Int): String = when {
-        aqi < 20 -> "Buena"
-        aqi < 40 -> "Aceptable"
-        aqi < 60 -> "Moderada"
-        aqi < 80 -> "Mala"
-        aqi < 100 -> "Muy mala"
-        else -> "Pésima"
+        aqi < 20 -> tr("Buena", "Good")
+        aqi < 40 -> tr("Aceptable", "Fair")
+        aqi < 60 -> tr("Moderada", "Moderate")
+        aqi < 80 -> tr("Mala", "Poor")
+        aqi < 100 -> tr("Muy mala", "Very poor")
+        else -> tr("Pésima", "Extremely poor")
     }
 
     fun uvLabel(uv: Double): String = when {
-        uv < 3 -> "bajo"
-        uv < 6 -> "moderado"
-        uv < 8 -> "alto"
-        uv < 11 -> "muy alto"
-        else -> "extremo"
+        uv < 3 -> tr("bajo", "low")
+        uv < 6 -> tr("moderado", "moderate")
+        uv < 8 -> tr("alto", "high")
+        uv < 11 -> tr("muy alto", "very high")
+        else -> tr("extremo", "extreme")
     }
 }

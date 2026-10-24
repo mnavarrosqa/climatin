@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.wear
 
+import com.mnavarrosqa.clima.data.tr
 import androidx.wear.protolayout.ActionBuilders
 import androidx.wear.protolayout.ColorBuilders.argb
 import androidx.wear.protolayout.DimensionBuilders.dp
@@ -58,14 +59,14 @@ class WeatherTileService : TileService() {
         val column = LayoutElementBuilders.Column.Builder()
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
         if (snapshot == null) {
-            column.addContent(text("Abrí Climatin en el reloj", 14f, WHITE))
+            column.addContent(text(tr("Abrí Climatin en el reloj", "Open Climatin on your watch"), 14f, WHITE))
         } else {
             val current = snapshot.current
             val today = snapshot.today()
             column.addContent(text(current.temperature.degrees(), 40f, WHITE))
             column.addContent(text(WeatherCodes.description(current.code), 14f, ACCENT, bold = true))
             if (today != null) {
-                column.addContent(text("Máx ${today.max.degrees()} · Mín ${today.min.degrees()}", 13f, GREY))
+                column.addContent(text(tr("Máx", "High") + " ${today.max.degrees()} · " + tr("Mín", "Low") + " ${today.min.degrees()}", 13f, GREY))
             }
             column.addContent(spacer(8f))
             val now = snapshot.nowAtPlace().toLocalDate()

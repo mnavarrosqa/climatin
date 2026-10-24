@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.ui
 
+import com.mnavarrosqa.clima.data.tr
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -41,6 +42,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -77,7 +80,7 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                 // Arranca en el último cuadro observado (antes de los pronosticados).
                 frameIndex = (f.indexOfLast { it.time * 1000 <= System.currentTimeMillis() }).coerceAtLeast(0)
             }
-            .onFailure { error = "No pude cargar el radar. Revisá la conexión." }
+            .onFailure { error = tr("No pude cargar el radar. Revisá la conexión.", "Couldn't load the radar. Check your connection.") }
     }
     // Fundido entre cuadros para que la lluvia se mueva sin saltos.
     var previousIndex by remember { mutableIntStateOf(0) }
@@ -138,7 +141,11 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
 
         val frame = frames.getOrNull(frameIndex)
         val markerColor = MaterialTheme.colorScheme.primary
-        Canvas(Modifier.fillMaxSize()) {
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .semantics { contentDescription = tr("Mapa del radar de lluvia", "Rain radar map") },
+        ) {
             drawRect(if (dark) Color(0xFF1B1D21) else Color(0xFFE9ECF1))
             val size = IntSize(tilePx.roundToInt(), tilePx.roundToInt())
             fun position(tile: Tile): IntOffset {
@@ -181,7 +188,7 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                 .statusBarsPadding()
                 .padding(12.dp),
         ) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Volver")
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Volver", "Back"))
         }
 
         Surface(
@@ -198,16 +205,16 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Radar de lluvia", style = MaterialTheme.typography.titleMedium)
+                        Text(tr("Radar de lluvia", "Rain radar"), style = MaterialTheme.typography.titleMedium)
                         Text(
-                            error ?: frame?.let { frameLabel(it) } ?: "Cargando…",
+                            error ?: frame?.let { frameLabel(it) } ?: tr("Cargando…", "Loading…"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     FilledTonalButton(onClick = { if (zoom > Radar.MIN_ZOOM) zoom-- }) { Text("−") }
                     FilledTonalIconButton(onClick = { if (zoom < Radar.MAX_ZOOM) zoom++ }) {
-                        Icon(Icons.Rounded.Add, contentDescription = "Acercar")
+                        Icon(Icons.Rounded.Add, contentDescription = tr("Acercar", "Zoom in"))
                     }
                 }
                 if (frames.size > 1) {
@@ -217,10 +224,10 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                     ) {
                         FilledTonalButton(onClick = { playing = !playing }) {
                             if (playing) {
-                                Text("Pausa")
+                                Text(tr("Pausa", "Pause"))
                             } else {
                                 Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                                Text("Animar")
+                                Text(tr("Animar", "Play"))
                             }
                         }
                         Slider(
@@ -248,9 +255,9 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
 private fun frameLabel(frame: RadarFrame): String {
     val minutes = ((frame.time * 1000 - System.currentTimeMillis()) / 60_000).toInt()
     return when {
-        minutes in -5..5 -> "Ahora"
-        minutes < 0 -> "Hace ${-minutes} min"
-        else -> "En $minutes min (pronóstico)"
+        minutes in -5..5 -> tr("Ahora", "Now")
+        minutes < 0 -> tr("Hace ${-minutes} min", "${-minutes} min ago")
+        else -> tr("En $minutes min (pronóstico)", "In $minutes min (forecast)")
     }
 }
 

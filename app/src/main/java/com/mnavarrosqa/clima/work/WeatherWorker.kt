@@ -20,6 +20,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         updateWeatherWidgets(applicationContext)
         RainNotifier.check(applicationContext)
         AlertNotifier.check(applicationContext)
+        TemperatureNotifier.update(applicationContext)
         return when {
             error == null -> Result.success()
             runAttemptCount < 3 -> Result.retry()

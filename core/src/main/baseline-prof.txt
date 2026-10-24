@@ -1,0 +1,3 @@
+# Modelos, formatos y cliente de Open-Meteo: se usan al abrir la app y en cada widget.
+HSPLcom/mnavarrosqa/clima/data/**->**(**)**
+Lcom/mnavarrosqa/clima/data/**;

@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
@@ -157,7 +158,7 @@ private fun ConfigScreen(
     onDone: () -> Unit,
 ) {
     Scaffold(
-        topBar = { LargeTopAppBar(title = { Text("Personalizá el widget") }) },
+        topBar = { LargeTopAppBar(title = { Text(tr("Personalizá el widget", "Customize the widget")) }) },
         bottomBar = {
             Box(
                 Modifier
@@ -165,7 +166,7 @@ private fun ConfigScreen(
                     .navigationBarsPadding()
                     .padding(16.dp),
             ) {
-                Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Listo") }
+                Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text(tr("Listo", "Done")) }
             }
         },
     ) { padding ->
@@ -180,7 +181,7 @@ private fun ConfigScreen(
         ) {
             item { StylePreview(style, previewTemperature, previewCode) }
             if (metric != null) {
-                item { SectionTitle("Dato") }
+                item { SectionTitle(tr("Dato", "Data")) }
                 item {
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()),
@@ -196,7 +197,7 @@ private fun ConfigScreen(
                     }
                 }
             }
-            item { SectionTitle("Estilo") }
+            item { SectionTitle(tr("Estilo", "Style")) }
             item {
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
@@ -211,11 +212,11 @@ private fun ConfigScreen(
                     }
                 }
             }
-            item { SectionTitle("Ciudad") }
+            item { SectionTitle(tr("Ciudad", "City")) }
             item {
                 PlaceRow(
-                    title = "Donde estoy",
-                    subtitle = "Sigue tu ubicación",
+                    title = tr("Donde estoy", "My location"),
+                    subtitle = tr("Sigue tu ubicación", "Follows your location"),
                     current = true,
                     selected = placeId == CURRENT_PLACE_ID,
                     onClick = { onPlace(CURRENT_PLACE_ID) },
@@ -233,7 +234,7 @@ private fun ConfigScreen(
             if (places.isEmpty()) {
                 item {
                     Text(
-                        "Podés agregar más ciudades desde la app, en Ciudades y ajustes.",
+                        tr("Podés agregar más ciudades desde la app, en Ciudades y ajustes.", "You can add more cities in the app, under Cities and settings."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(16.dp),

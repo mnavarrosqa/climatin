@@ -1,9 +1,12 @@
 package com.mnavarrosqa.clima.ui
 
+import com.mnavarrosqa.clima.data.tr
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.mnavarrosqa.clima.data.AppRelease
 import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
+import com.mnavarrosqa.clima.data.Updates
 import com.mnavarrosqa.clima.data.NoLocationException
 import com.mnavarrosqa.clima.data.OpenMeteo
 import com.mnavarrosqa.clima.data.Place
@@ -13,6 +16,7 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.widget.updateWeatherWidgets
 import com.mnavarrosqa.clima.work.AlertNotifier
 import com.mnavarrosqa.clima.work.RainNotifier
+import com.mnavarrosqa.clima.work.TemperatureNotifier
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,15 +47,47 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     val smnAlerts: StateFlow<Boolean> =
         repository.smnAlertsFlow.stateIn(viewModelScope, SharingStarted.Eagerly, repository.smnAlertsEnabled)
 
+    val statusTemperature: StateFlow<Boolean> = repository.statusTemperatureFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, repository.statusTemperatureEnabled)
+
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _update = MutableStateFlow<AppRelease?>(null)
+    /** Versión nueva disponible (fuera de Play), o null. */
+    val update: StateFlow<AppRelease?> = _update.asStateFlow()
+
+    private val _updateMessage = MutableStateFlow<String?>(null)
+    /** Resultado de la última búsqueda manual de actualizaciones. */
+    val updateMessage: StateFlow<String?> = _updateMessage.asStateFlow()
+
     private val _search = MutableStateFlow(SearchState())
     val search: StateFlow<SearchState> = _search.asStateFlow()
     private var searchJob: Job? = null
+
+    init {
+        viewModelScope.launch { _update.value = Updates.check(getApplication<Application>(), force = false) }
+    }
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            _updateMessage.value = tr("Buscando…", "Checking…")
+            val release = Updates.check(getApplication<Application>(), force = true)
+            _update.value = release
+            _updateMessage.value = if (release != null) {
+                tr("Hay una versión nueva: ${release.versionName}", "New version available: ${release.versionName}")
+            } else {
+                tr("Tenés la última versión", "You're up to date")
+            }
+        }
+    }
+
+    fun dismissUpdate() {
+        _update.value = null
+    }
 
     fun snapshots(placeId: String): Flow<WeatherSnapshot?> = repository.snapshots(placeId)
 
@@ -76,10 +112,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             updateWeatherWidgets(getApplication<Application>())
             RainNotifier.check(getApplication<Application>())
             AlertNotifier.check(getApplication<Application>())
+            TemperatureNotifier.update(getApplication<Application>())
             _error.value = when (error) {
                 null -> null
                 is NoLocationException -> error.message
-                else -> "No pude actualizar el clima. Revisá la conexión."
+                else -> tr("No pude actualizar el clima. Revisá la conexión.", "Couldn't update the weather. Check your connection.")
             }
             _refreshing.value = false
         }
@@ -95,7 +132,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             _search.value = _search.value.copy(loading = true, error = null)
             _search.value = runCatching { OpenMeteo.searchCities(query) }.fold(
                 onSuccess = { SearchState(results = it) },
-                onFailure = { SearchState(error = "No pude buscar. Revisá la conexión.") },
+                onFailure = { SearchState(error = tr("No pude buscar. Revisá la conexión.", "Couldn't search. Check your connection.")) },
             )
         }
     }
@@ -119,6 +156,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     fun setUnits(units: UnitSettings) {
         repository.units = units
         viewModelScope.launch { updateWeatherWidgets(getApplication<Application>()) }
+    }
+
+    fun setStatusTemperature(enabled: Boolean) {
+        repository.statusTemperatureEnabled = enabled
+        TemperatureNotifier.update(getApplication<Application>())
     }
 
     fun setSmnAlerts(enabled: Boolean) {

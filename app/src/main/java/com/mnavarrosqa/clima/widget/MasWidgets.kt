@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
@@ -296,9 +297,9 @@ class SolWidget : SimpleWeatherWidget() {
             onTransparent = colors.transparent,
         )
         val title = when {
-            sunrise == null || sunset == null -> "Sol"
-            isDaytime -> "Atardece en ${untilText(Duration.between(now, sunset))}"
-            now.isBefore(sunrise) -> "Amanece en ${untilText(Duration.between(now, sunrise))}"
+            sunrise == null || sunset == null -> tr("Sol", "Sun")
+            isDaytime -> tr("Atardece en", "Sunset in") + " ${untilText(Duration.between(now, sunset))}"
+            now.isBefore(sunrise) -> tr("Amanece en", "Sunrise in") + " ${untilText(Duration.between(now, sunrise))}"
             else -> Moon.phaseName(now.toLocalDate())
         }
         WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {

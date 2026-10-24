@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
@@ -114,7 +115,7 @@ private fun DaysRow(snapshot: WeatherSnapshot, count: Int) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    dayLabel(day.localDate, today).let { if (it == "Mañana") "Mañ." else it },
+                    dayLabel(day.localDate, today).let { if (it == tr("Mañana", "Tomorrow")) tr("Mañ.", "Tmrw") else it },
                     maxLines = 1,
                     style = TextStyle(
                         color = colors.textVariant,

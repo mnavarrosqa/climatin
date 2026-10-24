@@ -28,9 +28,20 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 - **Unidades**: °C/°F, km/h, m/s, mph o nudos, hPa, inHg o mmHg, y 12/24 h.
 - **Fondo de pantalla animado** con el cielo del clima real, y **botón de ajustes rápidos**.
 - **Wear OS** (módulo `wear`): tarjeta y complicación con el clima del reloj.
+- **Plegables y tablets**: en pantallas anchas el pronóstico va en dos paneles.
+- **Temperatura en la barra de estado** (opcional), con notificación silenciosa.
+- **Español e inglés** según el idioma del teléfono (o el elegido para la app en Android 13+).
 - **Datos**: [Open-Meteo](https://open-meteo.com) (pronóstico, calidad del aire y buscador de ciudades), gratis y sin API key.
 - **Ubicación aproximada** (`ACCESS_COARSE_LOCATION`), y opcionalmente "todo el tiempo" para que los widgets te sigan con la app cerrada.
 - **Actualización**: WorkManager cada 30 minutos, solo con conexión.
+
+## Actualizaciones
+
+Cada versión nueva (cuando cambia `versionName`) se publica sola en [climatin-releases](https://github.com/mnavarrosqa/climatin-releases/releases), un repo público que solo tiene los APK. La app consulta ahí cada 12 horas y avisa con un botón para bajarla; también se puede buscar a mano en *Ciudades y ajustes → Acerca de*. Si la app viene de Google Play, no consulta nada.
+
+Para que funcione, el repo `climatin` necesita el secreto `RELEASES_TOKEN`: un token de GitHub con permiso de escritura de contenido (*Contents: Read and write*) solo sobre `climatin-releases`.
+
+Los APK se firman con una clave de prueba fija (`keystore/debug.keystore`), así cada versión se instala encima de la anterior. Para Play Store se usa la clave propia (ver [PUBLICAR.md](PUBLICAR.md)).
 
 ## Instalar el APK
 
@@ -64,7 +75,7 @@ app/    App del teléfono
 wear/   App de Wear OS (tarjeta y complicación)
 ```
 
-Los tests corren con `./gradlew testDebugUnitTest`. Para publicar en Play Store, ver [PUBLICAR.md](PUBLICAR.md).
+Los tests corren con `./gradlew :core:testDebugUnitTest`. Las capturas de pantalla (teléfono, plegable, tablet; claro, oscuro; español, inglés) se generan con `./gradlew :app:testDebugUnitTest` en `app/build/capturas/`, y el CI las deja en el artifact `capturas`. Para publicar en Play Store, ver [PUBLICAR.md](PUBLICAR.md).
 
 ## Ubicación en segundo plano
 

@@ -1,0 +1,1 @@
+Diseño en dos paneles para plegables y tablets, temperatura en la barra de estado, "hoy vs. ayer", aviso de versiones nuevas, inglés y mejor accesibilidad.

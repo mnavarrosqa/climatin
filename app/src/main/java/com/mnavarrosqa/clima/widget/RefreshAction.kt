@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.TextUnit
@@ -69,15 +70,15 @@ fun PlaceLabel(
     val hasOtherCities = WeatherRepository.get(LocalContext.current).places().isNotEmpty()
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
-            if (refreshing) "Actualizando…" else snapshot.place ?: "Tu ubicación",
+            if (refreshing) tr("Actualizando…", "Updating…") else snapshot.place ?: tr("Tu ubicación", "Your location"),
             maxLines = 1,
             style = TextStyle(color = colors.textVariant, fontSize = fontSize, fontWeight = fontWeight),
         )
         Spacer(GlanceModifier.width(2.dp))
         if (!refreshing) {
-            SmallButton(R.drawable.ic_refresh, "Actualizar", colors) { actionRunCallback<RefreshAction>() }
+            SmallButton(R.drawable.ic_refresh, tr("Actualizar", "Refresh"), colors) { actionRunCallback<RefreshAction>() }
             if (hasOtherCities) {
-                SmallButton(R.drawable.ic_chevron_right, "Siguiente ciudad", colors) { actionRunCallback<NextCityAction>() }
+                SmallButton(R.drawable.ic_chevron_right, tr("Siguiente ciudad", "Next city"), colors) { actionRunCallback<NextCityAction>() }
             }
         }
     }
@@ -95,8 +96,9 @@ private fun SmallButton(
         contentDescription = description,
         colorFilter = ColorFilter.tint(colors.textVariant),
         modifier = GlanceModifier
-            .size(24.dp)
-            .padding(4.dp)
+            // Área de toque más grande que el ícono, para que sea fácil acertarle.
+            .size(32.dp)
+            .padding(8.dp)
             .clickable(action()),
     )
 }

@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
@@ -126,7 +127,7 @@ private fun WideContent(snapshot: WeatherSnapshot, compact: Boolean, showHours: 
     val colors = widgetColors(snapshot)
     val current = snapshot.current
     val today = snapshot.today()
-    val minMax = today?.let { "Máx ${it.max.degrees()} · Mín ${it.min.degrees()}" }
+    val minMax = today?.let { tr("Máx", "High") + " ${it.max.degrees()} · " + tr("Mín", "Low") + " ${it.min.degrees()}" }
     WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 20.dp, vertical = if (compact) 10.dp else 14.dp)) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -206,7 +207,7 @@ fun HoursRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    if (index == 0) "Ahora" else shortHour(hour.dateTime),
+                    if (index == 0) tr("Ahora", "Now") else shortHour(hour.dateTime),
                     style = TextStyle(color = colors.onChip, fontSize = 11.sp),
                 )
                 Image(

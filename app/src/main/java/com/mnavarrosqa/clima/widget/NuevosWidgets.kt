@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -62,18 +63,18 @@ class ProximaHoraWidget : SimpleWeatherWidget() {
         val bars = if (minutely.isNotEmpty() && minutely.any { it.precipitation > 0 }) {
             minutely.mapIndexed { i, m ->
                 val minutes = Duration.between(now, m.dateTime).toMinutes().coerceAtLeast(0)
-                (if (i == 0) "Ahora" else "${(minutes + 7) / 15 * 15}'") to (m.precipitation / 2.0).toFloat()
+                (if (i == 0) tr("Ahora", "Now") else "${(minutes + 7) / 15 * 15}'") to (m.precipitation / 2.0).toFloat()
             }
         } else {
             snapshot.upcomingHours(6).mapIndexed { i, h ->
-                (if (i == 0) "Ahora" else shortHour(h.dateTime)) to (h.precipitationProbability ?: 0) / 100f
+                (if (i == 0) tr("Ahora", "Now") else shortHour(h.dateTime)) to (h.precipitationProbability ?: 0) / 100f
             }
         }
         val raining = snapshot.current.precipitation >= 0.1
         val title = when {
-            raining -> "Lloviendo ahora"
+            raining -> tr("Lloviendo ahora", "Raining now")
             snapshot.minutesUntilRain() != null -> rainSoonText(snapshot.minutesUntilRain()!!)
-            else -> "Sin lluvia en las próximas 2 horas"
+            else -> tr("Sin lluvia en las próximas 2 horas", "No rain in the next 2 hours")
         }
         val chartHeight = (size.height - 32.dp - 40.dp * fontScale()).coerceAtLeast(40.dp)
         val chartWidth = size.width - 32.dp
@@ -140,7 +141,7 @@ private fun CiudadesContent(all: List<WeatherSnapshot>) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (snapshot.placeId == CURRENT_PLACE_ID) "📍 ${snapshot.place ?: "Donde estoy"}" else snapshot.place ?: "",
+                        if (snapshot.placeId == CURRENT_PLACE_ID) "📍 ${snapshot.place ?: tr("Donde estoy", "My location")}" else snapshot.place ?: "",
                         maxLines = 1,
                         modifier = GlanceModifier.defaultWeight(),
                         style = TextStyle(color = colors.text, fontSize = 14.sp),
@@ -179,12 +180,14 @@ class CiudadesWidgetReceiver : SimpleWeatherReceiver() {
 
 // --- Indicador: un dato con medidor (UV, calidad del aire, humedad o viento) ---
 
-enum class Metric(val label: String) {
-    UV("Índice UV"),
-    AIR("Calidad del aire"),
-    HUMIDITY("Humedad"),
-    WIND("Viento"),
+enum class Metric(private val es: String, private val en: String) {
+    UV("Índice UV", "UV index"),
+    AIR("Calidad del aire", "Air quality"),
+    HUMIDITY("Humedad", "Humidity"),
+    WIND("Viento", "Wind"),
     ;
+
+    val label: String get() = tr(es, en)
 
     companion object {
         fun from(name: String?) = entries.firstOrNull { it.name == name } ?: UV
@@ -212,17 +215,17 @@ class IndicadorWidget : SimpleWeatherWidget() {
             )
             Metric.AIR -> Triple(
                 aqi?.toString() ?: "—",
-                aqi?.let(WeatherCodes::airQualityLabel) ?: "Sin datos",
+                aqi?.let(WeatherCodes::airQualityLabel) ?: tr("Sin datos", "No data"),
                 ChartBitmap.renderGauge(context, (aqi ?: 0) / 100f, levelColor((aqi ?: 0) / 100.0), px, colors.transparent),
             )
             Metric.HUMIDITY -> Triple(
                 "${current.humidity}%",
-                "Humedad",
+                tr("Humedad", "Humidity"),
                 ChartBitmap.renderGauge(context, current.humidity / 100f, 0xFF42A5F5.toInt(), px, colors.transparent),
             )
             Metric.WIND -> Triple(
                 windText(current.windSpeed).substringBefore(' '),
-                current.windDirection?.let { "${windText(current.windSpeed).substringAfter(' ')} del ${windFrom(it)}" }
+                current.windDirection?.let { "${windText(current.windSpeed).substringAfter(' ')} " + tr("del", "from") + " ${windFrom(it)}" }
                     ?: windText(current.windSpeed).substringAfter(' '),
                 ChartBitmap.renderCompass(context, (current.windDirection ?: 0.0).toFloat(), 0xFF26A69A.toInt(), px, colors.transparent),
             )

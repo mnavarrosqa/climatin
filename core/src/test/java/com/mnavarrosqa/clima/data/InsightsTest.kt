@@ -88,6 +88,25 @@ class InsightsTest {
     }
 
     @Test
+    fun hoyContraAyer() {
+        val text = Insights.headline(snapshot(days = listOf(day(-1, 20.0), day(0, 25.0), day(1, 24.0))))
+        assertEquals("Hoy 5° más cálido que ayer", text)
+    }
+
+    @Test
+    fun enIngles() {
+        val previous = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.ENGLISH)
+            assertEquals("Tomorrow 7° cooler", Insights.headline(snapshot(days = listOf(day(0, 28.0), day(1, 21.0)))))
+            assertEquals("Partly cloudy", WeatherCodes.description(2))
+            assertEquals("Today", dayLabel(now.toLocalDate(), now.toLocalDate()))
+        } finally {
+            java.util.Locale.setDefault(previous)
+        }
+    }
+
+    @Test
     fun puntosCardinales() {
         assertEquals("N", windFrom(5.0))
         assertEquals("SO", windFrom(225.0))

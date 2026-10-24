@@ -28,7 +28,7 @@ object OpenMeteo {
                 "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset," +
                 "uv_index_max,precipitation_probability_max,precipitation_sum,wind_speed_10m_max" +
                 "&minutely_15=precipitation&forecast_minutely_15=8" +
-                "&timezone=auto&forecast_days=14",
+                "&timezone=auto&forecast_days=14&past_days=1",
             latitude,
             longitude,
         ),

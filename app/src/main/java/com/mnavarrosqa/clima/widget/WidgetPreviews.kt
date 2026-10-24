@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
@@ -31,8 +32,8 @@ object WidgetPreviews {
         val today = snapshot.today()
         val icon = WeatherCodes.icon(current.code, current.isDay)
         val description = WeatherCodes.description(current.code)
-        val place = snapshot.place ?: "Tu ubicación"
-        val minMax = today?.let { "Máx ${it.max.degrees()} · Mín ${it.min.degrees()}" } ?: ""
+        val place = snapshot.place ?: tr("Tu ubicación", "Your location")
+        val minMax = today?.let { tr("Máx", "High") + " ${it.max.degrees()} · " + tr("Mín", "Low") + " ${it.min.degrees()}" } ?: ""
 
         val clima = RemoteViews(context.packageName, R.layout.widget_preview_clima).apply {
             setTextViewText(R.id.preview_place, place)

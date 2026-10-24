@@ -13,11 +13,20 @@ android {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 30
         targetSdk = 34
-        versionCode = 2_000_009
-        versionName = "1.7"
+        versionCode = 2_000_010
+        versionName = "1.8"
     }
 
     signingConfigs {
+        // Clave de prueba fija (en el repo) para que cada APK del CI se pueda instalar encima del
+        // anterior. Sin esto, cada compilación genera una clave distinta y Android rechaza la
+        // actualización. No sirve para Play Store: para eso está la clave "release".
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         // Clave propia para Play Store, si el CI (o tu máquina) define las variables. Ver PUBLICAR.md.
         create("release") {
             System.getenv("CLIMATIN_KEYSTORE")?.let { path ->
