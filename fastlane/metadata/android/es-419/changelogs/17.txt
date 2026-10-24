@@ -1,0 +1,1 @@
+Diseño pulido: colores según la temperatura en días y horas, amanecer y atardecer en la fila de horas, títulos de tarjeta nuevos, mejor lectura del texto sobre cielos claros, tarjetas del pronóstico ordenables y ocultables, y animaciones más livianas.

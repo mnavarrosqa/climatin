@@ -173,7 +173,8 @@ class WallpaperPainter {
         sky.draw(
             canvas, width * 1.08f, height, density, clock, scene.kind, scene.isDay, scene.colors,
             background = false,
-            celestial = true,
+            // De día, un sol brillando sobre negro queda raro: solo luna y estrellas de noche.
+            celestial = !scene.isDay,
             cloudAlpha = 0.3f,
         )
         canvas.restore()
@@ -243,15 +244,16 @@ class WallpaperPainter {
     /** Temperatura y lugar abajo a la izquierda, con sombra para leerse sobre cualquier cielo. */
     private fun drawWeather(canvas: Canvas, width: Float, height: Float, density: Float, scene: WallpaperScene) {
         val temperature = scene.temperature ?: return
-        val left = 28f * density
+        // Proporcional al ancho, así en las miniaturas de ajustes no queda enorme y cortado.
+        val left = min(28f * density, width * 0.07f)
         val baseline = height * 0.74f
-        temperaturePaint.textSize = 72f * density
+        temperaturePaint.textSize = min(72f * density, width * 0.2f)
         temperaturePaint.setShadowLayer(12f * density, 0f, 2f * density, 0x55000000)
         canvas.drawText(temperature, left, baseline, temperaturePaint)
         scene.caption?.let {
-            captionPaint.textSize = 16f * density
+            captionPaint.textSize = min(16f * density, width * 0.045f)
             captionPaint.setShadowLayer(8f * density, 0f, 1f * density, 0x66000000)
-            canvas.drawText(it, left + 4f * density, baseline + 28f * density, captionPaint)
+            canvas.drawText(it, left + captionPaint.textSize * 0.25f, baseline + captionPaint.textSize * 1.75f, captionPaint)
         }
     }
 }

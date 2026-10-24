@@ -100,6 +100,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -125,7 +126,12 @@ import com.mnavarrosqa.clima.data.updatedAt
 import kotlin.math.roundToInt
 
 private val OnSky = Color.White
-private val OnSkyVariant = Color.White.copy(alpha = 0.85f)
+private val OnSkyVariant = Color.White.copy(alpha = 0.9f)
+
+/** Sombra suave para que el texto blanco se lea sobre un cielo claro, como en el Clima de Apple. */
+private val SkyShadow = Shadow(Color.Black.copy(alpha = 0.32f), Offset(0f, 2f), 12f)
+
+private fun TextStyle.onSky() = copy(shadow = SkyShadow)
 
 /** Destino de un acceso directo desde un widget: una ciudad y, opcionalmente, un día (yyyy-MM-dd) o el mapa de lluvia. */
 data class DeepLinkTarget(val placeId: String, val day: String?, val radar: Boolean = false)
@@ -308,6 +314,17 @@ private fun WeatherPager(
             isDay = skySnapshot?.current?.isDay ?: true,
             modifier = Modifier.fillMaxSize(),
         )
+        // Velo oscuro arriba: el cielo de día es muy claro y la temperatura blanca se perdía.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.22f),
+                        0.45f to Color.Transparent,
+                    ),
+                ),
+        )
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = {
@@ -418,14 +435,14 @@ private fun CompactHeader(snapshot: WeatherSnapshot?, modifier: Modifier = Modif
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(
             snapshot.place ?: tr("Tu ubicación", "Your location"),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.onSky(),
             color = OnSky,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false),
         )
         Spacer(Modifier.width(10.dp))
-        Text(snapshot.current.temperature.degrees(), style = MaterialTheme.typography.titleLarge, color = OnSky)
+        Text(snapshot.current.temperature.degrees(), style = MaterialTheme.typography.titleLarge.onSky(), color = OnSky)
         Spacer(Modifier.width(4.dp))
         Image(
             painter = painterResource(WeatherCodes.icon(snapshot.current.code, snapshot.current.isDay)),
@@ -576,7 +593,7 @@ fun ForecastContent(
             item {
                 Text(
                     tr("Actualizado a las", "Updated at") + " ${updatedAt(snapshot.fetchedAt)} · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelMedium.onSky(),
                     color = OnSkyVariant,
                     textAlign = TextAlign.Center,
                     modifier = Modifier
@@ -694,13 +711,13 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
             }
             Text(
                 snapshot.place ?: tr("Tu ubicación", "Your location"),
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.headlineSmall.onSky(),
                 color = OnSky,
             )
         }
         Text(
             longDate(snapshot.nowAtPlace().toLocalDate()),
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyLarge.onSky(),
             color = OnSkyVariant,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -729,6 +746,7 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                     fontWeight = FontWeight.Light,
                     fontFamily = Flex,
                     color = OnSky,
+                    style = TextStyle(shadow = SkyShadow),
                     maxLines = 1,
                     softWrap = false,
                 )
@@ -737,18 +755,18 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                     transitionSpec = { fadeIn(tween(400)).togetherWith(fadeOut(tween(200))) },
                     label = "estado",
                 ) { description ->
-                    Text(description, style = MaterialTheme.typography.titleLarge, color = OnSky)
+                    Text(description, style = MaterialTheme.typography.titleLarge.onSky(), color = OnSky)
                 }
                 if (today != null) {
                     Text(
                         tr("Máx", "High") + " ${today.max.degrees()} · " + tr("Mín", "Low") + " ${today.min.degrees()}",
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyLarge.onSky(),
                         color = OnSkyVariant,
                     )
                 }
                 Text(
                     tr("Sensación térmica", "Feels like") + " ${current.feelsLike.degrees()}",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.onSky(),
                     color = OnSkyVariant,
                 )
             }
