@@ -1,0 +1,1 @@
+Arreglo: en modo oscuro, el texto de las tarjetas ya no sale negro sobre fondo oscuro. El atardecer que ya pasó no se marca en la fila de horas.

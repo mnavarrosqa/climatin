@@ -585,7 +585,7 @@ fun ForecastContent(
                 Box(Modifier.reveal(index, shownAt)) {
                     when (which) {
                         ForecastCard.HOURS -> GlassCard(tr("Próximas horas", "Next hours")) {
-                            HourlyChart(snapshot.upcomingHours(24), sunEvents = sunEventsOf(snapshot.days))
+                            HourlyChart(snapshot.upcomingHours(24), sunEvents = sunEventsOf(snapshot.days).filter { it.time.isAfter(snapshot.nowAtPlace()) })
                         }
                         ForecastCard.DAYS -> DailyCard(snapshot, onDay = onDay)
                         ForecastCard.RADAR -> RadarCard(onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })
@@ -837,6 +837,7 @@ private fun AlertCard(alert: WeatherAlert) {
 private fun RadarCard(onClick: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(28.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -888,6 +889,7 @@ private fun InsightChip(text: String) {
 fun GlassCard(title: String?, content: @Composable () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(28.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {

@@ -194,6 +194,7 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
 
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             modifier = Modifier
                 .align(Alignment.BottomCenter)

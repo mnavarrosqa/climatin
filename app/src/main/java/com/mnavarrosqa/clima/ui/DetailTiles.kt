@@ -151,6 +151,7 @@ private fun daylightText(sunrise: String, sunset: String): String {
 private fun DetailTile(detail: Detail, modifier: Modifier) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(24.dp),
         modifier = modifier.clearAndSetSemantics {
             contentDescription = listOfNotNull(detail.label, detail.value, detail.note).joinToString(", ")
