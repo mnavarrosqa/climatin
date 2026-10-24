@@ -554,7 +554,7 @@ fun ForecastContent(
             item {
                 Box(Modifier.reveal(2, shownAt)) {
                     GlassCard(tr("Próximas horas", "Next hours")) {
-                        HourlyChart(snapshot.upcomingHours(24))
+                        HourlyChart(snapshot.upcomingHours(24), sunEvents = sunEventsOf(snapshot.days))
                     }
                 }
             }
@@ -850,17 +850,23 @@ fun GlassCard(title: String?, content: @Composable () -> Unit) {
     ) {
         Column(Modifier.padding(vertical = 16.dp)) {
             if (title != null) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                )
+                CardLabel(title, Modifier.padding(horizontal = 20.dp))
                 Spacer(Modifier.height(12.dp))
             }
             content()
         }
     }
+}
+
+/** Título de tarjeta en versalitas chicas y espaciadas, como en el Clima de Apple. */
+@Composable
+fun CardLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -987,7 +993,8 @@ private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax:
                     transformOrigin = TransformOrigin(0f, 0.5f)
                 }
                 .clip(CircleShape)
-                .background(Brush.horizontalGradient(listOf(colors.primary, colors.tertiary))),
+                // Colores de la escala de temperatura, de la mínima a la máxima del día.
+                .background(Brush.horizontalGradient(TempColors.between(min, max))),
         )
         if (end < 1f) Spacer(Modifier.weight(1f - end))
     }

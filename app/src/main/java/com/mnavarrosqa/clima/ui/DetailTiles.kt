@@ -157,11 +157,7 @@ private fun DetailTile(detail: Detail, modifier: Modifier) {
         },
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-            Text(
-                detail.label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            CardLabel(detail.label)
             Spacer(Modifier.height(6.dp))
             Text(detail.value, style = MaterialTheme.typography.titleLarge)
             if (detail.note != null) {

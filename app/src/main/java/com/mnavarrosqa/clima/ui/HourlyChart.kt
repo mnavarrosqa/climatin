@@ -51,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import java.time.LocalDateTime
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -72,7 +73,7 @@ private val SLOT = 60.dp
 
 /** Curva de temperatura por hora con íconos y probabilidad de lluvia, desplazable de costado. */
 @Composable
-fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
+fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: List<SunEvent> = emptyList()) {
     if (hours.isEmpty()) return
     val colors = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
@@ -94,6 +95,7 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
         selected = if (selected == index) null else index
     }
     val scroll = rememberScrollState()
+    val lineColors = remember(hours) { hours.map { TempColors.of(it.temperature) }.let { if (it.size < 2) it + it else it } }
     val highlight = colors.primary.copy(alpha = 0.12f)
 
     Column(modifier) {
@@ -155,14 +157,19 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
                     fill,
                     Brush.verticalGradient(listOf(colors.primary.copy(alpha = 0.35f), colors.primary.copy(alpha = 0f))),
                 )
-                drawPath(line, colors.primary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+                // La curva cambia de color con la temperatura, como en Mercury Weather.
+                drawPath(
+                    line,
+                    Brush.horizontalGradient(lineColors, startX = points.first().x, endX = points.last().x),
+                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
+                )
             }
             points.forEachIndexed { i, p ->
                 // Cada punto aparece cuando la curva llega hasta él.
                 if (p.x > visibleWidth + slot / 2) return@forEachIndexed
                 val big = i == selected
                 drawCircle(colors.surface, radius = (if (big) 7f else 5f).dp.toPx(), center = p)
-                drawCircle(colors.primary, radius = (if (big) 5f else 3.5f).dp.toPx(), center = p)
+                drawCircle(lineColors[i], radius = (if (big) 5f else 3.5f).dp.toPx(), center = p)
                 val text = measurer.measure(hours[i].temperature.degrees(), labelStyle)
                 drawText(
                     text,
@@ -206,6 +213,16 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    // Si el sol sale o se pone en esta hora, se marca debajo, como en el Clima de Apple.
+                    sunEvents.firstOrNull { !it.time.isBefore(hour.dateTime) && it.time.isBefore(hour.dateTime.plusHours(1)) }?.let { event ->
+                        Text(
+                            (if (event.sunrise) "↑ " else "↓ ") + shortHour(event.time),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFFA726),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }
@@ -275,3 +292,13 @@ private fun Modifier.fadingEdges(fadeStart: Boolean, fadeEnd: Boolean): Modifier
                 blendMode = BlendMode.DstIn,
             )
         }
+
+/** Amanecer o atardecer, para marcarlo en la fila de horas. */
+data class SunEvent(val time: LocalDateTime, val sunrise: Boolean)
+
+fun sunEventsOf(days: List<com.mnavarrosqa.clima.data.Day>): List<SunEvent> = days.flatMap { day ->
+    listOfNotNull(
+        runCatching { SunEvent(LocalDateTime.parse(day.sunrise), true) }.getOrNull(),
+        runCatching { SunEvent(LocalDateTime.parse(day.sunset), false) }.getOrNull(),
+    )
+}
