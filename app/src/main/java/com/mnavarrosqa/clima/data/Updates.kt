@@ -99,6 +99,8 @@ object UpdateInstaller {
             // Se borran APK viejos para no ocupar espacio.
             dir.listFiles()?.forEach { it.delete() }
             val file = java.io.File(dir, "climatin-${release.versionCode}.apk")
+            // Se baja a un archivo aparte y se renombra al final: un APK cortado no queda como bueno.
+            val partial = java.io.File(dir, file.name + ".part")
             val connection = URL(release.apkUrl).openConnection() as HttpURLConnection
             try {
                 connection.connectTimeout = 15_000
@@ -107,7 +109,7 @@ object UpdateInstaller {
                 if (connection.responseCode !in 200..299) error("HTTP ${connection.responseCode}")
                 val total = connection.contentLengthLong
                 connection.inputStream.use { input ->
-                    file.outputStream().use { output ->
+                    partial.outputStream().use { output ->
                         val buffer = ByteArray(64 * 1024)
                         var done = 0L
                         while (true) {
@@ -117,8 +119,13 @@ object UpdateInstaller {
                             done += read
                             if (total > 0) onProgress((done.toFloat() / total).coerceIn(0f, 1f))
                         }
+                        if (total > 0 && done != total) error("Descarga incompleta: $done de $total bytes")
                     }
                 }
+                if (!partial.renameTo(file)) error("No pude guardar la actualización")
+            } catch (failure: Throwable) {
+                partial.delete()
+                throw failure
             } finally {
                 connection.disconnect()
             }

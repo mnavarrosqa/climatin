@@ -100,12 +100,13 @@ class BurbujaWidget : SimpleWeatherWidget() {
                 circle = circle.background(ImageProvider(WidgetBitmaps.cookie(px, sky)), ContentScale.FillBounds)
             }
             else -> circle = circle.background(
-                ImageProvider(WidgetBitmaps.cookie(px, intArrayOf(WidgetBitmaps.fill(context, colors.style)))),
+                // El color ya trae el color fijo y la opacidad elegidos.
+                ImageProvider(WidgetBitmaps.cookie(px, intArrayOf(colors.background?.getColor(context)?.toArgb() ?: WidgetBitmaps.fill(context, colors.style)))),
                 ContentScale.FillBounds,
             )
         }
         Box(
-            modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity<MainActivity>()),
+            modifier = GlanceModifier.fillMaxSize().clickable(widgetTapAction()),
             contentAlignment = Alignment.Center,
         ) {
             Box(modifier = circle, contentAlignment = Alignment.Center) {

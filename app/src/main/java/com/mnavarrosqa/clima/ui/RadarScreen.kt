@@ -4,7 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -69,7 +69,8 @@ private data class Tile(val x: Int, val y: Int)
 /** Mapa de lluvia animado (unas horas atrás y adelante) centrado en el lugar elegido. */
 @Composable
 fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
-    val dark = isSystemInDarkTheme()
+    // El tema elegido en la app (claro u oscuro), no el del sistema.
+    val dark = LocalDarkTheme.current
     var zoom by rememberSaveable { mutableIntStateOf(7) }
     var frames by remember { mutableStateOf<List<RainFrame>>(emptyList()) }
     var overlays by remember { mutableStateOf<List<ImageBitmap>>(emptyList()) }
@@ -143,7 +144,11 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                     frameIndex = loaded.indexOfLast { it.epochSeconds <= now }.coerceAtLeast(0)
                     previousIndex = frameIndex
                 }
-                .onFailure { error = tr("No pude cargar el mapa de lluvia. Revisá la conexión.", "Couldn't load the rain map. Check your connection.") }
+                .onFailure { failure ->
+                    // Si se canceló porque cambió el zoom, no es un error: lo carga el efecto nuevo.
+                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                    error = tr("No pude cargar el mapa de lluvia. Revisá la conexión.", "Couldn't load the rain map. Check your connection.")
+                }
         }
 
         val frame = frames.getOrNull(frameIndex)

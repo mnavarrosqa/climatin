@@ -97,6 +97,15 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
         selected = if (selected == index) null else index
     }
     val scroll = rememberScrollState()
+    // Hora y marca de sol de cada columna, calculadas una vez: Hour.dateTime parsea el texto en
+    // cada acceso y antes se recalculaba en cada recomposición.
+    val labels = remember(hours) { hours.mapIndexed { i, h -> if (i == 0) tr("Ahora", "Now") else shortHour(h.dateTime) } }
+    val sunMarks = remember(hours, sunEvents) {
+        hours.map { hour ->
+            val start = hour.dateTime
+            sunEvents.firstOrNull { !it.time.isBefore(start) && it.time.isBefore(start.plusHours(1)) }
+        }
+    }
     val dark = LocalDarkTheme.current
     val lineColors = remember(hours, dark) {
         hours.map { TempColors.forTheme(TempColors.of(it.temperature), dark) }.let { if (it.size < 2) it + it else it }
@@ -106,7 +115,7 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
     Column(modifier) {
     Column(
         Modifier
-            .fadingEdges(fadeStart = scroll.value > 0, fadeEnd = scroll.canScrollForward)
+            .fadingEdges(fadeStart = { scroll.value > 0 }, fadeEnd = { scroll.canScrollForward })
             .horizontalScroll(scroll)
             .padding(horizontal = 8.dp),
     ) {
@@ -184,8 +193,9 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
         }
         Row {
             hours.forEachIndexed { index, hour ->
+                val label = labels[index]
                 val probability = hour.precipitationProbability ?: 0
-                val time = if (index == 0) tr("Ahora", "Now") else shortHour(hour.dateTime)
+                val time = label
                 Column(
                     // La temperatura está dibujada en el gráfico: TalkBack la lee desde acá.
                     Modifier
@@ -212,14 +222,14 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        if (index == 0) tr("Ahora", "Now") else shortHour(hour.dateTime),
+                        label,
                         style = MaterialTheme.typography.labelMedium,
                         color = colors.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     // Si el sol sale o se pone en esta hora, se marca debajo, como en el Clima de Apple.
-                    sunEvents.firstOrNull { !it.time.isBefore(hour.dateTime) && it.time.isBefore(hour.dateTime.plusHours(1)) }?.let { event ->
+                    sunMarks[index]?.let { event ->
                         Text(
                             (if (event.sunrise) "↑ " else "↓ ") + shortHour(event.time),
                             style = MaterialTheme.typography.labelSmall,
@@ -282,17 +292,17 @@ private fun HourDetail(hour: Hour, isNow: Boolean) {
 }
 
 /** Desvanece los bordes de una fila desplazable para que se note que sigue. */
-private fun Modifier.fadingEdges(fadeStart: Boolean, fadeEnd: Boolean): Modifier =
+private fun Modifier.fadingEdges(fadeStart: () -> Boolean, fadeEnd: () -> Boolean): Modifier =
     graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
         .drawWithContent {
             drawContent()
             val edge = (32.dp.toPx() / size.width).coerceIn(0f, 0.5f)
             drawRect(
                 Brush.horizontalGradient(
-                    0f to if (fadeStart) Color.Transparent else Color.Black,
+                    0f to if (fadeStart()) Color.Transparent else Color.Black,
                     edge to Color.Black,
                     1f - edge to Color.Black,
-                    1f to if (fadeEnd) Color.Transparent else Color.Black,
+                    1f to if (fadeEnd()) Color.Transparent else Color.Black,
                 ),
                 blendMode = BlendMode.DstIn,
             )

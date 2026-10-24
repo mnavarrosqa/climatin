@@ -105,14 +105,21 @@ class WidgetConfigActivity : ComponentActivity() {
         }
 
         val repository = WeatherRepository.get(this)
-        val kind = WidgetCatalog.kindOf(this, appWidgetId)
+        // Un id que no es de un widget de Climatin (otra app o un widget ya quitado): no hay nada que editar.
+        val kind = WidgetCatalog.kindOf(this, appWidgetId) ?: run {
+            finish()
+            return
+        }
         val defaultStyle = kind?.defaultStyle ?: WidgetStyle.SYSTEM
         val others = WidgetCatalog.placed(this).filter { it.second != appWidgetId }
 
         suspend fun read(id: Int): WidgetConfig? = runCatching {
             val glanceId = GlanceAppWidgetManager(this).getGlanceIdBy(id)
             val prefs = getAppWidgetState(this, PreferencesGlanceStateDefinition, glanceId)
-            WidgetConfig.from(prefs, defaultStyle, repository::resolvePlaceId)
+            // Cada widget con su propio estilo por defecto: copiar de un Vistazo sin configurar
+            // tiene que dar Transparente, no el del widget que se está editando.
+            val sourceDefault = WidgetCatalog.kindOf(this, id)?.defaultStyle ?: WidgetStyle.SYSTEM
+            WidgetConfig.from(prefs, sourceDefault, repository::resolvePlaceId)
         }.getOrNull()
 
         setContent {
@@ -137,10 +144,13 @@ class WidgetConfigActivity : ComponentActivity() {
                     onDone = {
                         lifecycleScope.launch {
                             val context = this@WidgetConfigActivity
-                            val glanceId = GlanceAppWidgetManager(context).getGlanceIdBy(appWidgetId)
-                            updateAppWidgetState(context, glanceId) { prefs -> config.writeTo(prefs) }
-                            updateWeatherWidgets(context)
-                            setResult(RESULT_OK, result)
+                            // Si el widget se quitó mientras se editaba, getGlanceIdBy falla: se cierra sin más.
+                            runCatching {
+                                val glanceId = GlanceAppWidgetManager(context).getGlanceIdBy(appWidgetId)
+                                updateAppWidgetState(context, glanceId) { prefs -> config.writeTo(prefs) }
+                                setResult(RESULT_OK, result)
+                            }
+                            runCatching { updateWeatherWidgets(context) }
                             finish()
                         }
                     },

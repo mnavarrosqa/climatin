@@ -41,12 +41,17 @@ object LocationProvider {
     suspend fun current(context: Context): Coordinates? {
         if (!hasPermission(context)) return null
         val client = LocationServices.getFusedLocationProviderClient(context)
-        val location = runCatching {
-            withTimeoutOrNull(15_000) {
-                val token = CancellationTokenSource()
-                client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, token.token).await()
-            } ?: client.lastLocation.await()
-        }.getOrNull() ?: return null
+        // Si vence el tiempo se cancela el pedido a Play Services: si no, sigue buscando y gasta batería.
+        val token = CancellationTokenSource()
+        val location = try {
+            runCatching {
+                withTimeoutOrNull(15_000) {
+                    client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, token.token).await()
+                } ?: client.lastLocation.await()
+            }.getOrNull()
+        } finally {
+            token.cancel()
+        } ?: return null
         return Coordinates(location.latitude, location.longitude)
     }
 

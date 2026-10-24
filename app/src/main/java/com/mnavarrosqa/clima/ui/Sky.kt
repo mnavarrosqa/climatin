@@ -73,3 +73,18 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
         }
     }
 }
+
+/**
+ * El mismo cielo, quieto: para las tarjetas de ciudades, donde varios cielos animados a la vez
+ * gastan batería sin aportar mucho. Se dibuja una vez y solo se redibuja si cambia el tamaño.
+ */
+@Composable
+fun StillSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier) {
+    val painter = remember { SkyPainter() }
+    val gradient = remember(kind, isDay) { skyColors(kind, isDay).toGradient() }
+    Canvas(modifier) {
+        drawIntoCanvas {
+            painter.draw(it.nativeCanvas, size.width, size.height, density, 0.3f, kind, isDay, gradient)
+        }
+    }
+}

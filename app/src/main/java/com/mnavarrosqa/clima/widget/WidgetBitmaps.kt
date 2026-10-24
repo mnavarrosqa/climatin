@@ -25,7 +25,10 @@ import kotlin.math.sin
  */
 object WidgetBitmaps {
 
-    private val cache = LruCache<String, Bitmap>(24)
+    // Por bytes y no por cantidad: una galletita grande pesa más de 1 MB.
+    private val cache = object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
 
     private fun cached(key: String, create: () -> Bitmap): Bitmap =
         cache.get(key) ?: create().also { cache.put(key, it) }

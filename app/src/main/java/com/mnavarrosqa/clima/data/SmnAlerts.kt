@@ -6,6 +6,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.xmlpull.v1.XmlPullParser
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -47,9 +49,13 @@ object SmnAlerts {
             .getOrDefault(emptyList())
             .associateBy { it.link }
         val links = get(FEED) { parseFeedLinks(it) }.take(MAX_ALERTS)
+        // Como mucho 6 descargas a la vez: la primera vez pueden ser decenas de alertas.
+        val gate = Semaphore(6)
         val alerts = coroutineScope {
             links.map { link ->
-                async { known[link] ?: runCatching { get(link) { parseCap(it, link) } }.getOrNull() }
+                async {
+                    known[link] ?: gate.withPermit { runCatching { get(link) { parseCap(it, link) } }.getOrNull() }
+                }
             }.awaitAll().filterNotNull()
         }
         runCatching { file.writeText(json.encodeToString(listSerializer, alerts)) }

@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import com.mnavarrosqa.clima.ui.theme.Flex
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.StateFlow
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -70,6 +71,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -165,7 +167,13 @@ fun WeatherRoute(
     }
 
     LaunchedEffect(hasPermission, places.size) { viewModel.refreshIfStale() }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.resumePendingInstall() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.resumePendingInstall()
+        // El permiso se puede dar o quitar desde los ajustes del sistema.
+        hasPermission = LocationProvider.hasPermission(context)
+    }
+    val currentSnapshot by remember { viewModel.snapshots(CURRENT_PLACE_ID) }
+        .collectAsStateWithLifecycle(viewModel.cached(CURRENT_PLACE_ID))
     // Un acceso directo siempre lleva al pronóstico, aunque estés en otra pantalla.
     LaunchedEffect(deepLink) {
         if (deepLink != null) {
@@ -193,9 +201,13 @@ fun WeatherRoute(
     }
 
     val pages = buildList {
-        if (hasPermission || viewModel.cached(CURRENT_PLACE_ID) != null) add(CURRENT_PLACE_ID)
+        if (hasPermission || currentSnapshot != null) add(CURRENT_PLACE_ID)
         places.forEach { add(it.id) }
     }
+
+    // El pager vive acá, fuera de AnimatedContent: al ir a Ajustes o Ciudades y volver, sigue en
+    // la misma ciudad.
+    val pagerState = rememberPagerState { pages.size }
 
     val radar = radarAt?.split(',')?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 2 }
     val screen = when {
@@ -263,6 +275,7 @@ fun WeatherRoute(
             else -> key(units) {
                 WeatherPager(
                     pages,
+                    pagerState,
                     viewModel,
                     onOpenCities = { showCities = true },
                     onOpenSettings = { showSettings = true },
@@ -320,6 +333,7 @@ private fun PermissionScreen(onAllow: () -> Unit, onPickCity: () -> Unit) {
 @Composable
 private fun WeatherPager(
     pages: List<String>,
+    pagerState: PagerState,
     viewModel: WeatherViewModel,
     onOpenCities: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -330,8 +344,6 @@ private fun WeatherPager(
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val update by viewModel.update.collectAsStateWithLifecycle()
-    val updateProgress by viewModel.updateProgress.collectAsStateWithLifecycle()
-    val pagerState = rememberPagerState { pages.size }
     // Día a abrir en la página de destino del acceso directo.
     var pendingDay by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Alerta a mostrar abierta (desde la notificación del SMN).
@@ -339,10 +351,15 @@ private fun WeatherPager(
     LaunchedEffect(deepLink) {
         val target = deepLink ?: return@LaunchedEffect
         val index = pages.indexOf(target.placeId).takeIf { it >= 0 } ?: 0
-        pagerState.animateScrollToPage(index)
-        pendingDay = target.day?.let { pages[index] to it }
-        openAlert = target.alert
-        onDeepLinkHandled()
+        // Salto directo (sin recorrer las páginas del medio), y el acceso se da por usado aunque
+        // un toque interrumpa: si no, volvería a saltar la próxima vez.
+        try {
+            pendingDay = target.day?.let { pages[index] to it }
+            openAlert = target.alert
+            pagerState.scrollToPage(index)
+        } finally {
+            onDeepLinkHandled()
+        }
     }
     // Un toque leve al cambiar de ciudad y al soltar para actualizar.
     val view = LocalView.current
@@ -403,9 +420,11 @@ private fun WeatherPager(
                         openAlert = openAlert,
                         banner = update?.let { release ->
                             @Composable {
+                                // El avance se lee adentro del aviso: así cada pedacito bajado
+                                // no recompone el pronóstico entero.
                                 UpdateBanner(
                                     release,
-                                    progress = updateProgress,
+                                    progressFlow = viewModel.updateProgress,
                                     onUpdate = { viewModel.downloadUpdate(release) },
                                     onDismiss = viewModel::dismissUpdate,
                                 )
@@ -615,7 +634,7 @@ fun ForecastContent(
                         },
                 ) { Hero(snapshot, isCurrentLocation) }
             }
-            items(snapshot.alerts, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) } }
+            items(snapshot.alerts.distinctBy { it.id }, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) } }
             // Las alertas ya tienen su tarjeta: la frase busca lo siguiente más útil.
             Insights.headline(snapshot.copy(alerts = emptyList()))?.let { text ->
                 item { Box(Modifier.reveal(1, shownAt)) { InsightChip(text) } }
@@ -704,7 +723,8 @@ fun ForecastContent(
 
 /** Aviso de versión nueva, arriba del pronóstico. */
 @Composable
-private fun UpdateBanner(release: AppRelease, progress: Float?, onUpdate: () -> Unit, onDismiss: () -> Unit) {
+private fun UpdateBanner(release: AppRelease, progressFlow: StateFlow<Float?>, onUpdate: () -> Unit, onDismiss: () -> Unit) {
+    val progress by progressFlow.collectAsStateWithLifecycle()
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -719,17 +739,18 @@ private fun UpdateBanner(release: AppRelease, progress: Float?, onUpdate: () -> 
             release.notes?.lineSequence()?.firstOrNull { it.isNotBlank() }?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
             }
-            if (progress != null) {
+            val downloading = progress
+            if (downloading != null) {
                 // Mientras baja: barra de avance en vez de botones.
                 Spacer(Modifier.height(10.dp))
                 WavyProgress(
-                    progress = { progress },
+                    progress = { progressFlow.value ?: 0f },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(end = 8.dp),
                 )
                 Text(
-                    tr("Bajando… ${(progress * 100).roundToInt()}%", "Downloading… ${(progress * 100).roundToInt()}%"),
+                    tr("Bajando… ${(downloading * 100).roundToInt()}%", "Downloading… ${(downloading * 100).roundToInt()}%"),
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
                 )

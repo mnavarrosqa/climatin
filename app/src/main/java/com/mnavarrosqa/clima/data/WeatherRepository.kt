@@ -116,8 +116,15 @@ class WeatherRepository private constructor(private val context: Context) {
      * si hubo. Si ya hay una actualización en curso se espera a esa, y si terminó hace menos de un
      * minuto no se vuelve a pedir (la app, el widget y el refresco periódico pueden coincidir).
      */
-    suspend fun refreshAll(force: Boolean = false): Throwable? = refreshLock.withLock {
-        if (!force && System.currentTimeMillis() - lastRefreshAt < 60_000) return@withLock null
+    suspend fun refreshAll(force: Boolean = false): Throwable? {
+        val requestedAt = System.currentTimeMillis()
+        return refreshLock.withLock { refreshLocked(force, requestedAt) }
+    }
+
+    private suspend fun refreshLocked(force: Boolean, requestedAt: Long): Throwable? {
+        // Si otra actualización terminó mientras esta esperaba, ya está todo fresco (aunque sea forzada).
+        if (lastRefreshAt >= requestedAt) return null
+        if (!force && System.currentTimeMillis() - lastRefreshAt < 60_000) return null
         val (current, others) = coroutineScope {
             val currentJob = async { refreshCurrent() }
             val placeJobs = places().map { place -> async { refreshPlace(place) } }
@@ -127,7 +134,7 @@ class WeatherRepository private constructor(private val context: Context) {
             others.map { it.exceptionOrNull() }).firstOrNull { it != null }
             ?: current.exceptionOrNull()?.takeIf { others.isEmpty() }
         if (firstError == null) lastRefreshAt = System.currentTimeMillis()
-        firstError
+        return firstError
     }
 
     // Las alertas del SMN se piden una vez y sirven para todos los lugares durante 10 minutos.

@@ -38,12 +38,14 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun ForecastSkeleton() {
-    val shimmer by rememberInfiniteTransition(label = "brillo").animateFloat(
+    // Se pasa como lambda y se lee al dibujar: el brillo no recompone la pantalla en cada cuadro.
+    val shimmerState = rememberInfiniteTransition(label = "brillo").animateFloat(
         initialValue = -1f,
         targetValue = 2f,
         animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Restart),
         label = "avance",
     )
+    val shimmer = { shimmerState.value }
     Column(
         Modifier
             .fillMaxWidth()
@@ -66,7 +68,7 @@ fun ForecastSkeleton() {
 }
 
 @Composable
-private fun Bone(shimmer: Float, modifier: Modifier, shape: Shape = RoundedCornerShape(12.dp)) {
+private fun Bone(shimmer: () -> Float, modifier: Modifier, shape: Shape = RoundedCornerShape(12.dp)) {
     Box(
         modifier
             .clip(shape)
@@ -74,7 +76,7 @@ private fun Bone(shimmer: Float, modifier: Modifier, shape: Shape = RoundedCorne
             .drawBehind {
                 // El brillo avanza en diagonal y cruza cada hueso al mismo ritmo.
                 val band = size.width.coerceAtLeast(240.dp.toPx())
-                val x = shimmer * band
+                val x = shimmer() * band
                 drawRect(
                     Brush.linearGradient(
                         listOf(Color.Transparent, Color.White.copy(alpha = 0.22f), Color.Transparent),

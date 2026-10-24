@@ -8,6 +8,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
@@ -62,6 +63,16 @@ fun ClimaGlanceTheme(content: @Composable () -> Unit) {
     }
 }
 
+/** Lo que hace tocar el widget, según lo elegido al personalizarlo. */
+@Composable
+fun widgetTapAction(placeId: String = widgetPlaceId()): androidx.glance.action.Action =
+    when (WidgetTap.from(currentState(WidgetOptionKeys.TAP))) {
+        WidgetTap.APP -> openPlace(placeId)
+        WidgetTap.RADAR -> actionStartActivity<MainActivity>(actionParametersOf(DeepLink.PLACE to placeId, DeepLink.RADAR to true))
+        WidgetTap.NEXT -> actionRunCallback<NextCityAction>()
+        WidgetTap.REFRESH -> actionRunCallback<RefreshAction>()
+    }
+
 /** Widgets que se pueden dibujar fuera de la pantalla de inicio (vista previa al personalizar). */
 interface PreviewableWidget {
     @Composable
@@ -111,8 +122,19 @@ fun widgetColors(snapshot: WeatherSnapshot?, default: WidgetStyle = WidgetStyle.
     // Opacidad elegida: se resuelve el color del tema actual (claro u oscuro) y se le baja el alfa.
     val opacity = (currentState(WidgetOptionKeys.OPACITY) ?: 100).coerceIn(0, 100)
     val context = LocalContext.current
-    fun faded(provider: ColorProvider): ColorProvider =
-        if (opacity >= 100) provider else ColorProvider(provider.getColor(context).copy(alpha = opacity / 100f))
+    // Se resuelven las dos variantes (claro y oscuro): así el widget cambia solo con el modo
+    // noche, sin esperar a que la app lo vuelva a dibujar.
+    fun faded(provider: ColorProvider): ColorProvider {
+        if (opacity >= 100) return provider
+        fun resolved(night: Boolean): androidx.compose.ui.graphics.Color {
+            val config = android.content.res.Configuration(context.resources.configuration).apply {
+                uiMode = (uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                    if (night) android.content.res.Configuration.UI_MODE_NIGHT_YES else android.content.res.Configuration.UI_MODE_NIGHT_NO
+            }
+            return provider.getColor(context.createConfigurationContext(config)).copy(alpha = opacity / 100f)
+        }
+        return androidx.glance.color.ColorProvider(day = resolved(false), night = resolved(true))
+    }
     return when (style) {
         WidgetStyle.SYSTEM -> WidgetColors(
             style = style,
@@ -161,12 +183,7 @@ fun WidgetSurface(
         base = base.cornerRadius(radius).background(colors.backgroundImage, ContentScale.FillBounds)
     }
     val placeId = widgetPlaceId()
-    val tap = when (WidgetTap.from(currentState(WidgetOptionKeys.TAP))) {
-        WidgetTap.APP -> openPlace(placeId)
-        WidgetTap.RADAR -> actionStartActivity<MainActivity>(actionParametersOf(DeepLink.PLACE to placeId, DeepLink.RADAR to true))
-        WidgetTap.NEXT -> actionRunCallback<NextCityAction>()
-        WidgetTap.REFRESH -> actionRunCallback<RefreshAction>()
-    }
+    val tap = widgetTapAction(placeId)
     Box(
         modifier = base
             .clickable(tap)
@@ -202,8 +219,11 @@ object WidgetPrefs {
     val STYLE = stringPreferencesKey("style")
     /** Dato que muestra el widget Indicador. */
     val METRIC = stringPreferencesKey("metric")
-    /** Mientras se actualiza a pedido, el widget muestra "Actualizando…". */
-    val REFRESHING = booleanPreferencesKey("refreshing")
+    /**
+     * Cuándo empezó una actualización a pedido; el widget muestra "Actualizando…" un rato. Es una
+     * hora y no un sí/no: si el proceso muere a mitad de camino, no queda trabado para siempre.
+     */
+    val REFRESHING_AT = longPreferencesKey("refreshing_at")
 }
 
 /** Parámetros de los accesos directos: abren la app en una ciudad y un día. */

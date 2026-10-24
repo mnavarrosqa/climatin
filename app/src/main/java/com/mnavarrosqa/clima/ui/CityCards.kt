@@ -70,7 +70,7 @@ fun CityCard(
             .clip(shape)
             .then(if (onClick != null) Modifier.pressable(onClick) else Modifier),
     ) {
-        AnimatedSky(
+        StillSky(
             kind = snapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
             isDay = snapshot?.current?.isDay ?: true,
             modifier = Modifier.matchParentSize(),

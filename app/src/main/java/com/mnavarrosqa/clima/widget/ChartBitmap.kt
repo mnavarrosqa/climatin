@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -130,7 +131,7 @@ object ChartBitmap {
             canvas.drawCircle(xs[i], ys[i], 3.5f * density, dot)
             if (i % step == 0) {
                 canvas.drawText(hour.temperature.degrees(), xs[i], ys[i] - textSize * 0.6f, labelPaint)
-                val label = if (i == 0) "Ahora" else shortHour(hour.dateTime)
+                val label = if (i == 0) tr("Ahora", "Now") else shortHour(hour.dateTime)
                 canvas.drawText(label, xs[i], heightPx - textSize * 0.3f, hourPaint)
             }
         }

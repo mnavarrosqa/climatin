@@ -14,6 +14,8 @@ import androidx.glance.LocalContext
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.ActionCallback
+import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.currentState
@@ -34,12 +36,13 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 /** Tocar ⟳ en un widget refresca el clima sin abrir la app y muestra "Actualizando…" mientras tanto. */
 class RefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        updateAppWidgetState(context, glanceId) { it[WidgetPrefs.REFRESHING] = true }
-        updateWeatherWidgets(context)
+        updateAppWidgetState(context, glanceId) { it[WidgetPrefs.REFRESHING_AT] = System.currentTimeMillis() }
+        // Solo este widget, para mostrar "Actualizando…"; al final se actualizan todos.
+        updateOne(context, glanceId)
         try {
             WeatherRepository.get(context).refreshAll(force = true)
         } finally {
-            updateAppWidgetState(context, glanceId) { it[WidgetPrefs.REFRESHING] = false }
+            updateAppWidgetState(context, glanceId) { it.remove(WidgetPrefs.REFRESHING_AT) }
             updateWeatherWidgets(context)
         }
     }
@@ -51,10 +54,13 @@ class NextCityAction : ActionCallback {
         val repository = WeatherRepository.get(context)
         val ids = listOf(CURRENT_PLACE_ID) + repository.places().map { it.id }
         updateAppWidgetState(context, glanceId) { prefs ->
+            // Un widget que rota sigue rotando: › no tiene que apagar la rotación.
+            if (prefs[WidgetPrefs.PLACE] == ROTATE_PLACE_ID) return@updateAppWidgetState
             val current = resolveWidgetPlace(context, prefs[WidgetPrefs.PLACE])
             prefs[WidgetPrefs.PLACE] = ids[(ids.indexOf(current) + 1) % ids.size]
         }
-        updateWeatherWidgets(context)
+        // Cambió un solo widget: no hace falta actualizar los once tipos.
+        updateOne(context, glanceId)
     }
 }
 
@@ -66,11 +72,12 @@ fun PlaceLabel(
     fontSize: TextUnit,
     fontWeight: FontWeight = FontWeight.Normal,
 ) {
-    val refreshing = currentState(WidgetPrefs.REFRESHING) == true
+    val refreshing = (currentState(WidgetPrefs.REFRESHING_AT) ?: 0L) > System.currentTimeMillis() - 90_000
     val hasOtherCities = WeatherRepository.get(LocalContext.current).places().isNotEmpty()
     val showPlace = widgetShows(WidgetPart.PLACE)
     val showRefresh = widgetShows(WidgetPart.REFRESH)
-    val showNext = widgetShows(WidgetPart.NEXT)
+    // En un widget que rota, › no tiene sentido: la ciudad cambia sola.
+    val showNext = widgetShows(WidgetPart.NEXT) && currentState(WidgetPrefs.PLACE) != ROTATE_PLACE_ID
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (refreshing || showPlace) {
             Text(
@@ -108,4 +115,13 @@ private fun SmallButton(
             .padding(8.dp)
             .clickable(action()),
     )
+}
+
+/** Redibuja solo el widget tocado. */
+private suspend fun updateOne(context: Context, glanceId: GlanceId) {
+    runCatching {
+        val id = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
+        val kind = WidgetCatalog.kindOf(context, id) ?: return@runCatching updateWeatherWidgets(context)
+        (kind.widget() as GlanceAppWidget).update(context, glanceId)
+    }
 }

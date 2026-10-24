@@ -1,0 +1,1 @@
+Arreglos y optimizaciones: alertas del SMN que no se pierden ni se repiten, resumen diario y aviso de lluvia más fiables, la app vuelve a la ciudad donde estabas al salir de Ajustes, deshacer al quitar una ciudad, widgets que no quedan en "Actualizando…", descargas de actualizaciones verificadas y animaciones más livianas.

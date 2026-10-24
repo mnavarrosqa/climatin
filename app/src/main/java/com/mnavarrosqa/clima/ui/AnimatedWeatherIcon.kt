@@ -33,13 +33,14 @@ fun AnimatedWeatherIcon(code: Int, isDay: Boolean, size: Dp, modifier: Modifier 
         animationSpec = infiniteRepeatable(tween(24_000, easing = LinearEasing), RepeatMode.Restart),
         label = "reloj",
     )
-    val wave = sin(clock * 2 * PI.toFloat() * 3)
     Image(
         painter = painterResource(WeatherCodes.icon(code, isDay)),
         contentDescription = WeatherCodes.description(code),
         modifier = modifier
             .size(size)
             .graphicsLayer {
+                // Se lee el reloj al dibujar, no al componer: el ícono no se recompone en cada cuadro.
+                val wave = sin(clock * 2 * PI.toFloat() * 3)
                 when (kind) {
                     WeatherKind.CLEAR -> if (isDay) {
                         // Vaivén leve en lugar de girar: se siente vivo sin marear.

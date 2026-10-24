@@ -59,14 +59,17 @@ object WidgetPreviews {
                 ClimaWidgetReceiver::class.java to clima,
                 VistazoWidgetReceiver::class.java to vistazo,
                 PildoraWidgetReceiver::class.java to pildora,
-            ).forEach { (receiver, views) ->
+            ).map { (receiver, views) ->
                 manager.setWidgetPreview(
                     ComponentName(context, receiver),
                     AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN,
                     views,
                 )
+            }.let { accepted ->
+                // Si el sistema rechazó alguna (tiene un límite de publicaciones), se reintenta
+                // la próxima vez en lugar de esperar 6 horas.
+                if (accepted.all { it }) prefs.edit().putLong(KEY, now).apply()
             }
-            prefs.edit().putLong(KEY, now).apply()
         }
     }
 }

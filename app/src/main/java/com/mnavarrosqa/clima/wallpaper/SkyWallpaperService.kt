@@ -46,6 +46,8 @@ class SkyWallpaperService : WallpaperService() {
         private var lastFrameNanos = 0L
         private var parallax = 0.5f
         private val ripples = ArrayList<Ripple>()
+        private var powerSave = false
+        private var powerCheckedAt = 0L
 
         /** En modo quieto: un cuadro por minuto para seguir la hora y el clima. */
         private val minuteTick = object : Runnable {
@@ -154,7 +156,13 @@ class SkyWallpaperService : WallpaperService() {
 
         /** Tiempo mínimo entre cuadros según el modo: 60 o 30 por segundo. */
         private fun frameGapNanos(): Long {
-            val saver = settings.motion == WallpaperMotion.SAVER || power.isPowerSaveMode
+            // El ahorro de batería se consulta cada 10 s, no en cada cuadro (en Android viejos es una llamada al sistema).
+            val now = SystemClock.uptimeMillis()
+            if (now - powerCheckedAt > 10_000) {
+                powerCheckedAt = now
+                powerSave = power.isPowerSaveMode
+            }
+            val saver = settings.motion == WallpaperMotion.SAVER || powerSave
             return if (saver) 30_000_000L else 14_000_000L
         }
 

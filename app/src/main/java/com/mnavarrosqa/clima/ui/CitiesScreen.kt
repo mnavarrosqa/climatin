@@ -267,10 +267,15 @@ fun CitiesScreen(
                             }
                             true
                         } else {
-                            false
+                            true
                         }
                     },
                 )
+                // Al deshacer vuelve la misma ciudad (misma clave) y la lista le devuelve su estado
+                // guardado "deslizada": se la pone otra vez en su lugar.
+                LaunchedEffect(Unit) {
+                    if (dismiss.currentValue != SwipeToDismissBoxValue.Settled) dismiss.snapTo(SwipeToDismissBoxValue.Settled)
+                }
                 val itemModifier = if (isDragging) {
                     Modifier
                         .zIndex(1f)
