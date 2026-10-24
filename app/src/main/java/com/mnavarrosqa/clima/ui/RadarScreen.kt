@@ -246,8 +246,8 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                 }
                 Text(
                     tr(
-                        "Lluvia calculada por Open-Meteo (pronóstico, no radar) · Mapa © OpenStreetMap, © CARTO",
-                        "Rain modeled by Open-Meteo (forecast, not radar) · Map © OpenStreetMap, © CARTO",
+                        "Lluvia calculada por Open-Meteo (pronóstico, no radar) · Mapa: Esri, HERE, Garmin, © OpenStreetMap",
+                        "Rain modeled by Open-Meteo (forecast, not radar) · Map: Esri, HERE, Garmin, © OpenStreetMap",
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -14,4 +14,4 @@ Lo que tiene:
 • App para Wear OS con tarjeta y complicación.
 • Unidades a elección: °C/°F, km/h, m/s, mph o nudos, hPa, inHg o mmHg, y 12 o 24 horas.
 
-Sin publicidad ni cuentas. Los datos del clima y el mapa de lluvia vienen de Open-Meteo, y los mapas de OpenStreetMap y CARTO.
+Sin publicidad ni cuentas. Los datos del clima y el mapa de lluvia vienen de Open-Meteo, y el mapa base de Esri.

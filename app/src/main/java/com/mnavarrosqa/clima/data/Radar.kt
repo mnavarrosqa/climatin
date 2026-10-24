@@ -24,8 +24,7 @@ class RainFrame(val epochSeconds: Long, val values: FloatArray)
 /**
  * Mapa de lluvia: la precipitación por hora de Open-Meteo (sin clave) en una grilla de puntos sobre
  * el mapa, de unas horas atrás a unas horas adelante. No es un radar: es lo que calcula el modelo
- * meteorológico, pero cubre todo el mundo y no necesita registro. El fondo es de CARTO (datos de
- * OpenStreetMap).
+ * meteorológico, pero cubre todo el mundo y no necesita registro. El fondo es el mapa gris de Esri.
  */
 object RainMap {
     const val MIN_ZOOM = 4
@@ -100,8 +99,14 @@ object RainMap {
         else -> 0xD9E53935.toInt()
     }
 
-    fun baseTileUrl(dark: Boolean, z: Int, x: Int, y: Int) =
-        "https://basemaps.cartocdn.com/${if (dark) "dark_all" else "light_all"}/$z/$x/$y.png"
+    /**
+     * Mapa base gris de Esri (claro u oscuro): no pide clave y, al ser neutro, deja ver bien la
+     * lluvia encima. Ojo con el orden: Esri usa z/y/x. CARTO pasó a pedir clave en 2026.
+     */
+    fun baseTileUrl(dark: Boolean, z: Int, x: Int, y: Int): String {
+        val layer = if (dark) "World_Dark_Gray_Base" else "World_Light_Gray_Base"
+        return "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/$layer/MapServer/tile/$z/$y/$x"
+    }
 
     suspend fun tile(url: String): ImageBitmap? = withContext(Dispatchers.IO) {
         runCatching {
