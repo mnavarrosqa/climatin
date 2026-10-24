@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima
 
+import android.app.Application
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
@@ -32,7 +33,8 @@ import java.util.Locale
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [34])
+// Una Application vacía: la de la app agenda WorkManager, que en Robolectric no está iniciado.
+@Config(sdk = [34], application = Application::class)
 class CapturasTest {
 
     @get:Rule
