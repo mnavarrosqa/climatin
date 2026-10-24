@@ -7,16 +7,16 @@ plugins {
 
 android {
     namespace = "com.mnavarrosqa.clima"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 23
+        targetSdk = 36
+        versionCode = 24
         // Solo español e inglés: evita que las librerías sumen traducciones que la app no tiene.
         resourceConfigurations += listOf("es", "en")
-        versionName = "1.15.1"
+        versionName = "1.16.0"
     }
 
     signingConfigs {
@@ -93,7 +93,7 @@ android {
 dependencies {
     implementation(project(":core"))
 
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    val composeBom = platform("androidx.compose:compose-bom:2025.10.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -102,14 +102,14 @@ dependencies {
     implementation("androidx.compose.ui:ui-text-google-fonts")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
 
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.7")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     implementation("com.google.android.gms:play-services-location:21.3.0")

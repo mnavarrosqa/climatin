@@ -55,7 +55,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -848,6 +849,7 @@ private fun LocationPage(onBack: () -> Unit, onLocationPermission: (Boolean) -> 
 
 // --- Acerca de ---
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 private fun LazyListScope.aboutPage(viewModel: WeatherViewModel) {
     item {
         val context = LocalContext.current
@@ -867,7 +869,7 @@ private fun LazyListScope.aboutPage(viewModel: WeatherViewModel) {
                 when {
                     fromPlay -> Text(tr("Se actualiza desde Google Play", "Updated through Google Play"), style = MaterialTheme.typography.bodyMedium)
                     progress != null -> {
-                        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                        LinearWavyProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                         Text(tr("Bajando… ${(progress * 100).roundToInt()}%", "Downloading… ${(progress * 100).roundToInt()}%"), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
                     }
                     release != null -> {

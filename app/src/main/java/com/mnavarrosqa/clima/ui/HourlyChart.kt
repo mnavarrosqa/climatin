@@ -93,7 +93,7 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
     var selected by rememberSaveable(hours.first().time) { mutableStateOf<Int?>(null) }
     val view = LocalView.current
     val select: (Int) -> Unit = { index ->
-        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        Haptics.tick(view)
         selected = if (selected == index) null else index
     }
     val scroll = rememberScrollState()

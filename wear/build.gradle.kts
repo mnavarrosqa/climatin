@@ -6,15 +6,15 @@ plugins {
 // App de Wear OS: tarjeta (tile) y complicación con el clima, independiente del teléfono.
 android {
     namespace = "com.mnavarrosqa.clima.wear"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         // Mismo id que la app del teléfono, como pide Play para publicarlas juntas.
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 30
         targetSdk = 34
-        versionCode = 2_000_023
-        versionName = "1.15.1"
+        versionCode = 2_000_024
+        versionName = "1.16.0"
     }
 
     signingConfigs {

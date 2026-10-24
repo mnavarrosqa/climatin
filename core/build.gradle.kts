@@ -7,7 +7,7 @@ plugins {
 // Datos y pronóstico compartidos entre la app del teléfono y la del reloj.
 android {
     namespace = "com.mnavarrosqa.clima.core"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

@@ -89,6 +89,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -305,7 +309,7 @@ private fun PermissionScreen(onAllow: () -> Unit, onPickCity: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun WeatherPager(
     pages: List<String>,
@@ -336,9 +340,7 @@ private fun WeatherPager(
     // Un toque leve al cambiar de ciudad y al soltar para actualizar.
     val view = LocalView.current
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }.drop(1).collect {
-            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-        }
+        snapshotFlow { pagerState.settledPage }.drop(1).collect { Haptics.tick(view) }
     }
     // Páginas cuyo encabezado grande ya quedó arriba, fuera de la vista.
     val collapsed = remember { mutableStateMapOf<String, Boolean>() }
@@ -352,13 +354,25 @@ private fun WeatherPager(
             isDay = skySnapshot?.current?.isDay ?: true,
             modifier = Modifier.fillMaxSize(),
         )
+        val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = {
-                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM.takeIf { Build.VERSION.SDK_INT >= 30 } ?: HapticFeedbackConstants.VIRTUAL_KEY)
+                Haptics.raindrops(view)
                 viewModel.refresh()
             },
+            state = pullState,
             modifier = Modifier.fillMaxSize(),
+            // Indicador de Material 3 Expressive: una forma que se transforma mientras carga.
+            indicator = {
+                PullToRefreshDefaults.LoadingIndicator(
+                    state = pullState,
+                    isRefreshing = refreshing,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding(),
+                )
+            },
         ) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 Box(
@@ -683,6 +697,7 @@ fun ForecastContent(
 }
 
 /** Aviso de versión nueva, arriba del pronóstico. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun UpdateBanner(release: AppRelease, progress: Float?, onUpdate: () -> Unit, onDismiss: () -> Unit) {
     Surface(
@@ -702,7 +717,7 @@ private fun UpdateBanner(release: AppRelease, progress: Float?, onUpdate: () -> 
             if (progress != null) {
                 // Mientras baja: barra de avance en vez de botones.
                 Spacer(Modifier.height(10.dp))
-                LinearProgressIndicator(
+                LinearWavyProgressIndicator(
                     progress = { progress },
                     modifier = Modifier
                         .fillMaxWidth()
