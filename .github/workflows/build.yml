@@ -103,6 +103,15 @@ jobs:
           echo "Las capturas fallaron. Primeros errores:"
           grep -h -A12 "<failure" app/build/test-results/testGithubDebugUnitTest/*.xml 2>/dev/null | head -60 || true
           ls app/build/test-results/testGithubDebugUnitTest 2>/dev/null || echo "Sin resultados: falló antes de correr los tests (ver el paso Capturas de pantalla)."
+      # Capturas chicas en el log (base64), para revisarlas sin bajar el artifact.
+      - name: Capturas en el log
+        if: always() && steps.capturas.outcome == 'success'
+        run: |
+          command -v convert >/dev/null || sudo apt-get install -y -qq imagemagick >/dev/null
+          for f in app/build/capturas/*.png; do
+            [ -f "$f" ] || continue
+            echo "CAPTURA $(basename "$f") $(convert "$f" -resize 480x480\> -quality 80 jpg:- | base64 -w0)"
+          done
       - name: Resumen de publicación
         if: always() && steps.publicar.outcome == 'failure'
         run: |
