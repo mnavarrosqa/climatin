@@ -106,12 +106,19 @@ jobs:
       # Capturas chicas en el log (base64), para revisarlas sin bajar el artifact.
       - name: Capturas en el log
         if: always() && steps.capturas.outcome == 'success'
+        continue-on-error: true
         run: |
-          command -v convert >/dev/null || sudo apt-get install -y -qq imagemagick >/dev/null
-          for f in app/build/capturas/*.png; do
-            [ -f "$f" ] || continue
-            echo "CAPTURA $(basename "$f") $(convert "$f" -resize 480x480\> -quality 80 jpg:- | base64 -w0)"
-          done
+          pip install -q pillow
+          python3 - <<'PY'
+          import base64, glob, io, os
+          from PIL import Image
+          for path in sorted(glob.glob("app/build/capturas/*.png")):
+              image = Image.open(path).convert("RGB")
+              image.thumbnail((480, 480))
+              out = io.BytesIO()
+              image.save(out, "JPEG", quality=80)
+              print("CAPTURA", os.path.basename(path), base64.b64encode(out.getvalue()).decode())
+          PY
       - name: Resumen de publicación
         if: always() && steps.publicar.outcome == 'failure'
         run: |
