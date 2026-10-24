@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ícono temático (Android 13+): sol y nube separados para que no se fundan en una sola forma. -->
+<!-- Ícono temático (Android 13+): la misma "c" y el punto, de un solo color. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <group android:scaleX="0.78" android:scaleY="0.78" android:translateX="9.54" android:translateY="8.2">
-        <path android:fillColor="#FF000000" android:pathData="M25,35a8,8 0 1,0 16,0a8,8 0 1,0 -16,0z" />
-        <path android:fillColor="#FF000000" android:pathData="M38,78 A11,11 0 0,1 36.5,56.1 A16,16 0 0,1 66.6,49.2 A13,13 0 0,1 78.5,78 Z" />
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.78" android:scaleY="0.78">
+        <path
+            android:pathData="M70,40 A22,22 0 1,0 70,68"
+            android:strokeColor="#FF000000"
+            android:strokeWidth="11"
+            android:strokeLineCap="round" />
+        <path android:fillColor="#FF000000" android:pathData="M69,54a5,5 0 1,0 10,0a5,5 0 1,0 -10,0z" />
     </group>
 </vector>

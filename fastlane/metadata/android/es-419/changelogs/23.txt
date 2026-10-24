@@ -1,0 +1,2 @@
+Notificaciones renovadas: aviso de lluvia más a tiempo (cuándo empieza, cuánto dura, qué tan fuerte y cuándo para), alertas del SMN con su nivel y aviso de fin, resumen diario, cambios bruscos (temperatura, heladas, viento, UV), botones "Ver mapa" y "No avisar más hoy", horario de silencio, próximas horas en la barra de estado y avisos de prueba.
+Ícono nuevo: una "c" que es medio sol.
