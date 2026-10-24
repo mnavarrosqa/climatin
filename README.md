@@ -4,8 +4,9 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 
 - **Kotlin + Jetpack Compose** con Material 3 y colores dinámicos (toman el fondo de pantalla en Android 12+).
 - **Cielo animado** detrás del pronóstico: sol, nubes, lluvia, nieve, niebla, estrellas o relámpagos según el clima.
-- **Varias ciudades**: buscador, se desliza entre ellas, se ordenan y se borran en *Ciudades y ajustes*.
-- **Datos**: temperatura por hora en gráfico, 7 días, humedad, viento, UV, calidad del aire, presión, visibilidad, amanecer/atardecer y fase lunar.
+- **Varias ciudades**: buscador, se desliza entre ellas. En *Ciudades y ajustes* son tarjetas con su cielo y temperatura: se quitan deslizando (con deshacer) y se reordenan manteniéndolas apretadas.
+- **Datos**: temperatura por hora en gráfico (tocá una hora para ver sensación térmica, viento y lluvia), humedad, viento, UV, calidad del aire, presión, visibilidad, amanecer/atardecer y fase lunar, con medidores, brújula, arco del sol y dibujo de la luna.
+- **Diseño Material 3 Expressive**: tipografía Google Sans Flex (descargable, con Roboto Flex de respaldo), encabezado que se achica al bajar, carga con esqueleto animado, vibración leve y gesto "atrás" predictivo.
 - **Aviso de lluvia**: "Lluvia en unos 30 min" en la app y en "De un vistazo"; notificación opcional.
 - **Widgets con Glance** (cada uno elige ciudad y estilo al agregarlo o con el lápiz):
   - **Clima ahora**: responsive, de 1x1 (ícono y temperatura) a 4x2 (ciudad, máx/mín y próximas horas).

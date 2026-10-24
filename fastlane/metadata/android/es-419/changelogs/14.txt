@@ -1,0 +1,1 @@
+Diseño renovado: detalles con gráficos (UV, viento, humedad, sol y luna), encabezado que se achica al bajar, punto de la temperatura actual en el día de hoy, tocá una hora para ver su detalle, carga animada, ciudades como tarjetas (deslizá para quitar, mantené apretado para mover), tipografía nueva, vibración leve y gesto atrás predictivo.

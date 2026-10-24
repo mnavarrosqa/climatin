@@ -13,10 +13,10 @@ android {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
+        versionCode = 14
         // Solo español e inglés: evita que las librerías sumen traducciones que la app no tiene.
         resourceConfigurations += listOf("es", "en")
-        versionName = "1.8.3"
+        versionName = "1.9.0"
     }
 
     signingConfigs {
@@ -99,6 +99,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
+    implementation("androidx.compose.ui:ui-text-google-fonts")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("androidx.core:core-ktx:1.15.0")

@@ -24,7 +24,21 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import kotlin.math.absoluteValue
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextOverflow
+import com.mnavarrosqa.clima.ui.theme.Flex
+import kotlinx.coroutines.flow.drop
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -100,7 +114,6 @@ import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.Day
 import com.mnavarrosqa.clima.data.LocationProvider
 import com.mnavarrosqa.clima.data.Insights
-import com.mnavarrosqa.clima.data.Moon
 import com.mnavarrosqa.clima.data.WeatherAlert
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherKind
@@ -108,10 +121,7 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.dayLabel
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.longDate
-import com.mnavarrosqa.clima.data.pressureText
-import com.mnavarrosqa.clima.data.timeOf
 import com.mnavarrosqa.clima.data.updatedAt
-import com.mnavarrosqa.clima.data.windText
 import kotlin.math.roundToInt
 
 private val OnSky = Color.White
@@ -147,8 +157,15 @@ fun WeatherRoute(
             radarAt = null
         }
     }
-    BackHandler(enabled = showCities || radarAt != null) {
-        if (radarAt != null) radarAt = null else showCities = false
+    // Gesto "atrás" predictivo: mientras se desliza, la pantalla se achica y deja ver que vuelve.
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    PredictiveBackHandler(enabled = showCities || radarAt != null) { events ->
+        try {
+            events.collect { backProgress = it.progress }
+            if (radarAt != null) radarAt = null else showCities = false
+        } finally {
+            backProgress = 0f
+        }
     }
 
     val pages = buildList {
@@ -165,6 +182,13 @@ fun WeatherRoute(
     }
     AnimatedContent(
         targetState = screen,
+        modifier = Modifier.graphicsLayer {
+            val scale = 1f - 0.1f * backProgress
+            scaleX = scale
+            scaleY = scale
+            shape = RoundedCornerShape((32 * backProgress).dp)
+            clip = backProgress > 0f
+        },
         transitionSpec = {
             (fadeIn(tween(320, delayMillis = 60)) + scaleIn(tween(380, easing = EaseOutCubic), initialScale = 0.94f))
                 .togetherWith(fadeOut(tween(180)) + scaleOut(tween(220), targetScale = 1.03f))
@@ -262,6 +286,15 @@ private fun WeatherPager(
         pendingDay = target.day?.let { pages[index] to it }
         onDeepLinkHandled()
     }
+    // Un toque leve al cambiar de ciudad y al soltar para actualizar.
+    val view = LocalView.current
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.drop(1).collect {
+            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        }
+    }
+    // Páginas cuyo encabezado grande ya quedó arriba, fuera de la vista.
+    val collapsed = remember { mutableStateMapOf<String, Boolean>() }
     val skyId = pages.getOrElse(pagerState.currentPage) { CURRENT_PLACE_ID }
     val skySnapshot by remember(skyId) { viewModel.snapshots(skyId) }
         .collectAsStateWithLifecycle(viewModel.cached(skyId))
@@ -274,7 +307,10 @@ private fun WeatherPager(
         )
         PullToRefreshBox(
             isRefreshing = refreshing,
-            onRefresh = viewModel::refresh,
+            onRefresh = {
+                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM.takeIf { Build.VERSION.SDK_INT >= 30 } ?: HapticFeedbackConstants.VIRTUAL_KEY)
+                viewModel.refresh()
+            },
             modifier = Modifier.fillMaxSize(),
         ) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
@@ -296,6 +332,7 @@ private fun WeatherPager(
                         onOpenRadar = onOpenRadar,
                         openDay = pendingDay?.takeIf { it.first == pages[page] }?.second,
                         onDayOpened = { pendingDay = null },
+                        onCollapsedChange = { collapsed[pages[page]] = it },
                         banner = update?.let { release ->
                             @Composable {
                                 UpdateBanner(
@@ -310,39 +347,57 @@ private fun WeatherPager(
                 }
             }
         }
+        val isCollapsed = collapsed[skyId] == true
+        val barAlpha by animateFloatAsState(if (isCollapsed) 1f else 0f, Motion.gentle(), label = "barra")
+        val barColor = skyColors(
+            skySnapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
+            skySnapshot?.current?.isDay ?: true,
+        )[0]
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // Al bajar, la barra toma el color de arriba del cielo para que el texto se lea.
+                .background(barColor.copy(alpha = 0.92f * barAlpha))
                 .statusBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Spacer(Modifier.width(48.dp))
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .semantics {
-                        if (pages.size > 1) {
-                            contentDescription = tr(
-                                "Ciudad ${pagerState.currentPage + 1} de ${pages.size}",
-                                "City ${pagerState.currentPage + 1} of ${pages.size}",
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                CompactHeader(
+                    skySnapshot,
+                    Modifier.graphicsLayer {
+                        alpha = barAlpha
+                        translationY = (1f - barAlpha) * 12.dp.toPx()
+                    },
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = 1f - barAlpha }
+                        .semantics {
+                            if (pages.size > 1) {
+                                contentDescription = tr(
+                                    "Ciudad ${pagerState.currentPage + 1} de ${pages.size}",
+                                    "City ${pagerState.currentPage + 1} of ${pages.size}",
+                                )
+                            }
+                        },
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    if (pages.size > 1) {
+                        pages.indices.forEach { index ->
+                            val selected = index == pagerState.currentPage
+                            val width by animateDpAsState(if (selected) 20.dp else 6.dp, Motion.snappy(), label = "punto")
+                            val dotAlpha by animateFloatAsState(if (selected) 1f else 0.45f, label = "punto alfa")
+                            Box(
+                                Modifier
+                                    .padding(horizontal = 3.dp)
+                                    .size(width = width, height = 6.dp)
+                                    .clip(CircleShape)
+                                    .background(OnSky.copy(alpha = dotAlpha)),
                             )
                         }
-                    },
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                if (pages.size > 1) {
-                    pages.indices.forEach { index ->
-                        val selected = index == pagerState.currentPage
-                        val width by animateDpAsState(if (selected) 20.dp else 6.dp, Motion.snappy(), label = "punto")
-                        val dotAlpha by animateFloatAsState(if (selected) 1f else 0.45f, label = "punto alfa")
-                        Box(
-                            Modifier
-                                .padding(horizontal = 3.dp)
-                                .size(width = width, height = 6.dp)
-                                .clip(CircleShape)
-                                .background(OnSky.copy(alpha = dotAlpha)),
-                        )
                     }
                 }
             }
@@ -350,6 +405,30 @@ private fun WeatherPager(
                 Icon(Icons.Rounded.Menu, contentDescription = tr("Ciudades y ajustes", "Cities and settings"), tint = OnSky)
             }
         }
+    }
+}
+
+/** Ciudad, temperatura e ícono en una línea: lo que queda arriba cuando el encabezado grande se va. */
+@Composable
+private fun CompactHeader(snapshot: WeatherSnapshot?, modifier: Modifier = Modifier) {
+    if (snapshot == null) return
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            snapshot.place ?: tr("Tu ubicación", "Your location"),
+            style = MaterialTheme.typography.titleMedium,
+            color = OnSky,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(snapshot.current.temperature.degrees(), style = MaterialTheme.typography.titleLarge, color = OnSky)
+        Spacer(Modifier.width(4.dp))
+        Image(
+            painter = painterResource(WeatherCodes.icon(snapshot.current.code, snapshot.current.isDay)),
+            contentDescription = WeatherCodes.description(snapshot.current.code),
+            modifier = Modifier.size(28.dp),
+        )
     }
 }
 
@@ -361,6 +440,7 @@ private fun WeatherPage(
     onOpenRadar: (Double, Double) -> Unit,
     openDay: String? = null,
     onDayOpened: () -> Unit = {},
+    onCollapsedChange: (Boolean) -> Unit = {},
     banner: (@Composable () -> Unit)? = null,
 ) {
     val snapshot by remember(placeId) { viewModel.snapshots(placeId) }
@@ -386,6 +466,7 @@ private fun WeatherPage(
         onOpenRadar = onOpenRadar,
         shownAt = shownAt,
         banner = banner,
+        onCollapsedChange = onCollapsedChange,
     )
 }
 
@@ -406,7 +487,19 @@ fun ForecastContent(
     onOpenRadar: (Double, Double) -> Unit,
     shownAt: Long = 0L,
     banner: (@Composable () -> Unit)? = null,
+    onCollapsedChange: (Boolean) -> Unit = {},
 ) {
+    // La lista del resumen (la única en pantallas angostas) decide si el encabezado se achica.
+    val summaryState = rememberLazyListState()
+    val heroIndex = listOfNotNull(banner, error).size
+    val collapseAt = with(LocalDensity.current) { 180.dp.roundToPx() }
+    val isCollapsed by remember(heroIndex) {
+        derivedStateOf {
+            summaryState.firstVisibleItemIndex > heroIndex ||
+                (summaryState.firstVisibleItemIndex == heroIndex && summaryState.firstVisibleItemScrollOffset > collapseAt)
+        }
+    }
+    LaunchedEffect(isCollapsed) { onCollapsedChange(isCollapsed) }
     val insets = WindowInsets.systemBars.asPaddingValues()
     val padding = PaddingValues(
         start = 16.dp,
@@ -421,18 +514,31 @@ fun ForecastContent(
         if (banner != null) item { banner() }
         if (error != null) item { ErrorBanner(error) }
         if (snapshot == null) {
+            item { ForecastSkeleton() }
+        } else {
             item {
                 Box(
                     Modifier
-                        .fillMaxWidth()
-                        .height(320.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(tr("Buscando el clima…", "Getting the weather…"), style = MaterialTheme.typography.titleMedium, color = OnSky)
-                }
+                        .reveal(0, shownAt)
+                        .graphicsLayer {
+                            // El encabezado se aleja al bajar: se achica, sube más lento y se apaga.
+                            val scrolled = if (summaryState.firstVisibleItemIndex == heroIndex) {
+                                summaryState.firstVisibleItemScrollOffset.toFloat()
+                            } else if (summaryState.firstVisibleItemIndex > heroIndex) {
+                                size.height
+                            } else {
+                                0f
+                            }
+                            val fraction = (scrolled / size.height.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                            alpha = 1f - fraction
+                            val scale = 1f - 0.12f * fraction
+                            scaleX = scale
+                            scaleY = scale
+                            translationY = scrolled * 0.4f
+                            transformOrigin = TransformOrigin(0f, 0f)
+                        },
+                ) { Hero(snapshot, isCurrentLocation) }
             }
-        } else {
-            item { Box(Modifier.reveal(0, shownAt)) { Hero(snapshot, isCurrentLocation) } }
             items(snapshot.alerts, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert) } }
             // Las alertas ya tienen su tarjeta: la frase busca lo siguiente más útil.
             Insights.headline(snapshot.copy(alerts = emptyList()))?.let { text ->
@@ -450,10 +556,11 @@ fun ForecastContent(
                 }
             }
             item { Box(Modifier.reveal(3, shownAt)) { DailyCard(snapshot, onDay = onDay) } }
+            // En dos paneles, el mapa y los detalles van a la izquierda.
             if (!twoPane) {
                 item { Box(Modifier.reveal(4, shownAt)) { RadarCard(onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) }) } }
+                item { Box(Modifier.reveal(5, shownAt)) { DetailsGrid(snapshot) } }
             }
-            item { Box(Modifier.reveal(5, shownAt)) { DetailsGrid(snapshot) } }
             item {
                 Text(
                     tr("Actualizado a las", "Updated at") + " ${updatedAt(snapshot.fetchedAt)} · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
@@ -471,7 +578,9 @@ fun ForecastContent(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         if (maxWidth >= TwoPaneWidth) {
             Row(Modifier.fillMaxSize()) {
+                // Izquierda: el ahora (temperatura, avisos, mapa y detalles); derecha: lo que viene.
                 LazyColumn(
+                    state = summaryState,
                     modifier = Modifier.weight(0.42f).fillMaxSize(),
                     contentPadding = padding,
                     verticalArrangement = spacing,
@@ -479,6 +588,7 @@ fun ForecastContent(
                     summary()
                     if (snapshot != null) {
                         item { Box(Modifier.reveal(4, shownAt)) { RadarCard(onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) }) } }
+                        item { Box(Modifier.reveal(5, shownAt)) { DetailsGrid(snapshot) } }
                     }
                 }
                 LazyColumn(
@@ -491,6 +601,7 @@ fun ForecastContent(
             }
         } else {
             LazyColumn(
+                state = summaryState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = padding,
                 verticalArrangement = spacing,
@@ -596,7 +707,7 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                 val measurer = rememberTextMeasurer()
                 val measured = measurer.measure(
                     temperatureText,
-                    TextStyle(fontSize = 112.sp, fontWeight = FontWeight.Light),
+                    TextStyle(fontSize = 112.sp, fontWeight = FontWeight.Light, fontFamily = Flex),
                     softWrap = false,
                 ).size.width
                 val fit = (constraints.maxWidth.toFloat() / measured.coerceAtLeast(1)).coerceAtMost(1f) * 0.97f
@@ -607,6 +718,7 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                     fontSize = temperatureSize,
                     lineHeight = temperatureSize,
                     fontWeight = FontWeight.Light,
+                    fontFamily = Flex,
                     color = OnSky,
                     maxLines = 1,
                     softWrap = false,
@@ -758,13 +870,17 @@ private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
     GlassCard(tr("Próximos ${days.size} días", "Next ${days.size} days")) {
         Column(Modifier.padding(horizontal = 8.dp)) {
             days.forEach { day ->
+                val isToday = day.localDate == today
                 DayRow(
                     day,
                     dayLabel(day.localDate, today),
                     weekMin,
                     weekMax,
-                    Modifier
+                    now = snapshot.current.temperature.takeIf { isToday },
+                    modifier = Modifier
                         .clip(RoundedCornerShape(16.dp))
+                        // Hoy se destaca con un fondo suave, como en el clima del Pixel.
+                        .background(if (isToday) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent)
                         .pressable { onDay(day) }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 )
@@ -774,11 +890,12 @@ private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
 }
 
 @Composable
-private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, modifier: Modifier = Modifier) {
+private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, now: Double? = null, modifier: Modifier = Modifier) {
     val probability = day.precipitationProbability ?: 0
     val spoken = buildString {
         append("$label: ${WeatherCodes.description(day.code)}, ")
         append(tr("máxima", "high") + " ${day.max.degrees()}, " + tr("mínima", "low") + " ${day.min.degrees()}")
+        if (now != null) append(", " + tr("ahora", "now") + " ${now.degrees()}")
         if (probability >= 10) append(", " + tr("lluvia", "rain") + " $probability%")
     }
     Row(
@@ -813,6 +930,7 @@ private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, mo
             max = day.max,
             weekMin = weekMin,
             weekMax = weekMax,
+            now = now,
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 10.dp),
@@ -825,9 +943,12 @@ private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, mo
     }
 }
 
-/** Barra con el rango del día dentro del rango de la semana, como en el clima del Pixel. */
+/**
+ * Barra con el rango del día dentro del rango de la semana, como en el clima del Pixel.
+ * En la fila de hoy, un punto marca la temperatura de ahora.
+ */
 @Composable
-private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax: Double, modifier: Modifier) {
+private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax: Double, now: Double?, modifier: Modifier) {
     val span = (weekMax - weekMin).coerceAtLeast(1.0)
     val start = ((min - weekMin) / span).toFloat().coerceIn(0f, 1f)
     val end = ((max - weekMin) / span).toFloat().coerceIn(start, 1f)
@@ -835,9 +956,21 @@ private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax:
     var grown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { grown = true }
     val grow by animateFloatAsState(if (grown) 1f else 0f, tween(700, delayMillis = 250, easing = EaseOutCubic), label = "rango")
+    val nowAt = now?.let { ((it - weekMin) / span).toFloat().coerceIn(0f, 1f) }
+    val dotColor = colors.onSurface
+    val ringColor = colors.surfaceContainer
     Row(
         modifier
-            .height(6.dp)
+            .height(12.dp)
+            .drawWithContent {
+                drawContent()
+                if (nowAt != null && grow > 0.99f) {
+                    val center = Offset(size.width * nowAt, size.height / 2)
+                    drawCircle(ringColor, radius = 6.dp.toPx(), center = center)
+                    drawCircle(dotColor, radius = 4.dp.toPx(), center = center)
+                }
+            }
+            .padding(vertical = 3.dp)
             .clip(CircleShape)
             .background(colors.surfaceContainerHigh),
     ) {
@@ -854,68 +987,5 @@ private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax:
                 .background(Brush.horizontalGradient(listOf(colors.primary, colors.tertiary))),
         )
         if (end < 1f) Spacer(Modifier.weight(1f - end))
-    }
-}
-
-private data class Detail(val label: String, val value: String, val note: String? = null)
-
-@Composable
-private fun DetailsGrid(snapshot: WeatherSnapshot) {
-    val current = snapshot.current
-    val today = snapshot.today()
-    val details = buildList {
-        add(Detail(tr("Humedad", "Humidity"), "${current.humidity}%"))
-        add(Detail(tr("Viento", "Wind"), windText(current.windSpeed)))
-        (current.uvIndex ?: today?.uvIndex)?.let {
-            add(Detail(tr("Índice UV", "UV index"), "${it.roundToInt()}", WeatherCodes.uvLabel(it).replaceFirstChar { c -> c.uppercase() }))
-        }
-        snapshot.airQuality?.europeanAqi?.let {
-            add(Detail(tr("Calidad del aire", "Air quality"), WeatherCodes.airQualityLabel(it), tr("Índice", "Index") + " $it"))
-        }
-        current.pressure?.let { add(Detail(tr("Presión", "Pressure"), pressureText(it))) }
-        current.visibility?.let {
-            val km = it / 1000
-            add(Detail(tr("Visibilidad", "Visibility"), if (km >= 10) "+10 km" else "${km.roundToInt()} km"))
-        }
-        add(Detail(tr("Lluvia hoy", "Rain today"), "${today?.precipitationProbability ?: 0}%"))
-        add(Detail(tr("Luna", "Moon"), Moon.phaseName(snapshot.nowAtPlace().toLocalDate())))
-        today?.let {
-            add(Detail(tr("Amanecer", "Sunrise"), timeOf(it.sunrise)))
-            add(Detail(tr("Atardecer", "Sunset"), timeOf(it.sunset)))
-        }
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        details.chunked(2).forEach { pair ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                pair.forEach { detail -> DetailTile(detail, Modifier.weight(1f)) }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-private fun DetailTile(detail: Detail, modifier: Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
-        shape = RoundedCornerShape(24.dp),
-        modifier = modifier,
-    ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-            Text(
-                detail.label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(detail.value, style = MaterialTheme.typography.titleLarge)
-            if (detail.note != null) {
-                Text(
-                    detail.note,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
     }
 }

@@ -100,6 +100,9 @@ data class Hour(
     val code: Int,
     val precipitationProbability: Int?,
     val isDay: Boolean,
+    val feelsLike: Double? = null,
+    val windSpeed: Double? = null,
+    val precipitation: Double? = null,
 ) {
     val dateTime: LocalDateTime get() = LocalDateTime.parse(time)
 }

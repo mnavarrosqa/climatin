@@ -11,6 +11,30 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.zIndex
+import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,8 +53,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Search
@@ -130,9 +152,21 @@ fun CitiesScreen(
         viewModel.searchCities(query)
     }
 
+    val listState = rememberLazyListState()
+    val reorder = remember { CityReorder(listState).apply { order = places.map { it.id } } }
+    // Mientras no se arrastra, el orden es el guardado.
+    LaunchedEffect(places) { if (reorder.dragging == null) reorder.order = places.map { it.id } }
+    val finishDrag: () -> Unit = {
+        reorder.end()?.let { (id, moved) -> viewModel.movePlace(id, moved) }
+    }
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             LargeTopAppBar(
                 title = { Text(tr("Ciudades y ajustes", "Cities and settings")) },
@@ -146,6 +180,7 @@ fun CitiesScreen(
         },
     ) { padding ->
         LazyColumn(
+            state = listState,
             // En plegables y tablets la lista no se estira de punta a punta.
             modifier = Modifier
                 .fillMaxSize()
@@ -189,50 +224,118 @@ fun CitiesScreen(
             }
 
             item { SectionTitle(tr("Tus ciudades", "Your cities")) }
-            item {
-                Group {
-                    ListItem(
-                        headlineContent = { Text(tr("Donde estoy", "My location")) },
-                        supportingContent = {
-                            Text(if (hasLocation) tr("Según tu ubicación", "Based on your location") else tr("Sin permiso de ubicación", "No location permission"))
-                        },
-                        leadingContent = { Icon(Icons.Rounded.LocationOn, contentDescription = null) },
-                        trailingContent = if (hasLocation) null else {
-                            {
-                                FilledTonalButton(onClick = {
-                                    locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-                                }) { Text(tr("Permitir", "Allow")) }
-                            }
-                        },
-                        colors = groupColors(),
-                    )
-                }
+            item(key = CURRENT_PLACE_ID) {
+                val here by remember { viewModel.snapshots(CURRENT_PLACE_ID) }
+                    .collectAsStateWithLifecycle(viewModel.cached(CURRENT_PLACE_ID))
+                CityCard(
+                    name = here?.place ?: tr("Donde estoy", "My location"),
+                    detail = if (hasLocation) tr("Según tu ubicación", "Based on your location") else tr("Sin permiso de ubicación", "No location permission"),
+                    snapshot = here,
+                    icon = Icons.Rounded.LocationOn,
+                    action = if (hasLocation) null else {
+                        {
+                            FilledTonalButton(onClick = {
+                                locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                            }) { Text(tr("Permitir", "Allow")) }
+                        }
+                    },
+                )
             }
-            items(places, key = { it.id }) { place ->
-                val index = places.indexOf(place)
-                // Al subir, bajar o borrar una ciudad, la lista se reacomoda con animación.
-                Group(Modifier.animateItem().padding(top = 2.dp)) {
-                    ListItem(
-                        headlineContent = { Text(place.name) },
-                        supportingContent = place.detail?.let { detail -> @Composable { Text(detail) } },
-                        leadingContent = { Icon(Icons.Rounded.Place, contentDescription = null) },
-                        trailingContent = {
-                            Row {
-                                IconButton(onClick = { viewModel.movePlace(place.id, -1) }, enabled = index > 0) {
-                                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = tr("Subir", "Move up"))
-                                }
-                                IconButton(
-                                    onClick = { viewModel.movePlace(place.id, 1) },
-                                    enabled = index < places.lastIndex,
-                                ) {
-                                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = tr("Bajar", "Move down"))
-                                }
-                                IconButton(onClick = { viewModel.removePlace(place.id) }) {
-                                    Icon(Icons.Rounded.Delete, contentDescription = tr("Quitar", "Remove"))
+            if (places.isNotEmpty()) {
+                item { Hint(tr("Deslizá una ciudad para quitarla; mantenela apretada para moverla.", "Swipe a city to remove it; press and hold to move it.")) }
+            }
+            items(reorder.order, key = { it }) { id ->
+                val place = places.firstOrNull { it.id == id } ?: return@items
+                val isDragging = reorder.dragging == id
+                val snapshot by remember(id) { viewModel.snapshots(id) }
+                    .collectAsStateWithLifecycle(viewModel.cached(id))
+                val elevation by animateDpAsState(if (isDragging) 12.dp else 0.dp, label = "levantar")
+                val dismiss = rememberSwipeToDismissBoxState(
+                    confirmValueChange = { value ->
+                        if (value != SwipeToDismissBoxValue.Settled) {
+                            // El estado se recuerda entre composiciones: se lee la lista actual.
+                            val current = viewModel.places.value
+                            val index = current.indexOfFirst { it.id == id }
+                            val remaining = current.size - 1
+                            viewModel.removePlace(id)
+                            scope.launch {
+                                val result = snackbar.showSnackbar(
+                                    tr("Quitaste ${place.name}", "Removed ${place.name}"),
+                                    actionLabel = tr("Deshacer", "Undo"),
+                                    duration = SnackbarDuration.Short,
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    viewModel.addPlace(place)
+                                    // Vuelve al final: se lo sube al lugar que tenía.
+                                    viewModel.movePlace(id, index - remaining)
                                 }
                             }
-                        },
-                        colors = groupColors(),
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                )
+                val itemModifier = if (isDragging) {
+                    Modifier
+                        .zIndex(1f)
+                        .graphicsLayer {
+                            translationY = reorder.offset
+                            scaleX = 1.03f
+                            scaleY = 1.03f
+                        }
+                } else {
+                    Modifier.animateItem()
+                }
+                SwipeToDismissBox(
+                    state = dismiss,
+                    modifier = itemModifier.padding(top = 8.dp),
+                    backgroundContent = {
+                        val toStart = dismiss.dismissDirection == SwipeToDismissBoxValue.EndToStart
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(MaterialTheme.colorScheme.errorContainer)
+                                .padding(horizontal = 24.dp),
+                            contentAlignment = if (toStart) Alignment.CenterEnd else Alignment.CenterStart,
+                        ) {
+                            Icon(
+                                Icons.Rounded.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                    },
+                ) {
+                    CityCard(
+                        name = place.name,
+                        detail = place.detail,
+                        snapshot = snapshot,
+                        modifier = Modifier
+                            .shadow(elevation, RoundedCornerShape(24.dp))
+                            .pointerInput(id) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                        reorder.start(id)
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        if (reorder.drag(amount.y)) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                    },
+                                    onDragEnd = { finishDrag() },
+                                    onDragCancel = { finishDrag() },
+                                )
+                            }
+                            // Lectores de pantalla: subir, bajar y quitar como acciones.
+                            .semantics {
+                                customActions = listOf(
+                                    CustomAccessibilityAction(tr("Subir", "Move up")) { viewModel.movePlace(id, -1); true },
+                                    CustomAccessibilityAction(tr("Bajar", "Move down")) { viewModel.movePlace(id, 1); true },
+                                    CustomAccessibilityAction(tr("Quitar", "Remove")) { viewModel.removePlace(id); true },
+                                )
+                            },
                     )
                 }
             }

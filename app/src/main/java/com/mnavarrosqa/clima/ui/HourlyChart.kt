@@ -2,7 +2,34 @@ package com.mnavarrosqa.clima.ui
 
 import com.mnavarrosqa.clima.data.tr
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
+import com.mnavarrosqa.clima.data.windText
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,17 +87,47 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
         reveal.animateTo(1f, tween(1100, easing = EaseOutCubic))
     }
 
+    var selected by rememberSaveable(hours.first().time) { mutableStateOf<Int?>(null) }
+    val view = LocalView.current
+    val select: (Int) -> Unit = { index ->
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        selected = if (selected == index) null else index
+    }
+    val scroll = rememberScrollState()
+    val highlight = colors.primary.copy(alpha = 0.12f)
+
+    Column(modifier) {
     Column(
-        modifier
-            .horizontalScroll(rememberScrollState())
+        Modifier
+            .fadingEdges(fadeStart = scroll.value > 0, fadeEnd = scroll.canScrollForward)
+            .horizontalScroll(scroll)
             .padding(horizontal = 8.dp),
     ) {
         Canvas(
             Modifier
                 .width(SLOT * hours.size)
-                .height(84.dp),
+                .height(84.dp)
+                .pointerInput(hours.size) {
+                    detectTapGestures { tap -> select((tap.x / (size.width / hours.size)).toInt().coerceIn(0, hours.lastIndex)) }
+                },
         ) {
             val slot = size.width / hours.size
+            selected?.let { index ->
+                // La columna de la hora tocada se resalta; abajo sigue en la fila de íconos.
+                val corner = CornerRadius(16.dp.toPx())
+                drawPath(
+                    Path().apply {
+                        addRoundRect(
+                            RoundRect(
+                                Rect(slot * index + 4.dp.toPx(), 0f, slot * (index + 1) - 4.dp.toPx(), size.height),
+                                topLeft = corner,
+                                topRight = corner,
+                            ),
+                        )
+                    },
+                    highlight,
+                )
+            }
             val top = 30.dp.toPx()
             val bottom = size.height - 8.dp.toPx()
             val points = hours.mapIndexed { i, h ->
@@ -103,8 +160,9 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
             points.forEachIndexed { i, p ->
                 // Cada punto aparece cuando la curva llega hasta él.
                 if (p.x > visibleWidth + slot / 2) return@forEachIndexed
-                drawCircle(colors.surface, radius = 5.dp.toPx(), center = p)
-                drawCircle(colors.primary, radius = 3.5.dp.toPx(), center = p)
+                val big = i == selected
+                drawCircle(colors.surface, radius = (if (big) 7f else 5f).dp.toPx(), center = p)
+                drawCircle(colors.primary, radius = (if (big) 5f else 3.5f).dp.toPx(), center = p)
                 val text = measurer.measure(hours[i].temperature.degrees(), labelStyle)
                 drawText(
                     text,
@@ -120,6 +178,10 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
                     // La temperatura está dibujada en el gráfico: TalkBack la lee desde acá.
                     Modifier
                         .width(SLOT)
+                        .padding(horizontal = 4.dp)
+                        .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                        .then(if (index == selected) Modifier.background(highlight) else Modifier)
+                        .clickable { select(index) }
                         .clearAndSetSemantics {
                             contentDescription = "$time: ${hour.temperature.degrees()}, ${WeatherCodes.description(hour.code)}" +
                                 if (probability >= 10) ", " + tr("lluvia", "rain") + " $probability%" else ""
@@ -148,5 +210,68 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
             }
         }
     }
+    AnimatedVisibility(
+        visible = selected != null,
+        enter = fadeIn() + expandVertically(),
+        exit = fadeOut() + shrinkVertically(),
+    ) {
+        selected?.let { hours.getOrNull(it) }?.let { hour -> HourDetail(hour, isNow = selected == 0) }
+    }
+    }
 }
 
+/** Lo que pasa en la hora tocada: estado, sensación térmica, viento y lluvia. */
+@Composable
+private fun HourDetail(hour: Hour, isNow: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    val time = if (isNow) tr("Ahora", "Now") else shortHour(hour.dateTime)
+    val facts = listOfNotNull(
+        hour.feelsLike?.let { tr("Sensación", "Feels like") + " ${it.degrees()}" },
+        hour.windSpeed?.let { tr("Viento", "Wind") + " ${windText(it)}" },
+        hour.precipitationProbability?.takeIf { it > 0 }?.let { tr("Lluvia", "Rain") + " $it%" },
+        hour.precipitation?.takeIf { it > 0 }?.let { "${"%.1f".format(it)} mm" },
+    )
+    Surface(
+        color = colors.secondaryContainer,
+        contentColor = colors.onSecondaryContainer,
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painter = painterResource(WeatherCodes.icon(hour.code, hour.isDay)),
+                contentDescription = null,
+                modifier = Modifier.size(36.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    "$time · ${hour.temperature.degrees()} · ${WeatherCodes.description(hour.code)}",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                if (facts.isNotEmpty()) {
+                    Text(facts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+/** Desvanece los bordes de una fila desplazable para que se note que sigue. */
+private fun Modifier.fadingEdges(fadeStart: Boolean, fadeEnd: Boolean): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            val edge = (32.dp.toPx() / size.width).coerceIn(0f, 0.5f)
+            drawRect(
+                Brush.horizontalGradient(
+                    0f to if (fadeStart) Color.Transparent else Color.Black,
+                    edge to Color.Black,
+                    1f - edge to Color.Black,
+                    1f to if (fadeEnd) Color.Transparent else Color.Black,
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+        }

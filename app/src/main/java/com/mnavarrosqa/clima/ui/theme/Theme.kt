@@ -59,5 +59,5 @@ fun ClimaTheme(content: @Composable () -> Unit) {
     } else {
         if (dark) DarkColors else LightColors
     }
-    MaterialTheme(colorScheme = colors, content = content)
+    MaterialTheme(colorScheme = colors, typography = ClimaTypography, content = content)
 }
