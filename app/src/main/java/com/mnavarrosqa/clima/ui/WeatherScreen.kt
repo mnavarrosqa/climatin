@@ -84,7 +84,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -563,18 +565,32 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
             color = OnSkyVariant,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+            BoxWithConstraints(Modifier.weight(1f)) {
                 val shownTemperature by animateFloatAsState(
                     current.temperature.toFloat(),
                     tween(900, easing = EaseOutCubic),
                     label = "temperatura",
                 )
+                // El número se achica si no entra en una línea (panel angosto o letra grande),
+                // así el "°" nunca baja de renglón.
+                val temperatureText = shownTemperature.toDouble().degrees()
+                val measurer = rememberTextMeasurer()
+                val measured = measurer.measure(
+                    temperatureText,
+                    TextStyle(fontSize = 112.sp, fontWeight = FontWeight.Light),
+                    softWrap = false,
+                ).size.width
+                val fit = (constraints.maxWidth.toFloat() / measured.coerceAtLeast(1)).coerceAtMost(1f) * 0.97f
+                val temperatureSize = 112.sp * fit.coerceAtLeast(0.4f)
+            Column {
                 Text(
-                    shownTemperature.toDouble().degrees(),
-                    fontSize = 112.sp,
-                    lineHeight = 112.sp,
+                    temperatureText,
+                    fontSize = temperatureSize,
+                    lineHeight = temperatureSize,
                     fontWeight = FontWeight.Light,
                     color = OnSky,
+                    maxLines = 1,
+                    softWrap = false,
                 )
                 AnimatedContent(
                     targetState = WeatherCodes.description(current.code),
@@ -596,7 +612,8 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                     color = OnSkyVariant,
                 )
             }
-            AnimatedWeatherIcon(current.code, current.isDay, size = 140.dp)
+            }
+            AnimatedWeatherIcon(current.code, current.isDay, size = 120.dp)
         }
     }
 }
@@ -660,9 +677,9 @@ private fun RadarCard(onClick: () -> Unit) {
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(tr("Radar de lluvia", "Rain radar"), style = MaterialTheme.typography.titleMedium)
+                Text(tr("Mapa de lluvia", "Rain map"), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    tr("Mirá cómo se mueven las nubes de lluvia", "See how the rain clouds move"),
+                    tr("Dónde llueve ahora y en las próximas horas", "Where it rains now and in the next hours"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

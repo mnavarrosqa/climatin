@@ -1,0 +1,1 @@
+Mapa de lluvia sin clave (reemplaza al radar), fondo de pantalla animado más fluido y la temperatura grande ya no se corta en pantallas angostas.

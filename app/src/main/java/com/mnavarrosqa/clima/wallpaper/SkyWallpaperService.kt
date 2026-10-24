@@ -2,10 +2,9 @@ package com.mnavarrosqa.clima.wallpaper
 
 import android.app.WallpaperColors
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
+import android.view.Choreographer
 import android.view.SurfaceHolder
 import androidx.annotation.RequiresApi
 import androidx.compose.ui.graphics.toArgb
@@ -18,22 +17,22 @@ import com.mnavarrosqa.clima.ui.skyColors
 import com.mnavarrosqa.clima.ui.toGradient
 
 /**
- * Fondo de pantalla animado con el cielo del clima de donde estás. Dibuja a unos 20 cuadros por
- * segundo solo mientras se ve, y relee el clima una vez por minuto.
+ * Fondo de pantalla animado con el cielo del clima de donde estás. Dibuja con la GPU a la
+ * frecuencia de la pantalla solo mientras se ve, y relee el clima una vez por minuto.
  */
 class SkyWallpaperService : WallpaperService() {
 
     override fun onCreateEngine(): Engine = SkyEngine()
 
-    private inner class SkyEngine : Engine() {
-        private val handler = Handler(Looper.getMainLooper())
+    private inner class SkyEngine : Engine(), Choreographer.FrameCallback {
+        private val choreographer = Choreographer.getInstance()
         private val painter = SkyPainter()
-        private val start = SystemClock.uptimeMillis()
         private var visible = false
+        private var scheduled = false
         private var kind = WeatherKind.PARTLY
         private var isDay = true
         private var loadedAt = 0L
-        private val drawRunnable = Runnable { drawFrame() }
+        private var lastFrameNanos = 0L
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
@@ -42,17 +41,17 @@ class SkyWallpaperService : WallpaperService() {
 
         override fun onVisibilityChanged(visible: Boolean) {
             this.visible = visible
-            if (visible) drawFrame() else handler.removeCallbacks(drawRunnable)
+            if (visible) schedule() else stop()
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
             visible = false
-            handler.removeCallbacks(drawRunnable)
+            stop()
             super.onSurfaceDestroyed(holder)
         }
 
         override fun onDestroy() {
-            handler.removeCallbacks(drawRunnable)
+            stop()
             super.onDestroy()
         }
 
@@ -67,6 +66,17 @@ class SkyWallpaperService : WallpaperService() {
             )
         }
 
+        private fun schedule() {
+            if (scheduled) return
+            scheduled = true
+            choreographer.postFrameCallback(this)
+        }
+
+        private fun stop() {
+            scheduled = false
+            choreographer.removeFrameCallback(this)
+        }
+
         private fun loadWeather() {
             loadedAt = SystemClock.uptimeMillis()
             val current = WeatherRepository.get(applicationContext).cached()?.current ?: return
@@ -78,13 +88,26 @@ class SkyWallpaperService : WallpaperService() {
             }
         }
 
-        private fun drawFrame() {
+        /**
+         * Un cuadro por refresco de pantalla, con Choreographer: así va sincronizado con el
+         * sistema (sin saltos), y el canvas de hardware lo dibuja la GPU en vez del procesador.
+         */
+        override fun doFrame(frameTimeNanos: Long) {
+            scheduled = false
+            if (!visible) return
+            // En pantallas de 90 o 120 Hz se dibuja a 60 cuadros: igual de fluido, menos batería.
+            if (frameTimeNanos - lastFrameNanos < 14_000_000L) {
+                schedule()
+                return
+            }
+            lastFrameNanos = frameTimeNanos
             if (SystemClock.uptimeMillis() - loadedAt > 60_000) loadWeather()
             val holder = surfaceHolder
-            val canvas = runCatching { holder.lockCanvas() }.getOrNull()
+            val canvas = runCatching { holder.lockHardwareCanvas() }.getOrNull()
+                ?: runCatching { holder.lockCanvas() }.getOrNull()
             if (canvas != null) {
                 try {
-                    val clock = ((SystemClock.uptimeMillis() - start) % SKY_CYCLE_MS) / SKY_CYCLE_MS.toFloat()
+                    val clock = ((frameTimeNanos / 1_000_000L) % SKY_CYCLE_MS) / SKY_CYCLE_MS.toFloat()
                     painter.draw(
                         canvas,
                         canvas.width.toFloat(),
@@ -96,15 +119,10 @@ class SkyWallpaperService : WallpaperService() {
                         skyColors(kind, isDay).toGradient(),
                     )
                 } finally {
-                    holder.unlockCanvasAndPost(canvas)
+                    runCatching { holder.unlockCanvasAndPost(canvas) }
                 }
             }
-            handler.removeCallbacks(drawRunnable)
-            // Lluvia, nieve y tormenta se mueven rápido: 30 cuadros por segundo. El resto, con 15
-            // alcanza para verse fluido y gasta la mitad de batería.
-            val fast = kind == WeatherKind.RAIN || kind == WeatherKind.STORM ||
-                kind == WeatherKind.SNOW || kind == WeatherKind.DRIZZLE
-            if (visible) handler.postDelayed(drawRunnable, if (fast) 33L else 66L)
+            schedule()
         }
     }
 }

@@ -13,7 +13,7 @@ Las coordenadas (redondeadas a unos 10 metros) se envían a:
 - [Open-Meteo](https://open-meteo.com/en/terms) para el pronóstico, la calidad del aire y el buscador de ciudades.
 - El geocodificador de tu teléfono (Google) para saber el nombre de la ciudad.
 
-Para el radar se piden mapas de [CARTO](https://carto.com/legal/) y datos de [RainViewer](https://www.rainviewer.com/terms.html) de la zona que estás mirando. Las alertas se descargan completas del [Servicio Meteorológico Nacional](https://www.smn.gob.ar/) y se filtran en el teléfono, sin enviar tu ubicación.
+Para el mapa de lluvia se piden mapas de [CARTO](https://carto.com/legal/) y la lluvia de Open-Meteo para la zona que estás mirando. Las alertas se descargan completas del [Servicio Meteorológico Nacional](https://www.smn.gob.ar/) y se filtran en el teléfono, sin enviar tu ubicación.
 
 ## Datos guardados en el teléfono
 
