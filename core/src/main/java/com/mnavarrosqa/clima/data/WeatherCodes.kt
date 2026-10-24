@@ -1,7 +1,7 @@
 package com.mnavarrosqa.clima.data
 
 import androidx.annotation.DrawableRes
-import com.mnavarrosqa.clima.R
+import com.mnavarrosqa.clima.core.R
 
 enum class WeatherKind { CLEAR, PARTLY, CLOUDY, FOG, DRIZZLE, RAIN, SNOW, STORM }
 
