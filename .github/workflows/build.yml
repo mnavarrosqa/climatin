@@ -26,3 +26,4 @@ jobs:
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/release/app-release.apk
+            wear/build/outputs/apk/release/wear-release.apk

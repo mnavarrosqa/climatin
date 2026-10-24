@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Climatin"
-include(":app", ":core")
+include(":app", ":core", ":wear")
