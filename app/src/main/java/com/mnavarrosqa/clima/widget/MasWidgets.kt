@@ -34,7 +34,9 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
+import androidx.compose.ui.graphics.toArgb
 import com.mnavarrosqa.clima.MainActivity
+import com.mnavarrosqa.clima.ui.skyColors
 import com.mnavarrosqa.clima.data.Moon
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
@@ -75,13 +77,29 @@ abstract class SimpleWeatherReceiver : GlanceAppWidgetReceiver() {
 class BurbujaWidget : SimpleWeatherWidget() {
     @Composable
     override fun Content(snapshot: WeatherSnapshot) {
-        val colors = widgetColors(default = WidgetStyle.COLOR)
+        val colors = widgetColors(snapshot, default = WidgetStyle.COLOR)
         val size = LocalSize.current
         val diameter = minOf(size.width, size.height)
         val current = snapshot.current
         val today = snapshot.today()
+        // Forma "galletita" de Material 3 Expressive, dibujada como imagen.
+        val context = LocalContext.current
+        val px = (diameter.value * context.resources.displayMetrics.density).toInt()
         var circle = GlanceModifier.size(diameter)
-        if (colors.background != null) circle = circle.cornerRadius(diameter / 2).background(colors.background)
+        when (colors.style) {
+            WidgetStyle.TRANSPARENT -> Unit
+            WidgetStyle.SKY -> {
+                val sky = skyColors(
+                    WeatherCodes.kind(current.code),
+                    current.isDay,
+                ).map { it.toArgb() }.toIntArray()
+                circle = circle.background(ImageProvider(WidgetBitmaps.cookie(px, sky)), ContentScale.FillBounds)
+            }
+            else -> circle = circle.background(
+                ImageProvider(WidgetBitmaps.cookie(px, intArrayOf(WidgetBitmaps.fill(context, colors.style)))),
+                ContentScale.FillBounds,
+            )
+        }
         Box(
             modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity<MainActivity>()),
             contentAlignment = Alignment.Center,
@@ -122,7 +140,7 @@ class BurbujaWidgetReceiver : SimpleWeatherReceiver() {
 class PildoraWidget : SimpleWeatherWidget() {
     @Composable
     override fun Content(snapshot: WeatherSnapshot) {
-        val colors = widgetColors()
+        val colors = widgetColors(snapshot)
         val size = LocalSize.current
         val current = snapshot.current
         val today = snapshot.today()
@@ -181,7 +199,7 @@ class PildoraWidgetReceiver : SimpleWeatherReceiver() {
 class SemanaWidget : SimpleWeatherWidget() {
     @Composable
     override fun Content(snapshot: WeatherSnapshot) {
-        val colors = widgetColors()
+        val colors = widgetColors(snapshot)
         val size = LocalSize.current
         val current = snapshot.current
         // Cada día ocupa unos 30 dp; el encabezado, unos 56.
@@ -209,7 +227,7 @@ class SemanaWidget : SimpleWeatherWidget() {
                 Spacer(GlanceModifier.height(6.dp))
                 snapshot.upcomingDays(dayCount).forEach { day ->
                     Row(
-                        modifier = GlanceModifier.fillMaxWidth().height(30.dp),
+                        modifier = GlanceModifier.fillMaxWidth().height(30.dp).clickable(openDay(snapshot.placeId, day.date)),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -254,7 +272,7 @@ class SemanaWidgetReceiver : SimpleWeatherReceiver() {
 class SolWidget : SimpleWeatherWidget() {
     @Composable
     override fun Content(snapshot: WeatherSnapshot) {
-        val colors = widgetColors()
+        val colors = widgetColors(snapshot)
         val context = LocalContext.current
         val size = LocalSize.current
         val today = snapshot.today()

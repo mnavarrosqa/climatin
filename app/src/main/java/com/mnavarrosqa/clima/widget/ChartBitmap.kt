@@ -100,6 +100,29 @@ object ChartBitmap {
             },
         )
 
+        // Barras de probabilidad de lluvia sobre la línea de las horas.
+        val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = (colors.line and 0x00FFFFFF) or 0x40000000 }
+        val barBase = bottom + textSize * 0.4f
+        val barMax = (bottom - top) * 0.45f
+        val barWidth = (slot * 0.42f).coerceAtMost(14f * density)
+        val rainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = colors.subtle
+            this.textSize = textSize * 0.8f
+            textAlign = Paint.Align.CENTER
+        }
+        hours.forEachIndexed { i, hour ->
+            val probability = (hour.precipitationProbability ?: 0).coerceIn(0, 100)
+            if (probability < 10) return@forEachIndexed
+            val h = barMax * probability / 100f
+            canvas.drawRoundRect(
+                xs[i] - barWidth / 2, barBase - h, xs[i] + barWidth / 2, barBase,
+                barWidth / 2, barWidth / 2, barPaint,
+            )
+            if (probability >= 30 && h > rainPaint.textSize * 1.4f) {
+                canvas.drawText("$probability%", xs[i], barBase - h - rainPaint.textSize * 0.3f, rainPaint)
+            }
+        }
+
         val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colors.line }
         // Con muchas horas se rotula una sí y una no para que no se pisen.
         val step = if (slot < textSize * 2.6f) 2 else 1
@@ -157,6 +180,91 @@ object ChartBitmap {
             canvas.drawCircle(cx, cy, 11f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x55FFC107 })
             canvas.drawCircle(cx, cy, 7f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFB300.toInt() })
         }
+        return bitmap
+    }
+
+    /** Barras de lluvia cada 15 minutos (o por hora) para el widget "Próxima hora". */
+    fun renderRainBars(
+        context: Context,
+        values: List<Pair<String, Float>>,
+        widthPx: Int,
+        heightPx: Int,
+        onTransparent: Boolean,
+    ): Bitmap {
+        val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        if (values.isEmpty()) return bitmap
+        val canvas = Canvas(bitmap)
+        val colors = palette(context, onTransparent)
+        val density = context.resources.displayMetrics.density
+        val textSize = 11f * density * context.resources.configuration.fontScale
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = colors.subtle
+            this.textSize = textSize
+            textAlign = Paint.Align.CENTER
+        }
+        val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = (colors.subtle and 0x00FFFFFF) or 0x26000000 }
+        val bar = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colors.line }
+        val bottom = heightPx - textSize * 1.6f
+        val slot = widthPx.toFloat() / values.size
+        val width = slot * 0.55f
+        values.forEachIndexed { i, (label, fraction) ->
+            val cx = slot * i + slot / 2
+            canvas.drawRoundRect(cx - width / 2, 0f, cx + width / 2, bottom, width / 2, width / 2, track)
+            val h = bottom * fraction.coerceIn(0f, 1f)
+            if (h > 1f) canvas.drawRoundRect(cx - width / 2, bottom - h, cx + width / 2, bottom, width / 2, width / 2, bar)
+            // Se rotula una de cada dos para que no se pisen.
+            if (i % 2 == 0) canvas.drawText(label, cx, heightPx - textSize * 0.3f, labelPaint)
+        }
+        return bitmap
+    }
+
+    /** Medidor circular (arco de 270°) para el widget Indicador. */
+    fun renderGauge(context: Context, fraction: Float, accent: Int, sizePx: Int, onTransparent: Boolean): Bitmap {
+        val size = sizePx.coerceAtLeast(8)
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val colors = palette(context, onTransparent)
+        val density = context.resources.displayMetrics.density
+        val stroke = (size * 0.09f).coerceAtLeast(4f * density)
+        val oval = android.graphics.RectF(stroke, stroke, size - stroke, size - stroke)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = stroke
+            strokeCap = Paint.Cap.ROUND
+        }
+        paint.color = (colors.subtle and 0x00FFFFFF) or 0x33000000
+        canvas.drawArc(oval, 135f, 270f, false, paint)
+        paint.color = accent
+        canvas.drawArc(oval, 135f, 270f * fraction.coerceIn(0.02f, 1f), false, paint)
+        return bitmap
+    }
+
+    /** Brújula con una flecha que apunta hacia donde va el viento. */
+    fun renderCompass(context: Context, fromDegrees: Float, accent: Int, sizePx: Int, onTransparent: Boolean): Bitmap {
+        val size = sizePx.coerceAtLeast(8)
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val colors = palette(context, onTransparent)
+        val density = context.resources.displayMetrics.density
+        val c = size / 2f
+        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = (size * 0.05f).coerceAtLeast(2f * density)
+            color = (colors.subtle and 0x00FFFFFF) or 0x40000000
+        }
+        canvas.drawCircle(c, c, c - ring.strokeWidth, ring)
+        // El viento "viene de" fromDegrees: la flecha apunta al lado opuesto.
+        canvas.save()
+        canvas.rotate(fromDegrees + 180f, c, c)
+        val arrow = Path().apply {
+            moveTo(c, size * 0.12f)
+            lineTo(c + size * 0.13f, c + size * 0.12f)
+            lineTo(c, c + size * 0.02f)
+            lineTo(c - size * 0.13f, c + size * 0.12f)
+            close()
+        }
+        canvas.drawPath(arrow, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accent })
+        canvas.restore()
         return bitmap
     }
 }

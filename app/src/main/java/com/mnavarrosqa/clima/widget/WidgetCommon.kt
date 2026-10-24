@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
@@ -13,6 +14,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.ImageProvider
+import androidx.glance.action.ActionParameters
+import androidx.glance.action.actionParametersOf
+import androidx.glance.layout.ContentScale
 import androidx.glance.LocalContext
 import androidx.glance.currentState
 import androidx.glance.action.clickable
@@ -32,6 +37,8 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.mnavarrosqa.clima.MainActivity
 import com.mnavarrosqa.clima.tile.ClimaTileService
+import com.mnavarrosqa.clima.data.WeatherCodes
+import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.ui.theme.DarkColors
@@ -52,6 +59,7 @@ enum class WidgetStyle(val label: String) {
     SYSTEM("Sistema"),
     COLOR("Color"),
     TRANSPARENT("Transparente"),
+    SKY("Cielo"),
     ;
 
     companion object {
@@ -60,21 +68,32 @@ enum class WidgetStyle(val label: String) {
     }
 }
 
-/** Colores del widget según su estilo. Sin fondo, el texto va en blanco como en el Pixel. */
+/**
+ * Colores del widget según su estilo. Sin fondo o sobre el cielo, el texto va en blanco como en el
+ * Pixel ([transparent] = contenido claro).
+ */
 data class WidgetColors(
+    val style: WidgetStyle,
     val background: ColorProvider?,
     val text: ColorProvider,
     val textVariant: ColorProvider,
     val chip: ColorProvider,
     val onChip: ColorProvider,
     val transparent: Boolean,
+    val backgroundImage: ImageProvider? = null,
 )
 
+private val White = ColorProvider(Color.White)
+private val WhiteVariant = ColorProvider(Color.White.copy(alpha = 0.85f))
+private val WhiteChip = ColorProvider(Color.White.copy(alpha = 0.18f))
+
 @Composable
-fun widgetColors(default: WidgetStyle = WidgetStyle.SYSTEM): WidgetColors {
+fun widgetColors(snapshot: WeatherSnapshot?, default: WidgetStyle = WidgetStyle.SYSTEM): WidgetColors {
     val c = GlanceTheme.colors
-    return when (WidgetStyle.from(currentState(WidgetPrefs.STYLE), default)) {
+    val style = WidgetStyle.from(currentState(WidgetPrefs.STYLE), default)
+    return when (style) {
         WidgetStyle.SYSTEM -> WidgetColors(
+            style = style,
             background = c.widgetBackground,
             text = c.onSurface,
             textVariant = c.onSurfaceVariant,
@@ -83,6 +102,7 @@ fun widgetColors(default: WidgetStyle = WidgetStyle.SYSTEM): WidgetColors {
             transparent = false,
         )
         WidgetStyle.COLOR -> WidgetColors(
+            style = style,
             background = c.primaryContainer,
             text = c.onPrimaryContainer,
             textVariant = c.onPrimaryContainer,
@@ -90,14 +110,17 @@ fun widgetColors(default: WidgetStyle = WidgetStyle.SYSTEM): WidgetColors {
             onChip = c.onPrimary,
             transparent = false,
         )
-        WidgetStyle.TRANSPARENT -> WidgetColors(
-            background = null,
-            text = ColorProvider(Color.White),
-            textVariant = ColorProvider(Color.White.copy(alpha = 0.85f)),
-            chip = ColorProvider(Color.White.copy(alpha = 0.18f)),
-            onChip = ColorProvider(Color.White),
-            transparent = true,
-        )
+        WidgetStyle.TRANSPARENT -> WidgetColors(style, null, White, WhiteVariant, WhiteChip, White, transparent = true)
+        // El fondo es el cielo del clima actual, como el widget del Pixel.
+        WidgetStyle.SKY -> {
+            val current = snapshot?.current
+            val kind = current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
+            WidgetColors(
+                style, null, White, WhiteVariant, WhiteChip, White,
+                transparent = true,
+                backgroundImage = ImageProvider(WidgetBitmaps.sky(kind, current?.isDay ?: true)),
+            )
+        }
     }
 }
 
@@ -111,6 +134,9 @@ fun WidgetSurface(
 ) {
     var base = GlanceModifier.fillMaxSize().appWidgetBackground()
     if (colors.background != null) base = base.cornerRadius(cornerRadius).background(colors.background)
+    if (colors.backgroundImage != null) {
+        base = base.cornerRadius(cornerRadius).background(colors.backgroundImage, ContentScale.FillBounds)
+    }
     Box(
         modifier = base
             .clickable(actionStartActivity<MainActivity>())
@@ -123,7 +149,7 @@ fun WidgetSurface(
 
 @Composable
 fun EmptyWidget() {
-    val colors = widgetColors()
+    val colors = widgetColors(null)
     WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {
         Text(
             "Abrí Climatin para ver el pronóstico",
@@ -144,13 +170,35 @@ fun fontScale(): Float = LocalContext.current.resources.configuration.fontScale.
 object WidgetPrefs {
     val PLACE = stringPreferencesKey("place")
     val STYLE = stringPreferencesKey("style")
+    /** Dato que muestra el widget Indicador. */
+    val METRIC = stringPreferencesKey("metric")
+    /** Mientras se actualiza a pedido, el widget muestra "Actualizando…". */
+    val REFRESHING = booleanPreferencesKey("refreshing")
 }
+
+/** Parámetros de los accesos directos: abren la app en una ciudad y un día. */
+object DeepLink {
+    val PLACE = ActionParameters.Key<String>("place")
+    val DAY = ActionParameters.Key<String>("day")
+}
+
+/** Acción que abre la app en una ciudad. */
+fun openPlace(placeId: String) = actionStartActivity<MainActivity>(actionParametersOf(DeepLink.PLACE to placeId))
+
+/** Acción que abre el detalle de un día en la app. */
+fun openDay(placeId: String, date: String) =
+    actionStartActivity<MainActivity>(actionParametersOf(DeepLink.PLACE to placeId, DeepLink.DAY to date))
+
+/** Ciudad de este widget (si se borró, vuelve a "donde estoy"). */
+@Composable
+fun widgetPlaceId(): String =
+    WeatherRepository.get(LocalContext.current).resolvePlaceId(currentState(WidgetPrefs.PLACE))
 
 /** Pronóstico de la ciudad de este widget; se recompone cuando cambia la caché. */
 @Composable
 fun widgetSnapshot(): WeatherSnapshot? {
     val repository = WeatherRepository.get(LocalContext.current)
-    val placeId = repository.resolvePlaceId(currentState(WidgetPrefs.PLACE))
+    val placeId = widgetPlaceId()
     val snapshot by remember(placeId) { repository.snapshots(placeId) }
         .collectAsState(repository.cached(placeId))
     return snapshot
@@ -165,5 +213,9 @@ suspend fun updateWeatherWidgets(context: Context) {
     runCatching { PildoraWidget().updateAll(context) }
     runCatching { SemanaWidget().updateAll(context) }
     runCatching { SolWidget().updateAll(context) }
+    runCatching { ProximaHoraWidget().updateAll(context) }
+    runCatching { CiudadesWidget().updateAll(context) }
+    runCatching { IndicadorWidget().updateAll(context) }
     ClimaTileService.requestUpdate(context)
+    WidgetPreviews.publish(context)
 }

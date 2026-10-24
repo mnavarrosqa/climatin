@@ -9,6 +9,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +65,7 @@ import com.mnavarrosqa.clima.data.Place
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.degrees
+import com.mnavarrosqa.clima.ui.skyColors
 import com.mnavarrosqa.clima.ui.theme.ClimaTheme
 import kotlinx.coroutines.launch
 
@@ -87,6 +90,7 @@ class WidgetConfigActivity : ComponentActivity() {
         val places = repository.places()
         // "De un vistazo" y "Burbuja" arrancan con otro estilo por defecto.
         val provider = AppWidgetManager.getInstance(this).getAppWidgetInfo(appWidgetId)?.provider?.className.orEmpty()
+        val isIndicator = provider.endsWith("IndicadorWidgetReceiver")
         val defaultStyle = when {
             provider.endsWith("VistazoWidgetReceiver") -> WidgetStyle.TRANSPARENT
             provider.endsWith("BurbujaWidgetReceiver") -> WidgetStyle.COLOR
@@ -97,6 +101,7 @@ class WidgetConfigActivity : ComponentActivity() {
             ClimaTheme {
                 var placeId by remember { mutableStateOf(CURRENT_PLACE_ID) }
                 var style by remember { mutableStateOf(defaultStyle) }
+                var metric by remember { mutableStateOf(Metric.UV) }
                 LaunchedEffect(Unit) {
                     // Al reconfigurar, arranca con lo que el widget ya tenía.
                     runCatching {
@@ -104,6 +109,7 @@ class WidgetConfigActivity : ComponentActivity() {
                         val prefs = getAppWidgetState(this@WidgetConfigActivity, PreferencesGlanceStateDefinition, glanceId)
                         placeId = repository.resolvePlaceId(prefs[WidgetPrefs.PLACE])
                         style = WidgetStyle.from(prefs[WidgetPrefs.STYLE], defaultStyle)
+                        metric = Metric.from(prefs[WidgetPrefs.METRIC])
                     }
                 }
                 ConfigScreen(
@@ -112,6 +118,8 @@ class WidgetConfigActivity : ComponentActivity() {
                     onPlace = { placeId = it },
                     style = style,
                     onStyle = { style = it },
+                    metric = metric.takeIf { isIndicator },
+                    onMetric = { metric = it },
                     previewTemperature = repository.cached(placeId)?.current?.temperature?.degrees() ?: "22°",
                     previewCode = repository.cached(placeId)?.current?.code ?: 2,
                     onDone = {
@@ -121,6 +129,7 @@ class WidgetConfigActivity : ComponentActivity() {
                             updateAppWidgetState(context, glanceId) { prefs ->
                                 prefs[WidgetPrefs.PLACE] = placeId
                                 prefs[WidgetPrefs.STYLE] = style.name
+                                if (isIndicator) prefs[WidgetPrefs.METRIC] = metric.name
                             }
                             updateWeatherWidgets(context)
                             setResult(RESULT_OK, result)
@@ -141,6 +150,8 @@ private fun ConfigScreen(
     onPlace: (String) -> Unit,
     style: WidgetStyle,
     onStyle: (WidgetStyle) -> Unit,
+    metric: Metric?,
+    onMetric: (Metric) -> Unit,
     previewTemperature: String,
     previewCode: Int,
     onDone: () -> Unit,
@@ -168,9 +179,29 @@ private fun ConfigScreen(
             ),
         ) {
             item { StylePreview(style, previewTemperature, previewCode) }
+            if (metric != null) {
+                item { SectionTitle("Dato") }
+                item {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Metric.entries.forEach { option ->
+                            FilterChip(
+                                selected = option == metric,
+                                onClick = { onMetric(option) },
+                                label = { Text(option.label) },
+                            )
+                        }
+                    }
+                }
+            }
             item { SectionTitle("Estilo") }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     WidgetStyle.entries.forEach { option ->
                         FilterChip(
                             selected = option == style,
@@ -220,8 +251,9 @@ private fun StylePreview(style: WidgetStyle, temperature: String, code: Int) {
     val (background, text) = when (style) {
         WidgetStyle.SYSTEM -> colors.surfaceContainerHigh to colors.onSurface
         WidgetStyle.COLOR -> colors.primaryContainer to colors.onPrimaryContainer
-        WidgetStyle.TRANSPARENT -> Color.Transparent to Color.White
+        WidgetStyle.TRANSPARENT, WidgetStyle.SKY -> Color.Transparent to Color.White
     }
+    val skyBrush = Brush.verticalGradient(skyColors(WeatherCodes.kind(code), isDay = true))
     Box(
         Modifier
             .fillMaxWidth()
@@ -230,7 +262,12 @@ private fun StylePreview(style: WidgetStyle, temperature: String, code: Int) {
             .background(Brush.linearGradient(listOf(colors.tertiary, colors.primary))),
         contentAlignment = Alignment.Center,
     ) {
-        Surface(color = background, contentColor = text, shape = RoundedCornerShape(24.dp)) {
+        Surface(
+            color = background,
+            contentColor = text,
+            shape = RoundedCornerShape(24.dp),
+            modifier = if (style == WidgetStyle.SKY) Modifier.background(skyBrush, RoundedCornerShape(24.dp)) else Modifier,
+        ) {
             Row(
                 Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,

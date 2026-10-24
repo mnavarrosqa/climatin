@@ -23,7 +23,7 @@ object OpenMeteo {
             Locale.US,
             "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f" +
                 "&current=temperature_2m,apparent_temperature,relative_humidity_2m,is_day," +
-                "weather_code,wind_speed_10m,precipitation,surface_pressure,visibility,uv_index" +
+                "weather_code,wind_speed_10m,wind_direction_10m,precipitation,surface_pressure,visibility,uv_index" +
                 "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" +
                 "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset," +
                 "uv_index_max,precipitation_probability_max,precipitation_sum,wind_speed_10m_max" +
@@ -145,6 +145,7 @@ object OpenMeteo {
                 pressure = c.pressure,
                 visibility = c.visibility,
                 uvIndex = c.uvIndex,
+                windDirection = c.windDirection,
             ),
             hours = hours,
             days = days,
@@ -176,6 +177,7 @@ data class CurrentDto(
     @SerialName("surface_pressure") val pressure: Double? = null,
     val visibility: Double? = null,
     @SerialName("uv_index") val uvIndex: Double? = null,
+    @SerialName("wind_direction_10m") val windDirection: Double? = null,
 )
 
 @Serializable

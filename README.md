@@ -16,8 +16,12 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
   - **Píldora**: una línea con ícono, temperatura y estado.
   - **Semana**: los próximos días en lista.
   - **Sol**: arco de amanecer a atardecer con la posición del sol.
-- **Estilos de widget**: Sistema (colores del fondo de pantalla), Color (más intenso) o Transparente (texto blanco sobre el fondo de pantalla). Se eligen con vista previa al agregar el widget.
-- **Vistas previas reales** en el selector de widgets, con los colores del sistema en claro y oscuro.
+  - **Próxima hora**: barras de lluvia cada 15 minutos.
+  - **Ciudades**: todas tus ciudades en una lista.
+  - **Indicador**: índice UV, calidad del aire, humedad o viento (con brújula) en un medidor.
+- **En los widgets**: frase del momento ("Llevá paraguas a las 17", "UV alto", "Mañana 6° más fresco"…), ⟳ para actualizar, › para pasar de ciudad, y tocar un día u hora abre su detalle en la app.
+- **Estilos de widget**: Sistema (colores del fondo de pantalla), Color (más intenso), Transparente (texto blanco sobre el fondo de pantalla) o Cielo (degradado del clima actual). Se eligen con vista previa al agregar el widget.
+- **Vistas previas reales** en el selector de widgets, con los colores del sistema en claro y oscuro; en Android 15+, con tus datos.
 - **Radar de lluvia** animado ([RainViewer](https://www.rainviewer.com) sobre mapas de CARTO/OpenStreetMap).
 - **Alertas del SMN** para lugares en Argentina, en la app y como notificación opcional.
 - **Detalle por día** (curva por hora, lluvia total, viento máximo, UV) y pronóstico de **14 días**.

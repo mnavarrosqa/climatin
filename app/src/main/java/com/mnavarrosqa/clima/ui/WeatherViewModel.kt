@@ -72,7 +72,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _refreshing.value = true
             _error.value = null
-            val error = repository.refreshAll()
+            val error = repository.refreshAll(force = true)
             updateWeatherWidgets(getApplication<Application>())
             RainNotifier.check(getApplication<Application>())
             AlertNotifier.check(getApplication<Application>())

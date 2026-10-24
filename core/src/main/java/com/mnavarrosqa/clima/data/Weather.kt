@@ -84,6 +84,7 @@ data class Current(
     val pressure: Double? = null,
     val visibility: Double? = null,
     val uvIndex: Double? = null,
+    val windDirection: Double? = null,
 )
 
 @Serializable

@@ -121,6 +121,14 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                 urls.filter { it !in images }.map { url ->
                     async { Radar.tile(url)?.let { images[url] = it } }
                 }.awaitAll()
+                // Al cambiar de zoom quedan teselas viejas: se descartan para no acumular memoria.
+                if (images.size > 400) {
+                    val keep = tiles.flatMap { t ->
+                        listOf(Radar.baseTileUrl(dark, zoom, t.x, t.y)) +
+                            frames.map { f -> Radar.radarTileUrl(host.orEmpty(), f, zoom, t.x, t.y) }
+                    }.toSet()
+                    images.keys.retainAll(keep)
+                }
             }
             load(tiles.map { Radar.baseTileUrl(dark, zoom, it.x, it.y) })
             val h = host ?: return@LaunchedEffect

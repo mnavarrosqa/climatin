@@ -1,0 +1,1 @@
+Widgets nuevos (Próxima hora, Ciudades e Indicador), estilo Cielo, Burbuja con forma de galletita, frase del momento, lluvia en el gráfico, cambiar de ciudad y abrir un día desde el widget. Actualizaciones más rápidas y livianas.

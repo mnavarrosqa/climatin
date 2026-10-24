@@ -7,13 +7,22 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.OffsetDateTime
 
-/** Alerta del SMN con las zonas que cubre. */
-class CapAlert(val alert: WeatherAlert, val polygons: List<List<Pair<Double, Double>>>) {
+/** Alerta del SMN con las zonas que cubre y el enlace de donde salió. */
+@Serializable
+data class CapAlert(
+    val alert: WeatherAlert,
+    val polygons: List<List<Pair<Double, Double>>>,
+    val link: String = "",
+) {
     fun covers(latitude: Double, longitude: Double) = polygons.any { Geo.contains(it, latitude, longitude) }
 }
 
@@ -25,14 +34,26 @@ object SmnAlerts {
     private const val FEED = "https://ssl.smn.gob.ar/CAP/AR.php"
     private const val MAX_ALERTS = 60
 
-    suspend fun fetchAll(): List<CapAlert> = withContext(Dispatchers.IO) {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val listSerializer = ListSerializer(CapAlert.serializer())
+
+    /**
+     * Cada alerta CAP no cambia una vez publicada: se guardan en disco y solo se descargan las
+     * nuevas. Así cada actualización baja el canal RSS y, normalmente, nada más.
+     */
+    suspend fun fetchAll(cacheDir: File): List<CapAlert> = withContext(Dispatchers.IO) {
+        val file = File(cacheDir, "smn_alertas.json")
+        val known = runCatching { json.decodeFromString(listSerializer, file.readText()) }
+            .getOrDefault(emptyList())
+            .associateBy { it.link }
         val links = get(FEED) { parseFeedLinks(it) }.take(MAX_ALERTS)
-        coroutineScope {
-            links.map { link -> async { runCatching { get(link) { parseCap(it, link) } }.getOrNull() } }
-                .awaitAll()
-                .filterNotNull()
-                .filter { it.isActive() }
+        val alerts = coroutineScope {
+            links.map { link ->
+                async { known[link] ?: runCatching { get(link) { parseCap(it, link) } }.getOrNull() }
+            }.awaitAll().filterNotNull()
         }
+        runCatching { file.writeText(json.encodeToString(listSerializer, alerts)) }
+        alerts.filter { it.isActive() }
     }
 
     private fun CapAlert.isActive(): Boolean {
@@ -113,6 +134,7 @@ object SmnAlerts {
         return CapAlert(
             WeatherAlert(identifier, name, severity, headline, description, onset, expires),
             polygons,
+            link,
         )
     }
 }

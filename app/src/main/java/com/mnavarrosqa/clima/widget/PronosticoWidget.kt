@@ -10,6 +10,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
+import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
@@ -27,6 +28,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
+import com.mnavarrosqa.clima.data.Insights
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.dayLabel
@@ -55,10 +57,10 @@ class PronosticoWidget : GlanceAppWidget() {
 
 @Composable
 private fun PronosticoContent(snapshot: WeatherSnapshot) {
-    val colors = widgetColors()
+    val colors = widgetColors(snapshot)
     val size = LocalSize.current
     // Con las horas además de los días hace falta más alto; se corrige por el tamaño de letra.
-    val large = size.height >= 270.dp * fontScale()
+    val large = size.height >= 290.dp * fontScale()
     val dayCount = if (size.width >= 300.dp) 5 else 4
     val current = snapshot.current
     WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {
@@ -84,7 +86,15 @@ private fun PronosticoContent(snapshot: WeatherSnapshot) {
                 }
             }
             if (large) {
-                Spacer(GlanceModifier.height(12.dp))
+                Insights.headline(snapshot)?.let {
+                    Spacer(GlanceModifier.height(6.dp))
+                    Text(
+                        it,
+                        maxLines = 1,
+                        style = TextStyle(color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                    )
+                }
+                Spacer(GlanceModifier.height(10.dp))
                 HoursRow(snapshot, count = 5, colors = colors)
             }
             Spacer(GlanceModifier.height(12.dp))
@@ -95,12 +105,12 @@ private fun PronosticoContent(snapshot: WeatherSnapshot) {
 
 @Composable
 private fun DaysRow(snapshot: WeatherSnapshot, count: Int) {
-    val colors = widgetColors()
+    val colors = widgetColors(snapshot)
     val today = snapshot.nowAtPlace().toLocalDate()
     Row(modifier = GlanceModifier.fillMaxWidth()) {
         snapshot.upcomingDays(count).forEach { day ->
             Column(
-                modifier = GlanceModifier.defaultWeight(),
+                modifier = GlanceModifier.defaultWeight().clickable(openDay(snapshot.placeId, day.date)),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(

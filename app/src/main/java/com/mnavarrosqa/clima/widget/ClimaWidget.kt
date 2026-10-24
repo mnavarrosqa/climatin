@@ -10,6 +10,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
+import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
@@ -28,6 +29,7 @@ import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import com.mnavarrosqa.clima.data.Insights
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.degrees
@@ -65,9 +67,9 @@ private fun ClimaContent(snapshot: WeatherSnapshot) {
     val scale = fontScale()
     when {
         size.width >= ClimaWidget.WIDE.width -> when {
-            size.height >= 236.dp * scale -> WideContent(snapshot, compact = false, showHours = true)
+            size.height >= 254.dp * scale -> WideContent(snapshot, compact = false, showHours = true)
             size.height >= 176.dp * scale -> WideContent(snapshot, compact = true, showHours = true)
-            size.height >= 132.dp * scale -> WideContent(snapshot, compact = false, showHours = false)
+            size.height >= 150.dp * scale -> WideContent(snapshot, compact = false, showHours = false)
             else -> WideContent(snapshot, compact = true, showHours = false)
         }
         size.height >= ClimaWidget.SQUARE.height && size.width >= ClimaWidget.SQUARE.width -> SquareContent(snapshot)
@@ -77,7 +79,7 @@ private fun ClimaContent(snapshot: WeatherSnapshot) {
 
 @Composable
 private fun TinyContent(snapshot: WeatherSnapshot) {
-    val colors = widgetColors()
+    val colors = widgetColors(snapshot)
     val current = snapshot.current
     WidgetSurface(colors) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -97,7 +99,7 @@ private fun TinyContent(snapshot: WeatherSnapshot) {
 
 @Composable
 private fun SquareContent(snapshot: WeatherSnapshot) {
-    val colors = widgetColors()
+    val colors = widgetColors(snapshot)
     val current = snapshot.current
     WidgetSurface(colors, modifier = GlanceModifier.padding(12.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -121,7 +123,7 @@ private fun SquareContent(snapshot: WeatherSnapshot) {
 
 @Composable
 private fun WideContent(snapshot: WeatherSnapshot, compact: Boolean, showHours: Boolean) {
-    val colors = widgetColors()
+    val colors = widgetColors(snapshot)
     val current = snapshot.current
     val today = snapshot.today()
     val minMax = today?.let { "Máx ${it.max.degrees()} · Mín ${it.min.degrees()}" }
@@ -162,6 +164,14 @@ private fun WideContent(snapshot: WeatherSnapshot, compact: Boolean, showHours: 
                         if (minMax != null) {
                             Text(minMax, maxLines = 1, style = TextStyle(color = colors.textVariant, fontSize = 12.sp))
                         }
+                        // La frase del momento: lluvia, UV, cambio de temperatura, atardecer…
+                        Insights.headline(snapshot)?.let {
+                            Text(
+                                it,
+                                maxLines = 1,
+                                style = TextStyle(color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                            )
+                        }
                     }
                 }
                 Image(
@@ -187,6 +197,7 @@ fun HoursRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {
             .fillMaxWidth()
             .background(colors.chip)
             .cornerRadius(16.dp)
+            .clickable(openDay(snapshot.placeId, snapshot.nowAtPlace().toLocalDate().toString()))
             .padding(vertical = 6.dp),
     ) {
         hours.forEachIndexed { index, hour ->

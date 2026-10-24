@@ -27,6 +27,18 @@ fun Double.degrees(): String {
     return "${value.roundToInt()}°"
 }
 
+/** Diferencia de temperatura ("6°"), convertida si se usan Fahrenheit. */
+fun Double.degreesDelta(): String {
+    val value = if (Units.current.temperature == TemperatureUnit.FAHRENHEIT) this * 9 / 5 else this
+    return "${kotlin.math.abs(value).roundToInt()}°"
+}
+
+/** Punto cardinal de donde viene el viento. */
+fun windFrom(degrees: Double): String {
+    val names = listOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")
+    return names[(((degrees % 360) + 360) % 360 / 45.0).roundToInt() % 8]
+}
+
 fun windText(kmh: Double): String {
     val unit = Units.current.wind
     val value = when (unit) {

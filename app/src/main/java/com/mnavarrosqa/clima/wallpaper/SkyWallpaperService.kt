@@ -100,7 +100,11 @@ class SkyWallpaperService : WallpaperService() {
                 }
             }
             handler.removeCallbacks(drawRunnable)
-            if (visible) handler.postDelayed(drawRunnable, 50)
+            // Lluvia, nieve y tormenta se mueven rápido: 30 cuadros por segundo. El resto, con 15
+            // alcanza para verse fluido y gasta la mitad de batería.
+            val fast = kind == WeatherKind.RAIN || kind == WeatherKind.STORM ||
+                kind == WeatherKind.SNOW || kind == WeatherKind.DRIZZLE
+            if (visible) handler.postDelayed(drawRunnable, if (fast) 33L else 66L)
         }
     }
 }

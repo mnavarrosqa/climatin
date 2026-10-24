@@ -55,7 +55,7 @@ class GraficoWidget : GlanceAppWidget() {
 
 @Composable
 private fun GraficoContent(snapshot: WeatherSnapshot) {
-    val colors = widgetColors()
+    val colors = widgetColors(snapshot)
     val context = LocalContext.current
     val size = LocalSize.current
     val current = snapshot.current

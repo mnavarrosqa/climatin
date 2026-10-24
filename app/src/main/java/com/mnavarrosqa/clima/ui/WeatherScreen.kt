@@ -46,6 +46,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
@@ -81,6 +82,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.Day
 import com.mnavarrosqa.clima.data.LocationProvider
+import com.mnavarrosqa.clima.data.Insights
 import com.mnavarrosqa.clima.data.Moon
 import com.mnavarrosqa.clima.data.WeatherAlert
 import com.mnavarrosqa.clima.data.WeatherCodes
@@ -90,7 +92,6 @@ import com.mnavarrosqa.clima.data.dayLabel
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.longDate
 import com.mnavarrosqa.clima.data.pressureText
-import com.mnavarrosqa.clima.data.rainSoonText
 import com.mnavarrosqa.clima.data.timeOf
 import com.mnavarrosqa.clima.data.updatedAt
 import com.mnavarrosqa.clima.data.windText
@@ -99,8 +100,15 @@ import kotlin.math.roundToInt
 private val OnSky = Color.White
 private val OnSkyVariant = Color.White.copy(alpha = 0.85f)
 
+/** Destino de un acceso directo desde un widget: una ciudad y, opcionalmente, un día (yyyy-MM-dd). */
+data class DeepLinkTarget(val placeId: String, val day: String?)
+
 @Composable
-fun WeatherRoute(viewModel: WeatherViewModel = viewModel()) {
+fun WeatherRoute(
+    deepLink: DeepLinkTarget? = null,
+    onDeepLinkHandled: () -> Unit = {},
+    viewModel: WeatherViewModel = viewModel(),
+) {
     val context = LocalContext.current
     val places by viewModel.places.collectAsStateWithLifecycle()
     val units by viewModel.units.collectAsStateWithLifecycle()
@@ -114,6 +122,13 @@ fun WeatherRoute(viewModel: WeatherViewModel = viewModel()) {
     }
 
     LaunchedEffect(hasPermission, places.size) { viewModel.refreshIfStale() }
+    // Un acceso directo siempre lleva al pronóstico, aunque estés en otra pantalla.
+    LaunchedEffect(deepLink) {
+        if (deepLink != null) {
+            showCities = false
+            radarAt = null
+        }
+    }
     BackHandler(enabled = showCities || radarAt != null) {
         if (radarAt != null) radarAt = null else showCities = false
     }
@@ -159,6 +174,8 @@ fun WeatherRoute(viewModel: WeatherViewModel = viewModel()) {
                     viewModel,
                     onOpenCities = { showCities = true },
                     onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
+                    deepLink = deepLink,
+                    onDeepLinkHandled = onDeepLinkHandled,
                 )
             }
         }
@@ -210,10 +227,21 @@ private fun WeatherPager(
     viewModel: WeatherViewModel,
     onOpenCities: () -> Unit,
     onOpenRadar: (Double, Double) -> Unit,
+    deepLink: DeepLinkTarget?,
+    onDeepLinkHandled: () -> Unit,
 ) {
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState { pages.size }
+    // Día a abrir en la página de destino del acceso directo.
+    var pendingDay by remember { mutableStateOf<Pair<String, String>?>(null) }
+    LaunchedEffect(deepLink) {
+        val target = deepLink ?: return@LaunchedEffect
+        val index = pages.indexOf(target.placeId).takeIf { it >= 0 } ?: 0
+        pagerState.animateScrollToPage(index)
+        pendingDay = target.day?.let { pages[index] to it }
+        onDeepLinkHandled()
+    }
     val skyId = pages.getOrElse(pagerState.currentPage) { CURRENT_PLACE_ID }
     val skySnapshot by remember(skyId) { viewModel.snapshots(skyId) }
         .collectAsStateWithLifecycle(viewModel.cached(skyId))
@@ -241,7 +269,14 @@ private fun WeatherPager(
                         scaleY = scale
                     },
                 ) {
-                    WeatherPage(placeId = pages[page], viewModel = viewModel, error = error, onOpenRadar = onOpenRadar)
+                    WeatherPage(
+                        placeId = pages[page],
+                        viewModel = viewModel,
+                        error = error,
+                        onOpenRadar = onOpenRadar,
+                        openDay = pendingDay?.takeIf { it.first == pages[page] }?.second,
+                        onDayOpened = { pendingDay = null },
+                    )
                 }
             }
         }
@@ -285,6 +320,8 @@ private fun WeatherPage(
     viewModel: WeatherViewModel,
     error: String?,
     onOpenRadar: (Double, Double) -> Unit,
+    openDay: String? = null,
+    onDayOpened: () -> Unit = {},
 ) {
     val snapshot by remember(placeId) { viewModel.snapshots(placeId) }
         .collectAsStateWithLifecycle(viewModel.cached(placeId))
@@ -294,6 +331,12 @@ private fun WeatherPage(
     val shownAt = remember { SystemClock.uptimeMillis() }
     if (current != null) {
         selectedDay?.let { day -> DaySheet(current, day, onDismiss = { selectedDay = null }) }
+    }
+    LaunchedEffect(openDay, current != null) {
+        val date = openDay ?: return@LaunchedEffect
+        val day = current?.days?.firstOrNull { it.date == date } ?: return@LaunchedEffect
+        selectedDay = day
+        onDayOpened()
     }
 
     LazyColumn(
@@ -321,7 +364,10 @@ private fun WeatherPage(
         } else {
             item { Box(Modifier.reveal(0, shownAt)) { Hero(current, isCurrentLocation = placeId == CURRENT_PLACE_ID) } }
             items(current.alerts, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert) } }
-            current.minutesUntilRain()?.let { minutes -> item { Box(Modifier.reveal(1, shownAt)) { RainSoonChip(minutes) } } }
+            // Las alertas ya tienen su tarjeta: la frase busca lo siguiente más útil.
+            Insights.headline(current.copy(alerts = emptyList()))?.let { text ->
+                item { Box(Modifier.reveal(1, shownAt)) { InsightChip(text) } }
+            }
             item {
                 Box(Modifier.reveal(2, shownAt)) {
                     GlassCard("Próximas horas") {
@@ -496,7 +542,7 @@ private fun RadarCard(onClick: () -> Unit) {
 }
 
 @Composable
-private fun RainSoonChip(minutes: Int) {
+private fun InsightChip(text: String) {
     Surface(
         color = MaterialTheme.colorScheme.tertiaryContainer,
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -506,13 +552,9 @@ private fun RainSoonChip(minutes: Int) {
             Modifier.padding(start = 8.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(
-                painter = painterResource(WeatherCodes.icon(61)),
-                contentDescription = null,
-                modifier = Modifier.size(28.dp),
-            )
+            Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text(rainSoonText(minutes), style = MaterialTheme.typography.labelLarge)
+            Text(text, style = MaterialTheme.typography.labelLarge)
         }
     }
 }

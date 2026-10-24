@@ -22,11 +22,11 @@ import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import com.mnavarrosqa.clima.data.Insights
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.longDate
-import com.mnavarrosqa.clima.data.rainSoonText
 import com.mnavarrosqa.clima.work.WeatherWorker
 import java.time.LocalDate
 
@@ -41,7 +41,7 @@ class VistazoWidget : GlanceAppWidget() {
 
 @Composable
 private fun VistazoContent(snapshot: WeatherSnapshot?) {
-    val colors = widgetColors(default = WidgetStyle.TRANSPARENT)
+    val colors = widgetColors(snapshot, default = WidgetStyle.TRANSPARENT)
     WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Column(
             modifier = GlanceModifier.fillMaxSize(),
@@ -69,9 +69,9 @@ private fun VistazoContent(snapshot: WeatherSnapshot?) {
                         style = TextStyle(color = colors.text, fontSize = 16.sp),
                     )
                 }
-                snapshot.minutesUntilRain()?.let { minutes ->
+                Insights.headline(snapshot)?.let { headline ->
                     Text(
-                        rainSoonText(minutes),
+                        headline,
                         maxLines = 1,
                         style = TextStyle(color = colors.textVariant, fontSize = 14.sp),
                     )

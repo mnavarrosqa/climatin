@@ -8,12 +8,14 @@
     android:paddingHorizontal="16dp">
 
     <ImageView
+        android:id="@+id/preview_icon"
         android:layout_width="32dp"
         android:layout_height="32dp"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_weather_partly_cloudy_day" />
 
     <TextView
+        android:id="@+id/preview_temp"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="22°"
@@ -28,6 +30,7 @@
         android:orientation="vertical">
 
         <TextView
+        android:id="@+id/preview_desc"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Parcialmente nublado"
@@ -35,6 +38,7 @@
         android:textSize="14sp" />
 
         <TextView
+        android:id="@+id/preview_minmax"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="25° / 14°"

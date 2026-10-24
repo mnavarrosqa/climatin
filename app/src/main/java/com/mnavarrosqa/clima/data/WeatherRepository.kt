@@ -4,7 +4,15 @@ import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -29,10 +37,17 @@ class WeatherRepository private constructor(private val context: Context) {
 
     // --- Lugares ---
 
-    fun places(): List<Place> =
-        prefs.getString(KEY_PLACES, null)?.let { raw ->
-            runCatching { json.decodeFromString(placesSerializer, raw) }.getOrNull()
-        }.orEmpty()
+    @Volatile
+    private var placesDecoded: Pair<String, List<Place>>? = null
+
+    /** Ciudades guardadas; se decodifican una sola vez mientras no cambien (los widgets las leen seguido). */
+    fun places(): List<Place> {
+        val raw = prefs.getString(KEY_PLACES, null) ?: return emptyList()
+        placesDecoded?.let { (text, list) -> if (text == raw) return list }
+        val list = runCatching { json.decodeFromString(placesSerializer, raw) }.getOrNull().orEmpty()
+        placesDecoded = raw to list
+        return list
+    }
 
     val placesFlow: Flow<List<Place>> = prefsFlow(KEY_PLACES) { places() }
 
@@ -66,38 +81,65 @@ class WeatherRepository private constructor(private val context: Context) {
 
     // --- Pronósticos ---
 
-    fun cached(placeId: String = CURRENT_PLACE_ID): WeatherSnapshot? =
-        prefs.getString(snapshotKey(placeId), null)?.let { raw ->
-            runCatching { json.decodeFromString(WeatherSnapshot.serializer(), raw) }.getOrNull()
-        }
+    // Los widgets leen la caché a cada rato: se guarda decodificada mientras el texto no cambie.
+    private val decoded = java.util.concurrent.ConcurrentHashMap<String, Pair<String, WeatherSnapshot>>()
+
+    fun cached(placeId: String = CURRENT_PLACE_ID): WeatherSnapshot? {
+        val raw = prefs.getString(snapshotKey(placeId), null) ?: return null
+        decoded[placeId]?.let { (text, snapshot) -> if (text == raw) return snapshot }
+        val snapshot = runCatching { json.decodeFromString(WeatherSnapshot.serializer(), raw) }.getOrNull() ?: return null
+        decoded[placeId] = raw to snapshot
+        return snapshot
+    }
 
     /** Emite la caché del lugar y cada vez que cambia. */
     fun snapshots(placeId: String = CURRENT_PLACE_ID): Flow<WeatherSnapshot?> =
         prefsFlow(snapshotKey(placeId)) { cached(placeId) }
 
-    /** Actualiza "donde estoy" y todas las ciudades guardadas. Devuelve el primer error, si hubo. */
-    suspend fun refreshAll(): Throwable? {
-        var firstError: Throwable? = null
-        val current = refreshCurrent()
-        if (current.isFailure && current.exceptionOrNull() !is NoLocationException) {
-            firstError = current.exceptionOrNull()
+    /** "Donde estoy" y todas las ciudades guardadas que tengan pronóstico, en orden. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun allSnapshots(): Flow<List<WeatherSnapshot>> = placesFlow.flatMapLatest { places ->
+        val ids = listOf(CURRENT_PLACE_ID) + places.map { it.id }
+        combine(ids.map { snapshots(it) }) { list -> list.filterNotNull() }
+    }
+
+    fun allCached(): List<WeatherSnapshot> =
+        (listOf(CURRENT_PLACE_ID) + places().map { it.id }).mapNotNull { cached(it) }
+
+    private val refreshLock = Mutex()
+    @Volatile
+    private var lastRefreshAt = 0L
+
+    /**
+     * Actualiza "donde estoy" y todas las ciudades guardadas, en paralelo. Devuelve el primer error,
+     * si hubo. Si ya hay una actualización en curso se espera a esa, y si terminó hace menos de un
+     * minuto no se vuelve a pedir (la app, el widget y el refresco periódico pueden coincidir).
+     */
+    suspend fun refreshAll(force: Boolean = false): Throwable? = refreshLock.withLock {
+        if (!force && System.currentTimeMillis() - lastRefreshAt < 60_000) return@withLock null
+        val (current, others) = coroutineScope {
+            val currentJob = async { refreshCurrent() }
+            val placeJobs = places().map { place -> async { refreshPlace(place) } }
+            currentJob.await() to placeJobs.awaitAll()
         }
-        for (place in places()) {
-            val result = refreshPlace(place)
-            if (firstError == null) firstError = result.exceptionOrNull()
-        }
-        if (firstError == null && places().isEmpty()) firstError = current.exceptionOrNull()
-        return firstError
+        val firstError = (listOf(current.exceptionOrNull()?.takeIf { it !is NoLocationException }) +
+            others.map { it.exceptionOrNull() }).firstOrNull { it != null }
+            ?: current.exceptionOrNull()?.takeIf { others.isEmpty() }
+        if (firstError == null) lastRefreshAt = System.currentTimeMillis()
+        firstError
     }
 
     // Las alertas del SMN se piden una vez y sirven para todos los lugares durante 10 minutos.
     private var capCache: Pair<Long, List<CapAlert>>? = null
 
-    private suspend fun capAlerts(): List<CapAlert> {
-        capCache?.let { (at, alerts) -> if (System.currentTimeMillis() - at < 10 * 60_000) return alerts }
-        val alerts = runCatching { SmnAlerts.fetchAll() }.getOrElse { return capCache?.second.orEmpty() }
+    private val capLock = Mutex()
+
+    private suspend fun capAlerts(): List<CapAlert> = capLock.withLock {
+        capCache?.let { (at, alerts) -> if (System.currentTimeMillis() - at < 10 * 60_000) return@withLock alerts }
+        val alerts = runCatching { SmnAlerts.fetchAll(context.cacheDir) }
+            .getOrElse { return@withLock capCache?.second.orEmpty() }
         capCache = System.currentTimeMillis() to alerts
-        return alerts
+        alerts
     }
 
     suspend fun refreshCurrent(): Result<WeatherSnapshot> = runCatching {
@@ -109,8 +151,9 @@ class WeatherRepository private constructor(private val context: Context) {
         val samePlace = previous != null &&
             abs(previous.latitude - coordinates.latitude) < 0.02 &&
             abs(previous.longitude - coordinates.longitude) < 0.02
-        val name = LocationProvider.placeName(context, coordinates)
-            ?: previous?.place?.takeIf { samePlace }
+        // Mismo lugar con nombre conocido: no hace falta volver a preguntarle al geocodificador.
+        val name = previous?.place?.takeIf { samePlace }
+            ?: LocationProvider.placeName(context, coordinates)
         fetch(CURRENT_PLACE_ID, name, coordinates.latitude, coordinates.longitude)
     }
 
@@ -119,12 +162,17 @@ class WeatherRepository private constructor(private val context: Context) {
     }
 
     private suspend fun fetch(placeId: String, name: String?, latitude: Double, longitude: Double): WeatherSnapshot {
-        val forecast = OpenMeteo.forecast(latitude, longitude)
-        val air = OpenMeteo.airQuality(latitude, longitude)
-        val alerts = if (Geo.isInArgentina(latitude, longitude)) {
-            capAlerts().filter { it.covers(latitude, longitude) }.map { it.alert }
-        } else {
-            emptyList()
+        val (forecast, air, alerts) = coroutineScope {
+            val forecast = async { OpenMeteo.forecast(latitude, longitude) }
+            val air = async { OpenMeteo.airQuality(latitude, longitude) }
+            val alerts = async {
+                if (Geo.isInArgentina(latitude, longitude)) {
+                    capAlerts().filter { it.covers(latitude, longitude) }.map { it.alert }
+                } else {
+                    emptyList()
+                }
+            }
+            Triple(forecast.await(), air.await(), alerts.await())
         }
         val snapshot = OpenMeteo.toSnapshot(
             forecast = forecast,
