@@ -2,11 +2,13 @@ package com.mnavarrosqa.clima.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.util.Locale
@@ -16,39 +18,77 @@ object OpenMeteo {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun forecast(latitude: Double, longitude: Double): Forecast = withContext(Dispatchers.IO) {
-        val url = URL(
+    suspend fun forecast(latitude: Double, longitude: Double): Forecast = get(
+        String.format(
+            Locale.US,
+            "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f" +
+                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,is_day," +
+                "weather_code,wind_speed_10m,precipitation,surface_pressure,visibility,uv_index" +
+                "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" +
+                "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset," +
+                "uv_index_max,precipitation_probability_max" +
+                "&minutely_15=precipitation&forecast_minutely_15=8" +
+                "&timezone=auto&forecast_days=7",
+            latitude,
+            longitude,
+        ),
+        Forecast.serializer(),
+    )
+
+    /** Calidad del aire. Es opcional: si falla, se muestra el resto igual. */
+    suspend fun airQuality(latitude: Double, longitude: Double): AirQuality? = runCatching {
+        val response = get(
             String.format(
                 Locale.US,
-                "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f" +
-                    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,is_day," +
-                    "weather_code,wind_speed_10m,precipitation" +
-                    "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" +
-                    "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset," +
-                    "uv_index_max,precipitation_probability_max" +
-                    "&timezone=auto&forecast_days=7",
+                "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%.4f&longitude=%.4f" +
+                    "&current=european_aqi,pm2_5&timezone=auto",
                 latitude,
                 longitude,
             ),
+            AirQualityResponse.serializer(),
         )
-        val connection = url.openConnection() as HttpURLConnection
-        try {
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 15_000
-            val code = connection.responseCode
-            if (code !in 200..299) error("Open-Meteo respondió $code")
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            json.decodeFromString(Forecast.serializer(), body)
-        } finally {
-            connection.disconnect()
+        AirQuality(europeanAqi = response.current.europeanAqi, pm25 = response.current.pm25)
+    }.getOrNull()
+
+    suspend fun searchCities(query: String): List<Place> {
+        val response = get(
+            "https://geocoding-api.open-meteo.com/v1/search?count=10&language=es&format=json&name=" +
+                URLEncoder.encode(query.trim(), "UTF-8"),
+            GeocodingResponse.serializer(),
+        )
+        return response.results.orEmpty().map { r ->
+            Place(
+                id = "geo:${r.id}",
+                name = r.name,
+                detail = listOfNotNull(r.admin1, r.country).distinct().joinToString(", ").ifBlank { null },
+                latitude = r.latitude,
+                longitude = r.longitude,
+            )
         }
     }
 
+    private suspend fun <T> get(url: String, deserializer: DeserializationStrategy<T>): T =
+        withContext(Dispatchers.IO) {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            try {
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 15_000
+                val code = connection.responseCode
+                if (code !in 200..299) error("Open-Meteo respondió $code")
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                json.decodeFromString(deserializer, body)
+            } finally {
+                connection.disconnect()
+            }
+        }
+
     fun toSnapshot(
         forecast: Forecast,
+        placeId: String,
         place: String?,
         latitude: Double,
         longitude: Double,
+        airQuality: AirQuality?,
         fetchedAt: Long,
     ): WeatherSnapshot {
         val c = forecast.current
@@ -79,7 +119,13 @@ object OpenMeteo {
                 precipitationProbability = d.precipitationProbability.getOrNull(i),
             )
         }
+        val minutely = forecast.minutely?.let { m ->
+            m.time.indices.mapNotNull { i ->
+                Minutely(m.time[i], m.precipitation.getOrNull(i) ?: return@mapNotNull null)
+            }
+        }.orEmpty()
         return WeatherSnapshot(
+            placeId = placeId,
             place = place,
             latitude = latitude,
             longitude = longitude,
@@ -94,9 +140,14 @@ object OpenMeteo {
                 code = c.weatherCode,
                 windSpeed = c.windSpeed,
                 precipitation = c.precipitation,
+                pressure = c.pressure,
+                visibility = c.visibility,
+                uvIndex = c.uvIndex,
             ),
             hours = hours,
             days = days,
+            minutely = minutely,
+            airQuality = airQuality,
         )
     }
 }
@@ -107,6 +158,7 @@ data class Forecast(
     val current: CurrentDto,
     val hourly: HourlyDto,
     val daily: DailyDto,
+    @SerialName("minutely_15") val minutely: MinutelyDto? = null,
 )
 
 @Serializable
@@ -119,6 +171,9 @@ data class CurrentDto(
     @SerialName("weather_code") val weatherCode: Int,
     @SerialName("wind_speed_10m") val windSpeed: Double,
     val precipitation: Double = 0.0,
+    @SerialName("surface_pressure") val pressure: Double? = null,
+    val visibility: Double? = null,
+    @SerialName("uv_index") val uvIndex: Double? = null,
 )
 
 @Serializable
@@ -140,4 +195,32 @@ data class DailyDto(
     val sunset: List<String?>,
     @SerialName("uv_index_max") val uvIndex: List<Double?> = emptyList(),
     @SerialName("precipitation_probability_max") val precipitationProbability: List<Int?> = emptyList(),
+)
+
+@Serializable
+data class MinutelyDto(
+    val time: List<String>,
+    val precipitation: List<Double?>,
+)
+
+@Serializable
+data class AirQualityResponse(val current: AirQualityCurrentDto)
+
+@Serializable
+data class AirQualityCurrentDto(
+    @SerialName("european_aqi") val europeanAqi: Int? = null,
+    @SerialName("pm2_5") val pm25: Double? = null,
+)
+
+@Serializable
+data class GeocodingResponse(val results: List<GeocodingResult>? = null)
+
+@Serializable
+data class GeocodingResult(
+    val id: Long,
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    val country: String? = null,
+    val admin1: String? = null,
 )

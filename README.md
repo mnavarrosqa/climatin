@@ -3,11 +3,17 @@
 App Android de clima con widgets Material You, al estilo de los Pixel.
 
 - **Kotlin + Jetpack Compose** con Material 3 y colores dinámicos (toman el fondo de pantalla en Android 12+).
-- **Widgets con Glance**:
-  - **Clima ahora**: responsive. De 1x1 (ícono y temperatura) a 4x2 (ciudad, máx/mín y próximas horas).
+- **Cielo animado** detrás del pronóstico: sol, nubes, lluvia, nieve, niebla, estrellas o relámpagos según el clima.
+- **Varias ciudades**: buscador, se desliza entre ellas, se ordenan y se borran en *Ciudades y ajustes*.
+- **Datos**: temperatura por hora en gráfico, 7 días, humedad, viento, UV, calidad del aire, presión, visibilidad, amanecer/atardecer y fase lunar.
+- **Aviso de lluvia**: "Lluvia en unos 30 min" en la app y en "De un vistazo"; notificación opcional.
+- **Widgets con Glance** (cada uno elige su ciudad al agregarlo o con el lápiz):
+  - **Clima ahora**: responsive, de 1x1 (ícono y temperatura) a 4x2 (ciudad, máx/mín y próximas horas).
   - **Pronóstico**: estado actual y próximos días; si lo agrandás, también las próximas horas.
-- **Datos**: [Open-Meteo](https://open-meteo.com), gratis y sin API key.
-- **Ubicación aproximada** (`ACCESS_COARSE_LOCATION`). Alcanza para el clima y es menos invasiva.
+  - **De un vistazo**: fecha y clima sin fondo, como el del Pixel.
+  - **Gráfico**: curva de temperatura de las próximas horas.
+- **Datos**: [Open-Meteo](https://open-meteo.com) (pronóstico, calidad del aire y buscador de ciudades), gratis y sin API key.
+- **Ubicación aproximada** (`ACCESS_COARSE_LOCATION`), y opcionalmente "todo el tiempo" para que los widgets te sigan con la app cerrada.
 - **Actualización**: WorkManager cada 30 minutos, solo con conexión.
 
 ## Instalar el APK
@@ -37,6 +43,6 @@ app/src/main/java/com/mnavarrosqa/clima/
 └── work/        Refresco periódico con WorkManager
 ```
 
-## Limitación conocida
+## Ubicación en segundo plano
 
-Desde segundo plano Android no siempre entrega la ubicación sin el permiso de ubicación "todo el tiempo". En ese caso el widget usa la última ubicación conocida, que se actualiza cada vez que abrís la app.
+Sin el permiso "Permitir todo el tiempo", Android no siempre entrega la ubicación con la app cerrada y el widget usa la última conocida. Se activa en *Ciudades y ajustes → Ubicación con la app cerrada*.

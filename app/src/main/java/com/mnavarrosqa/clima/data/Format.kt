@@ -31,5 +31,17 @@ fun weekday(day: DayOfWeek): String =
         .trimEnd('.')
         .replaceFirstChar { it.titlecase(spanish) }
 
+/** "Sábado 24 de oct." como el "De un vistazo" del Pixel. */
+fun longDate(date: LocalDate): String =
+    date.format(DateTimeFormatter.ofPattern("EEEE d 'de' MMM", spanish))
+        .replaceFirstChar { it.titlecase(spanish) }
+
+fun rainSoonText(minutes: Int): String = when {
+    minutes <= 20 -> "Lluvia en unos minutos"
+    minutes < 60 -> "Lluvia en unos ${(minutes + 4) / 5 * 5} min"
+    minutes < 90 -> "Lluvia en la próxima hora"
+    else -> "Lluvia en menos de 2 horas"
+}
+
 fun updatedAt(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(hourMinute)

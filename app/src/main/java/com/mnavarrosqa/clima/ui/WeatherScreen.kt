@@ -1,6 +1,7 @@
 package com.mnavarrosqa.clima.ui
 
 import android.Manifest
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -18,18 +19,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,11 +44,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -52,116 +59,204 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.Day
-import com.mnavarrosqa.clima.data.Hour
 import com.mnavarrosqa.clima.data.LocationProvider
+import com.mnavarrosqa.clima.data.Moon
 import com.mnavarrosqa.clima.data.WeatherCodes
+import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.dayLabel
 import com.mnavarrosqa.clima.data.degrees
-import com.mnavarrosqa.clima.data.shortHour
+import com.mnavarrosqa.clima.data.longDate
+import com.mnavarrosqa.clima.data.rainSoonText
 import com.mnavarrosqa.clima.data.timeOf
 import com.mnavarrosqa.clima.data.updatedAt
 import kotlin.math.roundToInt
 
+private val OnSky = Color.White
+private val OnSkyVariant = Color.White.copy(alpha = 0.85f)
+
 @Composable
 fun WeatherRoute(viewModel: WeatherViewModel = viewModel()) {
     val context = LocalContext.current
-    val state by viewModel.state.collectAsStateWithLifecycle()
+    val places by viewModel.places.collectAsStateWithLifecycle()
     var hasPermission by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
+    var showCities by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasPermission = granted
         if (granted) viewModel.refresh()
     }
 
-    LaunchedEffect(hasPermission) {
-        if (hasPermission) viewModel.refreshIfStale()
+    LaunchedEffect(hasPermission, places.size) { viewModel.refreshIfStale() }
+    BackHandler(enabled = showCities) { showCities = false }
+
+    val pages = buildList {
+        if (hasPermission || viewModel.cached(CURRENT_PLACE_ID) != null) add(CURRENT_PLACE_ID)
+        places.forEach { add(it.id) }
     }
 
-    if (!hasPermission && state.snapshot == null) {
-        PermissionScreen(onAllow = { launcher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) })
-    } else {
-        WeatherScreen(state = state, onRefresh = viewModel::refresh)
+    when {
+        showCities -> CitiesScreen(
+            viewModel = viewModel,
+            onBack = { showCities = false },
+            onLocationPermission = { granted ->
+                hasPermission = granted
+                if (granted) viewModel.refresh()
+            },
+        )
+        pages.isEmpty() -> PermissionScreen(
+            onAllow = { launcher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
+            onPickCity = { showCities = true },
+        )
+        else -> WeatherPager(pages, viewModel, onOpenCities = { showCities = true })
     }
 }
 
 @Composable
-private fun PermissionScreen(onAllow: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Image(
-            painter = painterResource(WeatherCodes.icon(2)),
-            contentDescription = null,
-            modifier = Modifier.size(120.dp),
-        )
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "El clima donde estés",
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Necesito tu ubicación aproximada para mostrarte el pronóstico y mantener los widgets al día.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(32.dp))
-        Button(onClick = onAllow) { Text("Permitir ubicación") }
+private fun PermissionScreen(onAllow: () -> Unit, onPickCity: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        AnimatedSky(WeatherKind.PARTLY, isDay = true, modifier = Modifier.fillMaxSize())
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Image(
+                painter = painterResource(WeatherCodes.icon(2)),
+                contentDescription = null,
+                modifier = Modifier.size(140.dp),
+            )
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "El clima donde estés",
+                style = MaterialTheme.typography.headlineMedium,
+                color = OnSky,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Necesito tu ubicación aproximada para mostrarte el pronóstico y mantener los widgets al día.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = OnSkyVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(32.dp))
+            Button(onClick = onAllow) { Text("Permitir ubicación") }
+            Spacer(Modifier.height(8.dp))
+            FilledTonalButton(onClick = onPickCity) { Text("Elegir una ciudad") }
+        }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WeatherScreen(state: WeatherUiState, onRefresh: () -> Unit) {
-    val insets = WindowInsets.systemBars.asPaddingValues()
-    PullToRefreshBox(
-        isRefreshing = state.refreshing,
-        onRefresh = onRefresh,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface),
-    ) {
-        val snapshot = state.snapshot
-        LazyColumn(
+private fun WeatherPager(pages: List<String>, viewModel: WeatherViewModel, onOpenCities: () -> Unit) {
+    val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    val pagerState = rememberPagerState { pages.size }
+    val skyId = pages.getOrElse(pagerState.currentPage) { CURRENT_PLACE_ID }
+    val skySnapshot by remember(skyId) { viewModel.snapshots(skyId) }
+        .collectAsStateWithLifecycle(viewModel.cached(skyId))
+
+    Box(Modifier.fillMaxSize()) {
+        AnimatedSky(
+            kind = skySnapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
+            isDay = skySnapshot?.current?.isDay ?: true,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = insets.calculateTopPadding() + 16.dp,
-                bottom = insets.calculateBottomPadding() + 24.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        )
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier.fillMaxSize(),
         ) {
-            if (state.error != null) {
-                item { ErrorBanner(state.error) }
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                WeatherPage(placeId = pages[page], viewModel = viewModel, error = error)
             }
-            if (snapshot == null) {
-                item { LoadingHero() }
-            } else {
-                item { PlaceHeader(snapshot) }
-                item { Hero(snapshot) }
-                item { HourlyCard(snapshot) }
-                item { DailyCard(snapshot) }
-                item { DetailsGrid(snapshot) }
-                item {
-                    Text(
-                        "Actualizado a las ${updatedAt(snapshot.fetchedAt)} · Datos de Open-Meteo",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                    )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(Modifier.width(48.dp))
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                if (pages.size > 1) {
+                    pages.indices.forEach { index ->
+                        val selected = index == pagerState.currentPage
+                        Box(
+                            Modifier
+                                .padding(horizontal = 3.dp)
+                                .size(if (selected) 8.dp else 6.dp)
+                                .clip(CircleShape)
+                                .background(if (selected) OnSky else OnSky.copy(alpha = 0.45f)),
+                        )
+                    }
                 }
+            }
+            IconButton(onClick = onOpenCities) {
+                Icon(Icons.Rounded.Menu, contentDescription = "Ciudades y ajustes", tint = OnSky)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeatherPage(placeId: String, viewModel: WeatherViewModel, error: String?) {
+    val snapshot by remember(placeId) { viewModel.snapshots(placeId) }
+        .collectAsStateWithLifecycle(viewModel.cached(placeId))
+    val insets = WindowInsets.systemBars.asPaddingValues()
+    val current = snapshot
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = insets.calculateTopPadding() + 56.dp,
+            bottom = insets.calculateBottomPadding() + 24.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (error != null) item { ErrorBanner(error) }
+        if (current == null) {
+            item {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(320.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Buscando el clima…", style = MaterialTheme.typography.titleMedium, color = OnSky)
+                }
+            }
+        } else {
+            item { Hero(current, isCurrentLocation = placeId == CURRENT_PLACE_ID) }
+            current.minutesUntilRain()?.let { minutes -> item { RainSoonChip(minutes) } }
+            item {
+                GlassCard("Próximas horas") {
+                    HourlyChart(current.upcomingHours(24))
+                }
+            }
+            item { DailyCard(current) }
+            item { DetailsGrid(current) }
+            item {
+                Text(
+                    "Actualizado a las ${updatedAt(current.fetchedAt)} · Datos de Open-Meteo",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = OnSkyVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                )
             }
         }
     }
@@ -179,156 +274,111 @@ private fun ErrorBanner(message: String) {
     }
 }
 
+/** Temperatura grande directo sobre el cielo, como la app de clima del Pixel. */
 @Composable
-private fun LoadingHero() {
-    Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(32.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(240.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                "Buscando el clima…",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PlaceHeader(snapshot: WeatherSnapshot) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-    ) {
-        Icon(
-            Icons.Rounded.LocationOn,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            snapshot.place ?: "Tu ubicación",
-            style = MaterialTheme.typography.titleLarge,
-        )
-    }
-}
-
-@Composable
-private fun Hero(snapshot: WeatherSnapshot) {
+private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
     val current = snapshot.current
     val today = snapshot.today()
-    Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        shape = RoundedCornerShape(32.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isCurrentLocation) {
+                Icon(
+                    Icons.Rounded.LocationOn,
+                    contentDescription = "Tu ubicación",
+                    tint = OnSky,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(
+                snapshot.place ?: "Tu ubicación",
+                style = MaterialTheme.typography.headlineSmall,
+                color = OnSky,
+            )
+        }
+        Text(
+            longDate(snapshot.nowAtPlace().toLocalDate()),
+            style = MaterialTheme.typography.bodyLarge,
+            color = OnSkyVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
                     current.temperature.degrees(),
-                    fontSize = 96.sp,
-                    lineHeight = 96.sp,
+                    fontSize = 112.sp,
+                    lineHeight = 112.sp,
                     fontWeight = FontWeight.Light,
+                    color = OnSky,
                 )
                 Text(
                     WeatherCodes.description(current.code),
                     style = MaterialTheme.typography.titleLarge,
+                    color = OnSky,
                 )
-                Spacer(Modifier.height(4.dp))
                 if (today != null) {
                     Text(
                         "Máx ${today.max.degrees()} · Mín ${today.min.degrees()}",
                         style = MaterialTheme.typography.bodyLarge,
+                        color = OnSkyVariant,
                     )
                 }
                 Text(
                     "Sensación térmica ${current.feelsLike.degrees()}",
                     style = MaterialTheme.typography.bodyMedium,
+                    color = OnSkyVariant,
                 )
             }
             Image(
                 painter = painterResource(WeatherCodes.icon(current.code, current.isDay)),
                 contentDescription = WeatherCodes.description(current.code),
-                modifier = Modifier.size(128.dp),
+                modifier = Modifier.size(140.dp),
             )
         }
     }
 }
 
 @Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
+private fun RainSoonChip(minutes: Int) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        shape = CircleShape,
+    ) {
+        Row(
+            Modifier.padding(start = 8.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(WeatherCodes.icon(61)),
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(rainSoonText(minutes), style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/** Tarjeta semitransparente sobre el cielo animado. */
+@Composable
+fun GlassCard(title: String?, content: @Composable () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
         shape = RoundedCornerShape(28.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(vertical = 16.dp)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-            Spacer(Modifier.height(12.dp))
+            if (title != null) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
+                Spacer(Modifier.height(12.dp))
+            }
             content()
         }
-    }
-}
-
-@Composable
-private fun HourlyCard(snapshot: WeatherSnapshot) {
-    val hours = snapshot.upcomingHours(24)
-    if (hours.isEmpty()) return
-    SectionCard("Próximas horas") {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            items(hours) { hour -> HourItem(hour, isNow = hour == hours.first()) }
-        }
-    }
-}
-
-@Composable
-private fun HourItem(hour: Hour, isNow: Boolean) {
-    val shape = RoundedCornerShape(20.dp)
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(shape)
-            .background(if (isNow) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 12.dp, vertical = 12.dp)
-            .width(44.dp),
-    ) {
-        Text(hour.temperature.degrees(), style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        Image(
-            painter = painterResource(WeatherCodes.icon(hour.code, hour.isDay)),
-            contentDescription = WeatherCodes.description(hour.code),
-            modifier = Modifier.size(32.dp),
-        )
-        Spacer(Modifier.height(4.dp))
-        val probability = hour.precipitationProbability ?: 0
-        Text(
-            if (probability >= 10) "$probability%" else " ",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.tertiary,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            if (isNow) "Ahora" else shortHour(hour.dateTime),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -339,7 +389,7 @@ private fun DailyCard(snapshot: WeatherSnapshot) {
     val weekMin = days.minOf { it.min }
     val weekMax = days.maxOf { it.max }
     val today = snapshot.nowAtPlace().toLocalDate()
-    SectionCard("Próximos días") {
+    GlassCard("Próximos días") {
         Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             days.forEach { day -> DayRow(day, dayLabel(day.localDate, today), weekMin, weekMax) }
         }
@@ -412,56 +462,65 @@ private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax:
     }
 }
 
+private data class Detail(val label: String, val value: String, val note: String? = null)
+
 @Composable
 private fun DetailsGrid(snapshot: WeatherSnapshot) {
     val current = snapshot.current
     val today = snapshot.today()
     val details = buildList {
-        add("Humedad" to "${current.humidity}%")
-        add("Viento" to "${current.windSpeed.roundToInt()} km/h")
-        today?.uvIndex?.let { add("Índice UV" to uvLabel(it)) }
-        add("Lluvia hoy" to "${today?.precipitationProbability ?: 0}%")
+        add(Detail("Humedad", "${current.humidity}%"))
+        add(Detail("Viento", "${current.windSpeed.roundToInt()} km/h"))
+        (current.uvIndex ?: today?.uvIndex)?.let {
+            add(Detail("Índice UV", "${it.roundToInt()}", WeatherCodes.uvLabel(it).replaceFirstChar { c -> c.uppercase() }))
+        }
+        snapshot.airQuality?.europeanAqi?.let {
+            add(Detail("Calidad del aire", WeatherCodes.airQualityLabel(it), "Índice $it"))
+        }
+        current.pressure?.let { add(Detail("Presión", "${it.roundToInt()} hPa")) }
+        current.visibility?.let {
+            val km = it / 1000
+            add(Detail("Visibilidad", if (km >= 10) "+10 km" else "${km.roundToInt()} km"))
+        }
+        add(Detail("Lluvia hoy", "${today?.precipitationProbability ?: 0}%"))
+        add(Detail("Luna", Moon.phaseName(snapshot.nowAtPlace().toLocalDate())))
         today?.let {
-            add("Amanecer" to timeOf(it.sunrise))
-            add("Atardecer" to timeOf(it.sunset))
+            add(Detail("Amanecer", timeOf(it.sunrise)))
+            add(Detail("Atardecer", timeOf(it.sunset)))
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         details.chunked(2).forEach { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                pair.forEach { (label, value) -> DetailTile(label, value, Modifier.weight(1f)) }
+                pair.forEach { detail -> DetailTile(detail, Modifier.weight(1f)) }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
 }
 
-private fun uvLabel(uv: Double): String {
-    val level = when {
-        uv < 3 -> "bajo"
-        uv < 6 -> "moderado"
-        uv < 8 -> "alto"
-        uv < 11 -> "muy alto"
-        else -> "extremo"
-    }
-    return "${uv.roundToInt()} · $level"
-}
-
 @Composable
-private fun DetailTile(label: String, value: String, modifier: Modifier) {
+private fun DetailTile(detail: Detail, modifier: Modifier) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
         shape = RoundedCornerShape(24.dp),
         modifier = modifier,
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
             Text(
-                label,
+                detail.label,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(6.dp))
-            Text(value, style = MaterialTheme.typography.titleLarge)
+            Text(detail.value, style = MaterialTheme.typography.titleLarge)
+            if (detail.note != null) {
+                Text(
+                    detail.note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

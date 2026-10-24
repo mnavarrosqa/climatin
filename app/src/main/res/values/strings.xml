@@ -5,4 +5,8 @@
     <string name="widget_clima_description">Temperatura y estado del cielo donde estás</string>
     <string name="widget_pronostico_name">Pronóstico</string>
     <string name="widget_pronostico_description">Las próximas horas y los próximos días</string>
+    <string name="widget_vistazo_name">De un vistazo</string>
+    <string name="widget_vistazo_description">Fecha y clima sobre tu fondo de pantalla</string>
+    <string name="widget_grafico_name">Gráfico</string>
+    <string name="widget_grafico_description">La temperatura de las próximas horas</string>
 </resources>

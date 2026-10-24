@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".ClimaApp"
@@ -46,5 +48,37 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/pronostico_widget_info" />
         </receiver>
+
+        <receiver
+            android:name=".widget.VistazoWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_vistazo_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/vistazo_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.GraficoWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_grafico_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/grafico_widget_info" />
+        </receiver>
+
+        <activity
+            android:name=".widget.WidgetConfigActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

@@ -2,8 +2,6 @@ package com.mnavarrosqa.clima.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,7 +30,6 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import com.mnavarrosqa.clima.data.WeatherCodes
-import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.shortHour
@@ -44,12 +41,9 @@ class ClimaWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(TINY, SQUARE, WIDE, WIDE_TALL))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val repository = WeatherRepository.get(context)
-        val initial = repository.cached()
         provideContent {
-            val snapshot by repository.snapshots.collectAsState(initial)
             ClimaGlanceTheme {
-                val current = snapshot
+                val current = widgetSnapshot()
                 if (current == null) EmptyWidget() else ClimaContent(current)
             }
         }

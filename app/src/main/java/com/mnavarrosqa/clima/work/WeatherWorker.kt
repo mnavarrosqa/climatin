@@ -8,7 +8,6 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.mnavarrosqa.clima.data.NoLocationException
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.widget.updateWeatherWidgets
 import java.util.concurrent.TimeUnit
@@ -17,11 +16,11 @@ import java.util.concurrent.TimeUnit
 class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val result = WeatherRepository.get(applicationContext).refresh()
+        val error = WeatherRepository.get(applicationContext).refreshAll()
         updateWeatherWidgets(applicationContext)
+        RainNotifier.check(applicationContext)
         return when {
-            result.isSuccess -> Result.success()
-            result.exceptionOrNull() is NoLocationException -> Result.success()
+            error == null -> Result.success()
             runAttemptCount < 3 -> Result.retry()
             else -> Result.failure()
         }

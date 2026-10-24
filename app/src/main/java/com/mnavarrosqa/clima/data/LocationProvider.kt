@@ -27,6 +27,12 @@ object LocationProvider {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
+    /** Android 10+ pide un permiso aparte para usar la ubicación con la app cerrada. */
+    fun hasBackgroundPermission(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
     /**
      * Ubicación aproximada (alcanza para el clima). Desde segundo plano Android puede no darla:
      * en ese caso devuelve null y se usa la última guardada.

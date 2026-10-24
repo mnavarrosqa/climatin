@@ -3,8 +3,22 @@ package com.mnavarrosqa.clima.data
 import androidx.annotation.DrawableRes
 import com.mnavarrosqa.clima.R
 
+enum class WeatherKind { CLEAR, PARTLY, CLOUDY, FOG, DRIZZLE, RAIN, SNOW, STORM }
+
 /** Códigos WMO que devuelve Open-Meteo. */
 object WeatherCodes {
+
+    fun kind(code: Int): WeatherKind = when (code) {
+        0, 1 -> WeatherKind.CLEAR
+        2 -> WeatherKind.PARTLY
+        3 -> WeatherKind.CLOUDY
+        45, 48 -> WeatherKind.FOG
+        51, 53, 55, 56, 57 -> WeatherKind.DRIZZLE
+        61, 63, 65, 66, 67, 80, 81, 82 -> WeatherKind.RAIN
+        71, 73, 75, 77, 85, 86 -> WeatherKind.SNOW
+        95, 96, 99 -> WeatherKind.STORM
+        else -> WeatherKind.CLOUDY
+    }
 
     fun description(code: Int): String = when (code) {
         0 -> "Despejado"
@@ -31,15 +45,32 @@ object WeatherCodes {
     }
 
     @DrawableRes
-    fun icon(code: Int, isDay: Boolean = true): Int = when (code) {
-        0, 1 -> if (isDay) R.drawable.ic_weather_clear_day else R.drawable.ic_weather_clear_night
-        2 -> if (isDay) R.drawable.ic_weather_partly_cloudy_day else R.drawable.ic_weather_partly_cloudy_night
-        3 -> R.drawable.ic_weather_cloudy
-        45, 48 -> R.drawable.ic_weather_fog
-        51, 53, 55, 56, 57 -> R.drawable.ic_weather_drizzle
-        61, 63, 65, 66, 67, 80, 81, 82 -> R.drawable.ic_weather_rain
-        71, 73, 75, 77, 85, 86 -> R.drawable.ic_weather_snow
-        95, 96, 99 -> R.drawable.ic_weather_thunderstorm
-        else -> R.drawable.ic_weather_cloudy
+    fun icon(code: Int, isDay: Boolean = true): Int = when (kind(code)) {
+        WeatherKind.CLEAR -> if (isDay) R.drawable.ic_weather_clear_day else R.drawable.ic_weather_clear_night
+        WeatherKind.PARTLY -> if (isDay) R.drawable.ic_weather_partly_cloudy_day else R.drawable.ic_weather_partly_cloudy_night
+        WeatherKind.CLOUDY -> R.drawable.ic_weather_cloudy
+        WeatherKind.FOG -> R.drawable.ic_weather_fog
+        WeatherKind.DRIZZLE -> R.drawable.ic_weather_drizzle
+        WeatherKind.RAIN -> R.drawable.ic_weather_rain
+        WeatherKind.SNOW -> R.drawable.ic_weather_snow
+        WeatherKind.STORM -> R.drawable.ic_weather_thunderstorm
+    }
+
+    /** Índice europeo de calidad del aire. */
+    fun airQualityLabel(aqi: Int): String = when {
+        aqi < 20 -> "Buena"
+        aqi < 40 -> "Aceptable"
+        aqi < 60 -> "Moderada"
+        aqi < 80 -> "Mala"
+        aqi < 100 -> "Muy mala"
+        else -> "Pésima"
+    }
+
+    fun uvLabel(uv: Double): String = when {
+        uv < 3 -> "bajo"
+        uv < 6 -> "moderado"
+        uv < 8 -> "alto"
+        uv < 11 -> "muy alto"
+        else -> "extremo"
     }
 }
