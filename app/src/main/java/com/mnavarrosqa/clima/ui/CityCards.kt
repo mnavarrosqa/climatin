@@ -2,12 +2,20 @@ package com.mnavarrosqa.clima.ui
 
 import com.mnavarrosqa.clima.data.tr
 import androidx.compose.foundation.Image
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,83 +46,110 @@ import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.ui.theme.Flex
 
 /**
- * Una ciudad como tarjeta: su cielo animado de fondo, el nombre y la temperatura de ahora.
+ * Una ciudad como tarjeta, al estilo del Clima de Apple: el cielo animado de fondo; arriba a la
+ * izquierda el nombre grande y debajo la hora del lugar (o la ciudad, en "Mi ubicación"); abajo el
+ * estado; a la derecha la temperatura grande y la máxima y mínima.
  * [action] va a la derecha en lugar de la temperatura (por ejemplo, un botón para dar permiso).
  */
 @Composable
 fun CityCard(
     name: String,
-    detail: String?,
+    subtitle: String?,
     snapshot: WeatherSnapshot?,
-    icon: ImageVector? = null,
     modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    onClick: (() -> Unit)? = null,
     action: (@Composable () -> Unit)? = null,
 ) {
+    val shadow = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.35f), Offset(0f, 1f), 8f))
+    val shape = RoundedCornerShape(22.dp)
     Box(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 88.dp)
-            .clip(RoundedCornerShape(24.dp)),
+            .height(116.dp)
+            .clip(shape)
+            .then(if (onClick != null) Modifier.pressable(onClick) else Modifier),
     ) {
         AnimatedSky(
             kind = snapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
             isDay = snapshot?.current?.isDay ?: true,
             modifier = Modifier.matchParentSize(),
         )
+        // Un velo suave abajo para que el estado y la mínima se lean sobre cualquier cielo.
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.22f))),
+        )
         Row(
             Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .fillMaxSize()
+                .padding(horizontal = 18.dp, vertical = 14.dp),
         ) {
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (icon != null) {
-                        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (icon != null) {
+                            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Text(
+                            name,
+                            style = MaterialTheme.typography.titleLarge.merge(shadow),
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
+                    if (subtitle != null) {
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall.merge(shadow),
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.9f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                snapshot?.let {
                     Text(
-                        name,
-                        style = MaterialTheme.typography.titleMedium,
+                        WeatherCodes.description(it.current.code),
+                        style = MaterialTheme.typography.bodyMedium.merge(shadow),
+                        fontWeight = FontWeight.Medium,
                         color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                val subtitle = snapshot?.let { WeatherCodes.description(it.current.code) } ?: detail
-                if (subtitle != null) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.85f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                snapshot?.today()?.let { today ->
-                    Text(
-                        tr("Máx", "High") + " ${today.max.degrees()} · " + tr("Mín", "Low") + " ${today.min.degrees()}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.85f),
-                    )
-                }
             }
             if (action != null) {
-                action()
+                Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.Center) { action() }
             } else if (snapshot != null) {
-                Image(
-                    painter = painterResource(WeatherCodes.icon(snapshot.current.code, snapshot.current.isDay)),
-                    contentDescription = null,
-                    modifier = Modifier.size(44.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    snapshot.current.temperature.degrees(),
-                    fontSize = 40.sp,
-                    fontWeight = FontWeight.Light,
-                    fontFamily = Flex,
-                    color = Color.White,
-                )
+                Column(
+                    Modifier.fillMaxHeight(),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        snapshot.current.temperature.degrees(),
+                        fontSize = 46.sp,
+                        lineHeight = 46.sp,
+                        fontWeight = FontWeight.Light,
+                        fontFamily = Flex,
+                        color = Color.White,
+                        style = shadow,
+                    )
+                    snapshot.today()?.let { today ->
+                        Text(
+                            tr("Máx", "H") + " ${today.max.degrees()}  " + tr("Mín", "L") + " ${today.min.degrees()}",
+                            style = MaterialTheme.typography.bodySmall.merge(shadow),
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White,
+                        )
+                    }
+                }
             }
         }
     }

@@ -155,6 +155,8 @@ fun WeatherRoute(
     var hasPermission by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var showCities by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    // Ciudad tocada en la lista: el pronóstico se abre en esa página.
+    var cityTarget by remember { mutableStateOf<DeepLinkTarget?>(null) }
     // "lat,lon" del radar abierto, o null.
     var radarAt by rememberSaveable { mutableStateOf<String?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -236,6 +238,10 @@ fun WeatherRoute(
             "ciudades" -> CitiesScreen(
                 viewModel = viewModel,
                 onBack = { showCities = false },
+                onOpenPlace = { id ->
+                    cityTarget = DeepLinkTarget(id, null)
+                    showCities = false
+                },
                 onLocationPermission = { granted ->
                     hasPermission = granted
                     if (granted) viewModel.refresh()
@@ -261,8 +267,11 @@ fun WeatherRoute(
                     onOpenCities = { showCities = true },
                     onOpenSettings = { showSettings = true },
                     onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
-                    deepLink = deepLink,
-                    onDeepLinkHandled = onDeepLinkHandled,
+                    deepLink = cityTarget ?: deepLink,
+                    onDeepLinkHandled = {
+                        cityTarget = null
+                        onDeepLinkHandled()
+                    },
                 )
             }
         }

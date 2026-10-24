@@ -67,7 +67,11 @@ import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
+import com.mnavarrosqa.clima.data.shortHour
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -106,6 +110,7 @@ fun CitiesScreen(
     viewModel: WeatherViewModel,
     onBack: () -> Unit,
     onLocationPermission: (Boolean) -> Unit,
+    onOpenPlace: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val places by viewModel.places.collectAsStateWithLifecycle()
@@ -168,15 +173,29 @@ fun CitiesScreen(
                 bottom = padding.calculateBottomPadding() + 24.dp,
             ),
         ) {
+            // Buscador relleno y sin borde, como el de iOS.
             item {
-                OutlinedTextField(
+                TextField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
                     placeholder = { Text(tr("Buscar una ciudad", "Search for a city")) },
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    trailingIcon = if (query.isEmpty()) null else {
+                        {
+                            TextButton(onClick = { query = "" }) { Text(tr("Cancelar", "Cancel")) }
+                        }
+                    },
                     singleLine = true,
-                    shape = RoundedCornerShape(28.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
                 )
             }
             when {
@@ -198,15 +217,18 @@ fun CitiesScreen(
                 )
             }
 
-            item { SectionTitle(tr("Tus ciudades", "Your cities")) }
+            // Mientras se busca, solo los resultados (como en el Clima de Apple).
+            if (query.isBlank()) {
             item(key = CURRENT_PLACE_ID) {
                 val here by remember { viewModel.snapshots(CURRENT_PLACE_ID) }
                     .collectAsStateWithLifecycle(viewModel.cached(CURRENT_PLACE_ID))
                 CityCard(
-                    name = here?.place ?: tr("Donde estoy", "My location"),
-                    detail = if (hasLocation) tr("Según tu ubicación", "Based on your location") else tr("Sin permiso de ubicación", "No location permission"),
+                    name = tr("Mi ubicación", "My location"),
+                    subtitle = if (hasLocation) here?.place else tr("Sin permiso de ubicación", "No location permission"),
                     snapshot = here,
                     icon = Icons.Rounded.LocationOn,
+                    modifier = Modifier.padding(bottom = 10.dp),
+                    onClick = if (here != null) ({ onOpenPlace(CURRENT_PLACE_ID) }) else null,
                     action = if (hasLocation) null else {
                         {
                             FilledTonalButton(onClick = {
@@ -216,9 +238,7 @@ fun CitiesScreen(
                     },
                 )
             }
-            if (places.isNotEmpty()) {
-                item { Hint(tr("Deslizá una ciudad para quitarla; mantenela apretada para moverla.", "Swipe a city to remove it; press and hold to move it.")) }
-            }
+
             items(reorder.order, key = { it }) { id ->
                 val place = places.firstOrNull { it.id == id } ?: return@items
                 val isDragging = reorder.dragging == id
@@ -264,7 +284,7 @@ fun CitiesScreen(
                 }
                 SwipeToDismissBox(
                     state = dismiss,
-                    modifier = itemModifier.padding(top = 8.dp),
+                    modifier = itemModifier.padding(bottom = 10.dp),
                     backgroundContent = {
                         val toStart = dismiss.dismissDirection == SwipeToDismissBoxValue.EndToStart
                         Box(
@@ -285,10 +305,12 @@ fun CitiesScreen(
                 ) {
                     CityCard(
                         name = place.name,
-                        detail = place.detail,
+                        // La hora del lugar, como en el Clima de Apple; si no hay datos, la provincia o país.
+                        subtitle = snapshot?.let { shortHour(it.nowAtPlace()) } ?: place.detail,
                         snapshot = snapshot,
+                        onClick = { onOpenPlace(id) },
                         modifier = Modifier
-                            .shadow(elevation, RoundedCornerShape(24.dp))
+                            .shadow(elevation, RoundedCornerShape(22.dp))
                             .pointerInput(id) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = {
@@ -316,7 +338,13 @@ fun CitiesScreen(
             }
 
             item {
-                Hint(tr("Las alertas, la ubicación con la app cerrada, las unidades y lo demás están en Ajustes (el engranaje, arriba a la derecha del pronóstico).", "Alerts, background location, units and everything else are in Settings (the gear, top right of the forecast)."))
+                Hint(
+                    tr(
+                        "Tocá una ciudad para ver su pronóstico. Deslizala para quitarla; mantenela apretada para moverla.",
+                        "Tap a city to see its forecast. Swipe it to remove it; press and hold to move it.",
+                    ),
+                )
+            }
             }
         }
     }
