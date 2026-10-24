@@ -41,16 +41,19 @@ import com.mnavarrosqa.clima.work.WeatherWorker
  * Widget "Clima ahora": se adapta del 1x1 al 4x2 como los del Pixel. Usa el tamaño exacto para
  * elegir el diseño según el espacio real y el tamaño de letra del teléfono, así nada se corta.
  */
-class ClimaWidget : GlanceAppWidget() {
+class ClimaWidget : GlanceAppWidget(), PreviewableWidget {
 
     override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent {
-            ClimaGlanceTheme {
-                val current = widgetSnapshot()
-                if (current == null) EmptyWidget() else ClimaContent(current)
-            }
+        provideContent { Body() }
+    }
+
+    @Composable
+    override fun Body() {
+        ClimaGlanceTheme {
+            val current = widgetSnapshot()
+            if (current == null) EmptyWidget() else ClimaContent(current)
         }
     }
 
@@ -114,7 +117,7 @@ private fun SquareContent(snapshot: WeatherSnapshot) {
                 style = TextStyle(color = colors.text, fontSize = 34.sp),
             )
             Text(
-                snapshot.place ?: WeatherCodes.description(current.code),
+                snapshot.place?.takeIf { widgetShows(WidgetPart.PLACE) } ?: WeatherCodes.description(current.code),
                 maxLines = 1,
                 style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
             )
@@ -127,7 +130,9 @@ private fun WideContent(snapshot: WeatherSnapshot, compact: Boolean, showHours: 
     val colors = widgetColors(snapshot)
     val current = snapshot.current
     val today = snapshot.today()
-    val minMax = today?.let { tr("Máx", "High") + " ${it.max.degrees()} · " + tr("Mín", "Low") + " ${it.min.degrees()}" }
+    val minMax = today?.takeIf { widgetShows(WidgetPart.RANGE) }
+        ?.let { tr("Máx", "High") + " ${it.max.degrees()} · " + tr("Mín", "Low") + " ${it.min.degrees()}" }
+    val insight = if (widgetShows(WidgetPart.INSIGHT)) Insights.headline(snapshot) else null
     WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 20.dp, vertical = if (compact) 10.dp else 14.dp)) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -166,7 +171,7 @@ private fun WideContent(snapshot: WeatherSnapshot, compact: Boolean, showHours: 
                             Text(minMax, maxLines = 1, style = TextStyle(color = colors.textVariant, fontSize = 12.sp))
                         }
                         // La frase del momento: lluvia, UV, cambio de temperatura, atardecer…
-                        Insights.headline(snapshot)?.let {
+                        insight?.let {
                             Text(
                                 it,
                                 maxLines = 1,

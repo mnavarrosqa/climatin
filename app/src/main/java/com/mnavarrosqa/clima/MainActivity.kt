@@ -31,6 +31,6 @@ class MainActivity : ComponentActivity() {
 
     private fun parse(intent: Intent?): DeepLinkTarget? {
         val place = intent?.getStringExtra("place") ?: return null
-        return DeepLinkTarget(place, intent.getStringExtra("day"))
+        return DeepLinkTarget(place, intent.getStringExtra("day"), radar = intent.getBooleanExtra("radar", false))
     }
 }

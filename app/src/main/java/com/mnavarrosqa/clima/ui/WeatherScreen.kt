@@ -127,8 +127,8 @@ import kotlin.math.roundToInt
 private val OnSky = Color.White
 private val OnSkyVariant = Color.White.copy(alpha = 0.85f)
 
-/** Destino de un acceso directo desde un widget: una ciudad y, opcionalmente, un día (yyyy-MM-dd). */
-data class DeepLinkTarget(val placeId: String, val day: String?)
+/** Destino de un acceso directo desde un widget: una ciudad y, opcionalmente, un día (yyyy-MM-dd) o el mapa de lluvia. */
+data class DeepLinkTarget(val placeId: String, val day: String?, val radar: Boolean = false)
 
 @Composable
 fun WeatherRoute(
@@ -154,7 +154,10 @@ fun WeatherRoute(
     LaunchedEffect(deepLink) {
         if (deepLink != null) {
             showCities = false
-            radarAt = null
+            // Un widget puede pedir abrir directo el mapa de lluvia de su ciudad.
+            val place = if (deepLink.radar) viewModel.cached(deepLink.placeId) ?: viewModel.cached(CURRENT_PLACE_ID) else null
+            radarAt = place?.let { "${it.latitude},${it.longitude}" }
+            if (place != null) onDeepLinkHandled()
         }
     }
     // Gesto "atrás" predictivo: mientras se desliza, la pantalla se achica y deja ver que vuelve.

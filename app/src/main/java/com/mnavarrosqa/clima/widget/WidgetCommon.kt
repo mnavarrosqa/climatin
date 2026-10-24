@@ -23,6 +23,7 @@ import androidx.glance.LocalContext
 import androidx.glance.currentState
 import androidx.glance.action.clickable
 import androidx.glance.action.actionStartActivity
+import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.updateAll
@@ -45,14 +46,26 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.ui.theme.DarkColors
 import com.mnavarrosqa.clima.ui.theme.LightColors
 
-/** En Android 12+ GlanceTheme toma los colores del fondo de pantalla (Material You). */
+/**
+ * En Android 12+ GlanceTheme toma los colores del fondo de pantalla (Material You). Si el widget
+ * eligió un color fijo, usa esa paleta en cualquier versión.
+ */
 @Composable
 fun ClimaGlanceTheme(content: @Composable () -> Unit) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    val fixed = accentSchemes(WidgetAccent.from(currentState(WidgetOptionKeys.ACCENT)))
+    if (fixed != null) {
+        GlanceTheme(colors = ColorProviders(light = fixed.first, dark = fixed.second), content = content)
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         GlanceTheme(content = content)
     } else {
         GlanceTheme(colors = ColorProviders(light = LightColors, dark = DarkColors), content = content)
     }
+}
+
+/** Widgets que se pueden dibujar fuera de la pantalla de inicio (vista previa al personalizar). */
+interface PreviewableWidget {
+    @Composable
+    fun Body()
 }
 
 /** Estilo de fondo que elige cada widget en su configuración. */
@@ -95,10 +108,15 @@ private val WhiteChip = ColorProvider(Color.White.copy(alpha = 0.18f))
 fun widgetColors(snapshot: WeatherSnapshot?, default: WidgetStyle = WidgetStyle.SYSTEM): WidgetColors {
     val c = GlanceTheme.colors
     val style = WidgetStyle.from(currentState(WidgetPrefs.STYLE), default)
+    // Opacidad elegida: se resuelve el color del tema actual (claro u oscuro) y se le baja el alfa.
+    val opacity = (currentState(WidgetOptionKeys.OPACITY) ?: 100).coerceIn(0, 100)
+    val context = LocalContext.current
+    fun faded(provider: ColorProvider): ColorProvider =
+        if (opacity >= 100) provider else ColorProvider(provider.getColor(context).copy(alpha = opacity / 100f))
     return when (style) {
         WidgetStyle.SYSTEM -> WidgetColors(
             style = style,
-            background = c.widgetBackground,
+            background = faded(c.widgetBackground),
             text = c.onSurface,
             textVariant = c.onSurfaceVariant,
             chip = c.secondaryContainer,
@@ -107,7 +125,7 @@ fun widgetColors(snapshot: WeatherSnapshot?, default: WidgetStyle = WidgetStyle.
         )
         WidgetStyle.COLOR -> WidgetColors(
             style = style,
-            background = c.primaryContainer,
+            background = faded(c.primaryContainer),
             text = c.onPrimaryContainer,
             textVariant = c.onPrimaryContainer,
             chip = c.primary,
@@ -136,14 +154,22 @@ fun WidgetSurface(
     cornerRadius: Dp = 24.dp,
     content: @Composable () -> Unit,
 ) {
+    val radius = WidgetCorners.from(currentState(WidgetOptionKeys.CORNERS)).radius(cornerRadius)
     var base = GlanceModifier.fillMaxSize().appWidgetBackground()
-    if (colors.background != null) base = base.cornerRadius(cornerRadius).background(colors.background)
+    if (colors.background != null) base = base.cornerRadius(radius).background(colors.background)
     if (colors.backgroundImage != null) {
-        base = base.cornerRadius(cornerRadius).background(colors.backgroundImage, ContentScale.FillBounds)
+        base = base.cornerRadius(radius).background(colors.backgroundImage, ContentScale.FillBounds)
+    }
+    val placeId = widgetPlaceId()
+    val tap = when (WidgetTap.from(currentState(WidgetOptionKeys.TAP))) {
+        WidgetTap.APP -> openPlace(placeId)
+        WidgetTap.RADAR -> actionStartActivity<MainActivity>(actionParametersOf(DeepLink.PLACE to placeId, DeepLink.RADAR to true))
+        WidgetTap.NEXT -> actionRunCallback<NextCityAction>()
+        WidgetTap.REFRESH -> actionRunCallback<RefreshAction>()
     }
     Box(
         modifier = base
-            .clickable(actionStartActivity<MainActivity>())
+            .clickable(tap)
             .then(modifier),
         contentAlignment = Alignment.Center,
     ) {
@@ -184,6 +210,7 @@ object WidgetPrefs {
 object DeepLink {
     val PLACE = ActionParameters.Key<String>("place")
     val DAY = ActionParameters.Key<String>("day")
+    val RADAR = ActionParameters.Key<Boolean>("radar")
 }
 
 /** Acción que abre la app en una ciudad. */
@@ -195,8 +222,7 @@ fun openDay(placeId: String, date: String) =
 
 /** Ciudad de este widget (si se borró, vuelve a "donde estoy"). */
 @Composable
-fun widgetPlaceId(): String =
-    WeatherRepository.get(LocalContext.current).resolvePlaceId(currentState(WidgetPrefs.PLACE))
+fun widgetPlaceId(): String = resolveWidgetPlace(LocalContext.current, currentState(WidgetPrefs.PLACE))
 
 /** Pronóstico de la ciudad de este widget; se recompone cuando cambia la caché. */
 @Composable

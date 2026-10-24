@@ -37,16 +37,19 @@ import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.work.WeatherWorker
 
 /** Widget "Pronóstico": ahora + próximos días; si es alto, también las próximas horas. */
-class PronosticoWidget : GlanceAppWidget() {
+class PronosticoWidget : GlanceAppWidget(), PreviewableWidget {
 
     override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent {
-            ClimaGlanceTheme {
-                val current = widgetSnapshot()
-                if (current == null) EmptyWidget() else PronosticoContent(current)
-            }
+        provideContent { Body() }
+    }
+
+    @Composable
+    override fun Body() {
+        ClimaGlanceTheme {
+            val current = widgetSnapshot()
+            if (current == null) EmptyWidget() else PronosticoContent(current)
         }
     }
 
@@ -87,7 +90,7 @@ private fun PronosticoContent(snapshot: WeatherSnapshot) {
                 }
             }
             if (large) {
-                Insights.headline(snapshot)?.let {
+                Insights.headline(snapshot)?.takeIf { widgetShows(WidgetPart.INSIGHT) }?.let {
                     Spacer(GlanceModifier.height(6.dp))
                     Text(
                         it,

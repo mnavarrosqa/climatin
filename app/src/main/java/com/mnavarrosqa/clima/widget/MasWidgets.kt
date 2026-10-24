@@ -50,18 +50,21 @@ import java.time.LocalDateTime
 import kotlin.math.roundToInt
 
 /** Base de los widgets simples: tema, ciudad y estado vacío ya resueltos. */
-abstract class SimpleWeatherWidget : GlanceAppWidget() {
+abstract class SimpleWeatherWidget : GlanceAppWidget(), PreviewableWidget {
     override val sizeMode: SizeMode = SizeMode.Exact
 
     @Composable
     abstract fun Content(snapshot: WeatherSnapshot)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent {
-            ClimaGlanceTheme {
-                val snapshot = widgetSnapshot()
-                if (snapshot == null) EmptyWidget() else Content(snapshot)
-            }
+        provideContent { Body() }
+    }
+
+    @Composable
+    override fun Body() {
+        ClimaGlanceTheme {
+            val snapshot = widgetSnapshot()
+            if (snapshot == null) EmptyWidget() else Content(snapshot)
         }
     }
 }
@@ -120,7 +123,7 @@ class BurbujaWidget : SimpleWeatherWidget() {
                             fontWeight = FontWeight.Medium,
                         ),
                     )
-                    if (today != null && diameter >= 100.dp) {
+                    if (today != null && diameter >= 100.dp && widgetShows(WidgetPart.RANGE)) {
                         Text(
                             "${today.max.degrees()} / ${today.min.degrees()}",
                             style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
@@ -177,7 +180,7 @@ class PildoraWidget : SimpleWeatherWidget() {
                             maxLines = 1,
                             style = TextStyle(color = colors.text, fontSize = 14.sp),
                         )
-                        if (today != null) {
+                        if (today != null && widgetShows(WidgetPart.RANGE)) {
                             Text(
                                 "${today.max.degrees()} / ${today.min.degrees()}",
                                 maxLines = 1,

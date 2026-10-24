@@ -36,16 +36,19 @@ import com.mnavarrosqa.clima.work.WeatherWorker
 import kotlin.math.roundToInt
 
 /** "Gráfico": la curva de temperatura de las próximas horas. */
-class GraficoWidget : GlanceAppWidget() {
+class GraficoWidget : GlanceAppWidget(), PreviewableWidget {
 
     override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent {
-            ClimaGlanceTheme {
-                val current = widgetSnapshot()
-                if (current == null) EmptyWidget() else GraficoContent(current)
-            }
+        provideContent { Body() }
+    }
+
+    @Composable
+    override fun Body() {
+        ClimaGlanceTheme {
+            val current = widgetSnapshot()
+            if (current == null) EmptyWidget() else GraficoContent(current)
         }
     }
 
@@ -98,7 +101,7 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
                     )
                     PlaceLabel(snapshot, colors, fontSize = 12.sp)
                 }
-                snapshot.today()?.let { today ->
+                snapshot.today()?.takeIf { widgetShows(WidgetPart.RANGE) }?.let { today ->
                     Text(
                         "${today.max.degrees()} / ${today.min.degrees()}",
                         style = TextStyle(color = colors.textVariant, fontSize = 13.sp),

@@ -165,6 +165,10 @@
         </receiver>
 
         <activity
+            android:name=".widget.WidgetGalleryActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".widget.WidgetConfigActivity"
             android:exported="true">
             <intent-filter>

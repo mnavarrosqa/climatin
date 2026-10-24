@@ -51,7 +51,7 @@ class NextCityAction : ActionCallback {
         val repository = WeatherRepository.get(context)
         val ids = listOf(CURRENT_PLACE_ID) + repository.places().map { it.id }
         updateAppWidgetState(context, glanceId) { prefs ->
-            val current = repository.resolvePlaceId(prefs[WidgetPrefs.PLACE])
+            val current = resolveWidgetPlace(context, prefs[WidgetPrefs.PLACE])
             prefs[WidgetPrefs.PLACE] = ids[(ids.indexOf(current) + 1) % ids.size]
         }
         updateWeatherWidgets(context)
@@ -68,16 +68,23 @@ fun PlaceLabel(
 ) {
     val refreshing = currentState(WidgetPrefs.REFRESHING) == true
     val hasOtherCities = WeatherRepository.get(LocalContext.current).places().isNotEmpty()
+    val showPlace = widgetShows(WidgetPart.PLACE)
+    val showRefresh = widgetShows(WidgetPart.REFRESH)
+    val showNext = widgetShows(WidgetPart.NEXT)
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            if (refreshing) tr("Actualizando…", "Updating…") else snapshot.place ?: tr("Tu ubicación", "Your location"),
-            maxLines = 1,
-            style = TextStyle(color = colors.textVariant, fontSize = fontSize, fontWeight = fontWeight),
-        )
-        Spacer(GlanceModifier.width(2.dp))
+        if (refreshing || showPlace) {
+            Text(
+                if (refreshing) tr("Actualizando…", "Updating…") else snapshot.place ?: tr("Tu ubicación", "Your location"),
+                maxLines = 1,
+                style = TextStyle(color = colors.textVariant, fontSize = fontSize, fontWeight = fontWeight),
+            )
+            Spacer(GlanceModifier.width(2.dp))
+        }
         if (!refreshing) {
-            SmallButton(R.drawable.ic_refresh, tr("Actualizar", "Refresh"), colors) { actionRunCallback<RefreshAction>() }
-            if (hasOtherCities) {
+            if (showRefresh) {
+                SmallButton(R.drawable.ic_refresh, tr("Actualizar", "Refresh"), colors) { actionRunCallback<RefreshAction>() }
+            }
+            if (hasOtherCities && showNext) {
                 SmallButton(R.drawable.ic_chevron_right, tr("Siguiente ciudad", "Next city"), colors) { actionRunCallback<NextCityAction>() }
             }
         }

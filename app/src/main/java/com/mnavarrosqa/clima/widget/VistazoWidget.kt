@@ -31,11 +31,14 @@ import com.mnavarrosqa.clima.work.WeatherWorker
 import java.time.LocalDate
 
 /** "De un vistazo": fecha y clima sin fondo, directo sobre el fondo de pantalla como en el Pixel. */
-class VistazoWidget : GlanceAppWidget() {
+class VistazoWidget : GlanceAppWidget(), PreviewableWidget {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent {
-            ClimaGlanceTheme { VistazoContent(widgetSnapshot()) }
-        }
+        provideContent { Body() }
+    }
+
+    @Composable
+    override fun Body() {
+        ClimaGlanceTheme { VistazoContent(widgetSnapshot()) }
     }
 }
 
@@ -62,14 +65,14 @@ private fun VistazoContent(snapshot: WeatherSnapshot?) {
                         modifier = GlanceModifier.size(22.dp),
                     )
                     Spacer(GlanceModifier.width(6.dp))
-                    val place = snapshot.place?.let { " · $it" } ?: ""
+                    val place = snapshot.place?.takeIf { widgetShows(WidgetPart.PLACE) }?.let { " · $it" } ?: ""
                     Text(
                         "${current.temperature.degrees()} ${WeatherCodes.description(current.code)}$place",
                         maxLines = 1,
                         style = TextStyle(color = colors.text, fontSize = 16.sp),
                     )
                 }
-                Insights.headline(snapshot)?.let { headline ->
+                Insights.headline(snapshot)?.takeIf { widgetShows(WidgetPart.INSIGHT) }?.let { headline ->
                     Text(
                         headline,
                         maxLines = 1,

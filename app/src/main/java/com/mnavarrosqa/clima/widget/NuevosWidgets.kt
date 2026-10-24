@@ -111,16 +111,19 @@ class ProximaHoraWidgetReceiver : SimpleWeatherReceiver() {
 
 // --- Ciudades: todas tus ciudades en una lista ---
 
-class CiudadesWidget : GlanceAppWidget() {
+class CiudadesWidget : GlanceAppWidget(), PreviewableWidget {
     override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val repository = WeatherRepository.get(context)
-        provideContent {
-            ClimaGlanceTheme {
-                val all by remember { repository.allSnapshots() }.collectAsState(repository.allCached())
-                if (all.isEmpty()) EmptyWidget() else CiudadesContent(all)
-            }
+        provideContent { Body() }
+    }
+
+    @Composable
+    override fun Body() {
+        val repository = WeatherRepository.get(LocalContext.current)
+        ClimaGlanceTheme {
+            val all by remember { repository.allSnapshots() }.collectAsState(repository.allCached())
+            if (all.isEmpty()) EmptyWidget() else CiudadesContent(all)
         }
     }
 }
@@ -146,7 +149,7 @@ private fun CiudadesContent(all: List<WeatherSnapshot>) {
                         modifier = GlanceModifier.defaultWeight(),
                         style = TextStyle(color = colors.text, fontSize = 14.sp),
                     )
-                    if (today != null && size.width >= 220.dp) {
+                    if (today != null && size.width >= 220.dp && widgetShows(WidgetPart.RANGE)) {
                         Text(
                             "${today.max.degrees()} / ${today.min.degrees()}",
                             style = TextStyle(color = colors.textVariant, fontSize = 12.sp),

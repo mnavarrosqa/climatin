@@ -93,6 +93,7 @@ import com.mnavarrosqa.clima.data.PressureUnit
 import com.mnavarrosqa.clima.data.TemperatureUnit
 import com.mnavarrosqa.clima.data.WindUnit
 import com.mnavarrosqa.clima.wallpaper.WallpaperSettingsActivity
+import com.mnavarrosqa.clima.widget.WidgetGalleryActivity
 import com.mnavarrosqa.clima.work.RainNotifier
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
@@ -505,6 +506,20 @@ fun CitiesScreen(
                                     FilledTonalButton(onClick = viewModel::checkForUpdates) { Text(tr("Buscar", "Check")) }
                                 }
                             }
+                        },
+                        colors = groupColors(),
+                    )
+                }
+            }
+            item {
+                Group(Modifier.padding(top = 2.dp)) {
+                    ListItem(
+                        headlineContent = { Text(tr("Widgets", "Widgets")) },
+                        supportingContent = { Text(tr("Ver los 11 widgets, agregarlos a la pantalla de inicio y personalizar los que ya pusiste", "See all 11 widgets, add them to your home screen and customize the ones you placed")) },
+                        trailingContent = {
+                            FilledTonalButton(onClick = {
+                                context.startActivity(Intent(context, WidgetGalleryActivity::class.java))
+                            }) { Text(tr("Ver", "Open")) }
                         },
                         colors = groupColors(),
                     )
