@@ -77,6 +77,25 @@ class SkyPainter {
         close()
     }
 
+    // El degradado del fondo se reusa mientras no cambien el alto ni los colores: antes se creaba
+    // uno nuevo en cada cuadro, 60 veces por segundo.
+    private var backgroundKey: Pair<Float, SkyGradient>? = null
+    private var backgroundShaderCache: Shader? = null
+
+    private fun backgroundShader(height: Float, colors: SkyGradient): Shader {
+        val key = height to colors
+        backgroundShaderCache?.takeIf { backgroundKey == key }?.let { return it }
+        return LinearGradient(
+            0f, 0f, 0f, height,
+            intArrayOf(colors.top, colors.middle, colors.bottom),
+            floatArrayOf(0f, 0.6f, 1f),
+            Shader.TileMode.CLAMP,
+        ).also {
+            backgroundKey = key
+            backgroundShaderCache = it
+        }
+    }
+
     private fun puff(canvas: Canvas, x: Float, y: Float, radiusX: Float, radiusY: Float, alpha: Float, rgb: Int) {
         if (alpha <= 0f || radiusX <= 0f || radiusY <= 0f) return
         paint.shader = puffShader(rgb)
@@ -105,12 +124,7 @@ class SkyPainter {
     ) {
         // Los fondos de pantalla "Formas" y "Oscuro" ponen su propio fondo y usan solo algunas capas.
         if (background) {
-            paint.shader = LinearGradient(
-                0f, 0f, 0f, height,
-                intArrayOf(colors.top, colors.middle, colors.bottom),
-                floatArrayOf(0f, 0.6f, 1f),
-                Shader.TileMode.CLAMP,
-            )
+            paint.shader = backgroundShader(height, colors)
             canvas.drawRect(0f, 0f, width, height, paint)
             paint.shader = null
         }

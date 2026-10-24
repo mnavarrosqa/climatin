@@ -65,6 +65,15 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     /** Resultado de la última búsqueda manual de actualizaciones. */
     val updateMessage: StateFlow<String?> = _updateMessage.asStateFlow()
 
+    private val _cards = MutableStateFlow(CardLayoutPrefs.load(application))
+    /** Orden y visibilidad de las tarjetas del pronóstico. */
+    val cards: StateFlow<CardLayout> = _cards.asStateFlow()
+
+    fun setCards(layout: CardLayout) {
+        _cards.value = layout
+        CardLayoutPrefs.save(getApplication(), layout)
+    }
+
     private val _search = MutableStateFlow(SearchState())
     val search: StateFlow<SearchState> = _search.asStateFlow()
     private var searchJob: Job? = null

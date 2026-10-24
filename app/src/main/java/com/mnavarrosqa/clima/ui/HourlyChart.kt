@@ -76,7 +76,8 @@ private val SLOT = 60.dp
 fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: List<SunEvent> = emptyList()) {
     if (hours.isEmpty()) return
     val colors = MaterialTheme.colorScheme
-    val measurer = rememberTextMeasurer()
+    // Una entrada de caché por hora: si no, al dibujar la curva se vuelven a medir los 24 textos en cada cuadro.
+    val measurer = rememberTextMeasurer(cacheSize = 32)
     val labelStyle = MaterialTheme.typography.labelLarge.copy(color = colors.onSurface)
     val min = hours.minOf { it.temperature }
     val max = hours.maxOf { it.temperature }

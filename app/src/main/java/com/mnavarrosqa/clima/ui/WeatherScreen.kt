@@ -446,6 +446,7 @@ private fun WeatherPage(
     onCollapsedChange: (Boolean) -> Unit = {},
     banner: (@Composable () -> Unit)? = null,
 ) {
+    val cards = viewModel.cards.collectAsStateWithLifecycle().value.visible
     val snapshot by remember(placeId) { viewModel.snapshots(placeId) }
         .collectAsStateWithLifecycle(viewModel.cached(placeId))
     val current = snapshot
@@ -470,6 +471,7 @@ private fun WeatherPage(
         shownAt = shownAt,
         banner = banner,
         onCollapsedChange = onCollapsedChange,
+        cards = cards,
     )
 }
 
@@ -491,6 +493,7 @@ fun ForecastContent(
     shownAt: Long = 0L,
     banner: (@Composable () -> Unit)? = null,
     onCollapsedChange: (Boolean) -> Unit = {},
+    cards: List<ForecastCard> = ForecastCard.entries,
 ) {
     // La lista del resumen (la única en pantallas angostas) decide si el encabezado se achica.
     val summaryState = rememberLazyListState()
@@ -549,21 +552,27 @@ fun ForecastContent(
             }
         }
     }
-    val details: LazyListScope.(Boolean) -> Unit = { twoPane ->
+    // Cada tarjeta, en el orden que eligió la persona (Ciudades y ajustes → Pantalla del clima).
+    val card: LazyListScope.(ForecastCard, Int) -> Unit = { which, index ->
         if (snapshot != null) {
-            item {
-                Box(Modifier.reveal(2, shownAt)) {
-                    GlassCard(tr("Próximas horas", "Next hours")) {
-                        HourlyChart(snapshot.upcomingHours(24), sunEvents = sunEventsOf(snapshot.days))
+            item(key = which.name) {
+                Box(Modifier.reveal(index, shownAt)) {
+                    when (which) {
+                        ForecastCard.HOURS -> GlassCard(tr("Próximas horas", "Next hours")) {
+                            HourlyChart(snapshot.upcomingHours(24), sunEvents = sunEventsOf(snapshot.days))
+                        }
+                        ForecastCard.DAYS -> DailyCard(snapshot, onDay = onDay)
+                        ForecastCard.RADAR -> RadarCard(onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })
+                        ForecastCard.DETAILS -> DetailsGrid(snapshot)
                     }
                 }
             }
-            item { Box(Modifier.reveal(3, shownAt)) { DailyCard(snapshot, onDay = onDay) } }
+        }
+    }
+    val details: LazyListScope.(Boolean) -> Unit = { twoPane ->
+        if (snapshot != null) {
             // En dos paneles, el mapa y los detalles van a la izquierda.
-            if (!twoPane) {
-                item { Box(Modifier.reveal(4, shownAt)) { RadarCard(onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) }) } }
-                item { Box(Modifier.reveal(5, shownAt)) { DetailsGrid(snapshot) } }
-            }
+            cards.filter { !twoPane || !it.leftPane }.forEachIndexed { i, which -> card(which, 2 + i) }
             item {
                 Text(
                     tr("Actualizado a las", "Updated at") + " ${updatedAt(snapshot.fetchedAt)} · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
@@ -589,10 +598,7 @@ fun ForecastContent(
                     verticalArrangement = spacing,
                 ) {
                     summary()
-                    if (snapshot != null) {
-                        item { Box(Modifier.reveal(4, shownAt)) { RadarCard(onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) }) } }
-                        item { Box(Modifier.reveal(5, shownAt)) { DetailsGrid(snapshot) } }
-                    }
+                    cards.filter { it.leftPane }.forEachIndexed { i, which -> card(which, 2 + i) }
                 }
                 LazyColumn(
                     modifier = Modifier.weight(0.58f).fillMaxSize(),

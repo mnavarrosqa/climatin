@@ -53,6 +53,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Search
@@ -115,6 +117,7 @@ fun CitiesScreen(
     val updateMessage by viewModel.updateMessage.collectAsStateWithLifecycle()
     val update by viewModel.update.collectAsStateWithLifecycle()
     val updateProgress by viewModel.updateProgress.collectAsStateWithLifecycle()
+    val cardLayout by viewModel.cards.collectAsStateWithLifecycle()
     val installed = remember { Updates.installedVersion(context) }
     val fromPlay = remember { Updates.installedFromPlay(context) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -338,6 +341,36 @@ fun CitiesScreen(
                                 )
                             },
                     )
+                }
+            }
+
+            item { SectionTitle(tr("Pantalla del clima", "Weather screen")) }
+            item {
+                Group {
+                    Column {
+                        cardLayout.order.forEachIndexed { index, card ->
+                            ListItem(
+                                headlineContent = { Text(card.label) },
+                                leadingContent = {
+                                    Switch(
+                                        checked = card !in cardLayout.hidden,
+                                        onCheckedChange = { viewModel.setCards(cardLayout.toggle(card, it)) },
+                                    )
+                                },
+                                trailingContent = {
+                                    Row {
+                                        IconButton(onClick = { viewModel.setCards(cardLayout.move(card, -1)) }, enabled = index > 0) {
+                                            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = tr("Subir", "Move up"))
+                                        }
+                                        IconButton(onClick = { viewModel.setCards(cardLayout.move(card, 1)) }, enabled = index < cardLayout.order.lastIndex) {
+                                            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = tr("Bajar", "Move down"))
+                                        }
+                                    }
+                                },
+                                colors = groupColors(),
+                            )
+                        }
+                    }
                 }
             }
 
