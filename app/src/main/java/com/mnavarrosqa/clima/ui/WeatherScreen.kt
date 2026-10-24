@@ -2,6 +2,10 @@ package com.mnavarrosqa.clima.ui
 
 import com.mnavarrosqa.clima.data.tr
 import android.Manifest
+import android.app.Activity
+import androidx.compose.runtime.SideEffect
+import androidx.core.view.WindowCompat
+import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
 import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
@@ -196,6 +200,19 @@ fun WeatherRoute(
         showCities -> "ciudades"
         pages.isEmpty() -> "permiso"
         else -> "clima"
+    }
+    // Sobre el cielo los íconos del sistema van siempre claros; en Ciudades, Ajustes y el mapa,
+    // según el tema (lo que pone ClimaTheme).
+    val rootView = LocalView.current
+    val darkTheme = LocalDarkTheme.current
+    val overSky = screen == "clima" || screen == "permiso"
+    SideEffect {
+        (rootView.context as? Activity)?.window?.let { window ->
+            WindowCompat.getInsetsController(window, rootView).apply {
+                isAppearanceLightStatusBars = !overSky && !darkTheme
+                isAppearanceLightNavigationBars = !overSky && !darkTheme
+            }
+        }
     }
     AnimatedContent(
         targetState = screen,
@@ -1010,6 +1027,8 @@ private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax:
     var grown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { grown = true }
     val grow by animateFloatAsState(if (grown) 1f else 0f, tween(700, delayMillis = 250, easing = EaseOutCubic), label = "rango")
+    val dark = LocalDarkTheme.current
+    val rangeColors = remember(min, max, dark) { TempColors.between(min, max).map { TempColors.forTheme(it, dark) } }
     val nowAt = now?.let { ((it - weekMin) / span).toFloat().coerceIn(0f, 1f) }
     val dotColor = colors.onSurface
     val ringColor = colors.surfaceContainer
@@ -1039,7 +1058,7 @@ private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax:
                 }
                 .clip(CircleShape)
                 // Colores de la escala de temperatura, de la mínima a la máxima del día.
-                .background(Brush.horizontalGradient(TempColors.between(min, max))),
+                .background(Brush.horizontalGradient(rangeColors)),
         )
         if (end < 1f) Spacer(Modifier.weight(1f - end))
     }

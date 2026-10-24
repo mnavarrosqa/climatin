@@ -29,6 +29,12 @@ object TempColors {
         return lerp(c0, c1, ((celsius - t0) / (t1 - t0)).toFloat())
     }
 
+    /**
+     * En tema claro se oscurecen un poco: el amarillo y el verde claros casi no se ven sobre una
+     * tarjeta clara.
+     */
+    fun forTheme(color: Color, dark: Boolean): Color = if (dark) color else lerp(color, Color.Black, 0.2f)
+
     /** Colores entre dos temperaturas, para pintar una barra o una curva. */
     fun between(min: Double, max: Double, steps: Int = 4): List<Color> =
         if (max - min < 0.5) listOf(of(min), of(max)) else List(steps + 1) { of(min + (max - min) * it / steps) }

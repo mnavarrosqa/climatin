@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.ui
 
+import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
 import com.mnavarrosqa.clima.data.tr
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOutCubic
@@ -268,7 +269,8 @@ private fun WindCompass(fromDegrees: Float) {
 /** La luna con la parte iluminada que corresponde a su edad (0 nueva, 0.5 llena). */
 @Composable
 private fun MoonPhase(age: Float) {
-    val dark = MaterialTheme.colorScheme.surfaceContainerHigh
+    // La parte en sombra es gris pizarra en los dos temas: sobre una tarjeta clara se distingue.
+    val dark = Color(0xFF3A4150)
     val light = Color(0xFFF3EBD2)
     Canvas(Modifier.size(48.dp)) {
         val r = size.minDimension / 2
@@ -303,6 +305,7 @@ private fun SunArc(sunrise: String, sunset: String, now: LocalDateTime) {
     val fraction = (elapsed.toFloat() / total).coerceIn(0f, 1f)
     val isDay = elapsed in 0..total
     val grow = growth()
+    val darkTheme = LocalDarkTheme.current
     Row(verticalAlignment = Alignment.Bottom) {
         Canvas(
             Modifier
@@ -325,7 +328,7 @@ private fun SunArc(sunrise: String, sunset: String, now: LocalDateTime) {
             )
             val shown = fraction * grow
             drawArc(
-                Brush.horizontalGradient(listOf(Color(0xFFFFB74D), Color(0xFFFFD54F))),
+                Brush.horizontalGradient(if (darkTheme) listOf(Color(0xFFFFB74D), Color(0xFFFFD54F)) else listOf(Color(0xFFF57C00), Color(0xFFFFA000))),
                 180f,
                 180f * shown,
                 false,

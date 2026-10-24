@@ -6,6 +6,7 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 - **Cielo animado** detrás del pronóstico: sol, nubes, lluvia, nieve, niebla, estrellas o relámpagos según el clima.
 - **Varias ciudades**: buscador, se desliza entre ellas. En *Ciudades* (ícono de lista, arriba a la izquierda) son tarjetas con su cielo y temperatura: se quitan deslizando (con deshacer) y se reordenan manteniéndolas apretadas.
 - **Ajustes ordenados por categoría** (engranaje, arriba a la derecha): pantalla del clima, unidades, notificaciones, ubicación, fondo de pantalla, widgets y acerca de, cada una con un resumen de cómo está.
+- **Claro y oscuro**: tema del sistema, claro u oscuro, y colores del fondo de pantalla (Material You) a elección en *Ajustes → Apariencia*. Sobre el cielo, los íconos del sistema van siempre claros.
 - **Datos**: temperatura por hora en gráfico (tocá una hora para ver sensación térmica, viento y lluvia), humedad, viento, UV, calidad del aire, presión, visibilidad, amanecer/atardecer y fase lunar, con medidores, brújula, arco del sol y dibujo de la luna.
 - **Diseño Material 3 Expressive**: tipografía Google Sans Flex (descargable, con Roboto Flex de respaldo), encabezado que se achica al bajar, carga con esqueleto animado, vibración leve y gesto "atrás" predictivo.
 - **Aviso de lluvia**: "Lluvia en unos 30 min" en la app y en "De un vistazo"; notificación opcional.

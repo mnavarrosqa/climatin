@@ -1,0 +1,1 @@
+Modo claro y oscuro mejorados: nueva sección Apariencia (tema del sistema, claro u oscuro, y colores del fondo de pantalla), íconos de la barra de estado siempre visibles sobre el cielo, colores de temperatura, luna y atardecer legibles en los dos temas, y widgets que se repintan al cambiar de modo.

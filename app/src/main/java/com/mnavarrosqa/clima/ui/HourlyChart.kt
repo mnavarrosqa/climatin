@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.ui
 
+import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
 import com.mnavarrosqa.clima.data.tr
 import androidx.compose.foundation.Canvas
 import androidx.compose.animation.AnimatedVisibility
@@ -96,7 +97,10 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
         selected = if (selected == index) null else index
     }
     val scroll = rememberScrollState()
-    val lineColors = remember(hours) { hours.map { TempColors.of(it.temperature) }.let { if (it.size < 2) it + it else it } }
+    val dark = LocalDarkTheme.current
+    val lineColors = remember(hours, dark) {
+        hours.map { TempColors.forTheme(TempColors.of(it.temperature), dark) }.let { if (it.size < 2) it + it else it }
+    }
     val highlight = colors.primary.copy(alpha = 0.12f)
 
     Column(modifier) {
@@ -219,7 +223,7 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
                         Text(
                             (if (event.sunrise) "↑ " else "↓ ") + shortHour(event.time),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFFA726),
+                            color = if (dark) Color(0xFFFFB74D) else Color(0xFFC25100),
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
                         )

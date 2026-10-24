@@ -1,6 +1,17 @@
 package com.mnavarrosqa.clima.ui.theme
 
+import android.app.Activity
+import android.content.Context
 import android.os.Build
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -50,14 +61,74 @@ val DarkColors = darkColorScheme(
     onSurfaceVariant = Color(0xFFC4C6CF),
 )
 
+/** Tema elegido en Ajustes → Apariencia. */
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+/**
+ * Apariencia de la app, guardada en SharedPreferences. Es estado de Compose: al cambiarla, todas
+ * las pantallas abiertas se repintan sin reiniciar.
+ */
+object Appearance {
+    private const val FILE = "clima"
+    private const val MODE = "tema"
+    private const val DYNAMIC = "colores_dinamicos"
+
+    var mode by mutableStateOf(ThemeMode.SYSTEM)
+        private set
+    var dynamicColors by mutableStateOf(true)
+        private set
+    private var loaded = false
+
+    fun load(context: Context) {
+        if (loaded) return
+        loaded = true
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        mode = ThemeMode.entries.firstOrNull { it.name == prefs.getString(MODE, null) } ?: ThemeMode.SYSTEM
+        dynamicColors = prefs.getBoolean(DYNAMIC, true)
+    }
+
+    fun setMode(context: Context, value: ThemeMode) {
+        mode = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(MODE, value.name).apply()
+    }
+
+    fun setDynamicColors(context: Context, value: Boolean) {
+        dynamicColors = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(DYNAMIC, value).apply()
+    }
+}
+
+/** Si la app está en oscuro (por el sistema o por elección). */
+val LocalDarkTheme = staticCompositionLocalOf { false }
+
 @Composable
 fun ClimaTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val colors = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val context = LocalContext.current
+    val context = LocalContext.current
+    remember { Appearance.load(context) }
+    val dark = when (Appearance.mode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    val colors = if (Appearance.dynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else {
         if (dark) DarkColors else LightColors
     }
-    MaterialTheme(colorScheme = colors, typography = ClimaTypography, content = content)
+    // Íconos de la barra de estado y de navegación según el tema. La pantalla del pronóstico los
+    // vuelve a poner claros, porque ahí siempre hay cielo detrás.
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            (view.context as? Activity)?.window?.let { window ->
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+        }
+    }
+    CompositionLocalProvider(LocalDarkTheme provides dark) {
+        MaterialTheme(colorScheme = colors, typography = ClimaTypography, content = content)
+    }
 }

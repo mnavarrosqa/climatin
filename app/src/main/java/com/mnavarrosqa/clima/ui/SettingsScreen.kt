@@ -62,6 +62,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.RadioButton
+import com.mnavarrosqa.clima.ui.theme.Appearance
+import com.mnavarrosqa.clima.ui.theme.ThemeMode
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -99,7 +102,7 @@ import com.mnavarrosqa.clima.work.RainNotifier
 import kotlin.math.roundToInt
 
 /** Páginas de ajustes. */
-private enum class SettingsPage { SCREEN, UNITS, NOTIFICATIONS, LOCATION, ABOUT }
+private enum class SettingsPage { APPEARANCE, SCREEN, UNITS, NOTIFICATIONS, LOCATION, ABOUT }
 
 /**
  * Ajustes, separados de las ciudades. La página principal muestra las categorías con un resumen
@@ -125,6 +128,7 @@ fun SettingsScreen(
     ) { current ->
         when (current) {
             null -> SettingsHome(viewModel, onBack = onBack, onOpen = { page = it })
+            SettingsPage.APPEARANCE -> SettingsScaffold(tr("Apariencia", "Appearance"), onBack = { page = null }) { appearancePage() }
             SettingsPage.SCREEN -> SettingsScaffold(tr("Pantalla del clima", "Weather screen"), onBack = { page = null }) { screenPage(viewModel) }
             SettingsPage.UNITS -> SettingsScaffold(tr("Unidades", "Units"), onBack = { page = null }) { unitsPage(viewModel) }
             SettingsPage.NOTIFICATIONS -> NotificationsPage(viewModel, onBack = { page = null })
@@ -284,6 +288,21 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
         item {
             Rows {
                 SettingRow(
+                    tr("Apariencia", "Appearance"),
+                    when (Appearance.mode) {
+                        ThemeMode.SYSTEM -> tr("Tema del sistema", "System theme")
+                        ThemeMode.LIGHT -> tr("Claro", "Light")
+                        ThemeMode.DARK -> tr("Oscuro", "Dark")
+                    } + if (Appearance.dynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) tr(" · colores del fondo de pantalla", " · wallpaper colors") else "",
+                    icon = {
+                        CategoryIcon(Color(0xFF455A64)) {
+                            Text("◐", color = Color.White, fontSize = 22.sp)
+                        }
+                    },
+                    onClick = { onOpen(SettingsPage.APPEARANCE) },
+                    trailing = Chevron,
+                )
+                SettingRow(
                     tr("Pantalla del clima", "Weather screen"),
                     tr("${cards.visible.size} de ${cards.order.size} tarjetas · ", "${cards.visible.size} of ${cards.order.size} cards · ") +
                         cards.visible.joinToString(", ") { it.label.lowercase() },
@@ -369,6 +388,49 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
                             Chevron()
                         }
                     },
+                )
+            }
+        }
+    }
+}
+
+// --- Apariencia ---
+
+private fun LazyListScope.appearancePage() {
+    item { SectionTitle(tr("Tema", "Theme")) }
+    item {
+        val context = LocalContext.current
+        Rows {
+            ThemeMode.entries.forEach { mode ->
+                SettingRow(
+                    when (mode) {
+                        ThemeMode.SYSTEM -> tr("Como el sistema", "Follow system")
+                        ThemeMode.LIGHT -> tr("Claro", "Light")
+                        ThemeMode.DARK -> tr("Oscuro", "Dark")
+                    },
+                    when (mode) {
+                        ThemeMode.SYSTEM -> tr("Cambia solo cuando el teléfono pasa a modo oscuro", "Switches when your phone goes dark")
+                        ThemeMode.LIGHT -> tr("Tarjetas y ajustes claros siempre", "Light cards and settings, always")
+                        ThemeMode.DARK -> tr("Tarjetas y ajustes oscuros siempre", "Dark cards and settings, always")
+                    },
+                    onClick = { Appearance.setMode(context, mode) },
+                    trailing = { RadioButton(selected = Appearance.mode == mode, onClick = { Appearance.setMode(context, mode) }) },
+                )
+            }
+        }
+    }
+    item {
+        Hint(tr("El cielo del pronóstico no cambia con el tema: sigue al clima y a la hora del lugar.", "The forecast sky doesn't change with the theme: it follows the weather and local time."))
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        item { SectionTitle(tr("Colores", "Colors")) }
+        item {
+            val context = LocalContext.current
+            Rows {
+                SettingRow(
+                    tr("Colores del fondo de pantalla", "Wallpaper colors"),
+                    tr("Material You: botones y tarjetas toman los tonos de tu fondo", "Material You: buttons and cards take your wallpaper's tones"),
+                    trailing = { Switch(checked = Appearance.dynamicColors, onCheckedChange = { Appearance.setDynamicColors(context, it) }) },
                 )
             }
         }
