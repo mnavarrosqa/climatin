@@ -108,7 +108,7 @@ jobs:
         if: always() && steps.capturas.outcome == 'success'
         continue-on-error: true
         run: |
-          pip install -q pillow
+          python3 -m pip install -q --user --break-system-packages pillow
           python3 - <<'PY'
           import base64, glob, io, os
           from PIL import Image
