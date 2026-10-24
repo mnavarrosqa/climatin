@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="window_background">#FFF8F9FF</color>
+    <color name="launcher_background">#FFD6E3FF</color>
+    <!-- Colores de la vista previa del selector de widgets. En Android 12+ se pisan con los del sistema. -->
+    <color name="preview_background">#FFD6E3FF</color>
+    <color name="preview_on_background">#FF001B3E</color>
+    <color name="preview_on_background_variant">#FF3B4858</color>
+</resources>

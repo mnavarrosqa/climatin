@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Climatin</string>
+    <string name="widget_clima_name">Clima ahora</string>
+    <string name="widget_clima_description">Temperatura y estado del cielo donde estás</string>
+    <string name="widget_pronostico_name">Pronóstico</string>
+    <string name="widget_pronostico_description">Las próximas horas y los próximos días</string>
+</resources>

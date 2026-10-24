@@ -1,0 +1,35 @@
+package com.mnavarrosqa.clima.data
+
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
+import kotlin.math.roundToInt
+
+private val spanish: Locale = Locale.forLanguageTag("es-AR")
+private val hourMinute: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+fun Double.degrees(): String = "${roundToInt()}°"
+
+fun shortHour(dateTime: LocalDateTime): String = dateTime.format(hourMinute)
+
+fun timeOf(isoDateTime: String): String = shortHour(LocalDateTime.parse(isoDateTime))
+
+fun dayLabel(date: LocalDate, today: LocalDate): String = when (date) {
+    today -> "Hoy"
+    today.plusDays(1) -> "Mañana"
+    else -> weekday(date.dayOfWeek)
+}
+
+/** "Sáb", "Dom"... sin el punto de la abreviatura. */
+fun weekday(day: DayOfWeek): String =
+    day.getDisplayName(TextStyle.SHORT, spanish)
+        .trimEnd('.')
+        .replaceFirstChar { it.titlecase(spanish) }
+
+fun updatedAt(epochMillis: Long): String =
+    Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(hourMinute)
