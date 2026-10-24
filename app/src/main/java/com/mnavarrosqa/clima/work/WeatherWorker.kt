@@ -21,10 +21,11 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
     override suspend fun doWork(): Result {
         val error = WeatherRepository.get(applicationContext).refreshAll()
         updateWeatherWidgets(applicationContext)
-        RainNotifier.check(applicationContext)
-        AlertNotifier.check(applicationContext)
-        ChangeNotifier.check(applicationContext)
-        TemperatureNotifier.update(applicationContext)
+        // Cada aviso por separado: si uno falla, los demás igual salen.
+        runCatching { RainNotifier.check(applicationContext) }
+        runCatching { AlertNotifier.check(applicationContext) }
+        runCatching { ChangeNotifier.check(applicationContext) }
+        runCatching { TemperatureNotifier.update(applicationContext) }
         return when {
             error == null -> Result.success()
             runAttemptCount < 3 -> Result.retry()

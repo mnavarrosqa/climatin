@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Vibraciones con forma (gotas al actualizar, toque al cambiar de ciudad). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Android 16: permite pedir que el aviso de lluvia se muestre como Live Update. -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 

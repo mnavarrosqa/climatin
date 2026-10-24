@@ -26,11 +26,13 @@ object Haptics {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
         val vibrator = vibrator(context) ?: return false
         val primitives = steps.map { it.first }.distinct().toIntArray()
-        if (!vibrator.hasVibrator() || !vibrator.areAllPrimitivesSupported(*primitives)) return false
-        val composition = VibrationEffect.startComposition()
-        steps.forEach { (primitive, scale, delay) -> composition.addPrimitive(primitive, scale, delay) }
-        vibrator.vibrate(composition.compose())
-        return true
+        if (!runCatching { vibrator.hasVibrator() && vibrator.areAllPrimitivesSupported(*primitives) }.getOrDefault(false)) return false
+        // Nunca debe cerrar la app: si el sistema rechaza la vibración, se usa la estándar.
+        return runCatching {
+            val composition = VibrationEffect.startComposition()
+            steps.forEach { (primitive, scale, delay) -> composition.addPrimitive(primitive, scale, delay) }
+            vibrator.vibrate(composition.compose())
+        }.isSuccess
     }
 
     /** Tres gotas que caen cada vez más fuerte: al soltar para actualizar. */

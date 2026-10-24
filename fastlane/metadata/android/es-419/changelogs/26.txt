@@ -1,0 +1,2 @@
+Lista de ciudades rediseñada al estilo del Clima de Apple: tarjetas más grandes con el cielo de cada lugar, nombre y hora local arriba, estado abajo, temperatura grande con máxima y mínima, buscador sin bordes y tocar una ciudad abre su pronóstico.
+Arreglo: la app ya no se cierra al deslizar para actualizar.

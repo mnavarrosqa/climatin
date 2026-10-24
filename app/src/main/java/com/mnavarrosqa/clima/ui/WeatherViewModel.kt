@@ -163,9 +163,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             _error.value = null
             val error = repository.refreshAll(force = true)
             updateWeatherWidgets(getApplication<Application>())
-            RainNotifier.check(getApplication<Application>())
-            AlertNotifier.check(getApplication<Application>())
-            TemperatureNotifier.update(getApplication<Application>())
+            // Un aviso que falla no puede cerrar la app ni dejar el indicador girando.
+            val app = getApplication<Application>()
+            runCatching { RainNotifier.check(app) }
+            runCatching { AlertNotifier.check(app) }
+            runCatching { TemperatureNotifier.update(app) }
             _error.value = when (error) {
                 null -> null
                 is NoLocationException -> error.message
