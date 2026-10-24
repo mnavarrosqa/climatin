@@ -98,7 +98,13 @@ import com.mnavarrosqa.clima.wallpaper.LiveWallpaper
 import com.mnavarrosqa.clima.wallpaper.WallpaperSettingsActivity
 import com.mnavarrosqa.clima.widget.WidgetCatalog
 import com.mnavarrosqa.clima.widget.WidgetGalleryActivity
+import com.mnavarrosqa.clima.work.AlertNotifier
+import com.mnavarrosqa.clima.work.ChangeNotifier
+import com.mnavarrosqa.clima.work.NotifyPrefs
+import com.mnavarrosqa.clima.work.NotifySettings
 import com.mnavarrosqa.clima.work.RainNotifier
+import com.mnavarrosqa.clima.work.SummaryNotifier
+import com.mnavarrosqa.clima.data.shortHour
 import kotlin.math.roundToInt
 
 /** Páginas de ajustes. */
@@ -276,6 +282,8 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
         tr("Lluvia", "Rain").takeIf { rainAlerts },
         tr("SMN", "SMN").takeIf { smnAlerts },
         tr("Barra de estado", "Status bar").takeIf { statusTemperature },
+        tr("Resumen", "Summary").takeIf { NotifyPrefs.get(context).summary },
+        tr("Cambios", "Changes").takeIf { NotifyPrefs.settings.changes },
     ).joinToString(" · ").ifEmpty { tr("Apagadas", "Off") }
     val location = when {
         !hasLocation -> tr("Sin permiso: usás solo ciudades guardadas", "No permission: saved cities only")
@@ -545,6 +553,11 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
         when (pending) {
             "smn" -> viewModel.setSmnAlerts(granted)
             "temperatura" -> viewModel.setStatusTemperature(granted)
+            "resumen" -> {
+                NotifyPrefs.update(context) { it.copy(summary = granted) }
+                SummaryNotifier.schedule(context)
+            }
+            "cambios" -> NotifyPrefs.update(context) { it.copy(changes = granted) }
             else -> viewModel.setRainAlerts(granted)
         }
         pending = null
@@ -557,6 +570,12 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
             set(enabled)
         }
     }
+
+    // Carga los ajustes guardados (la primera vez) y los lee como estado: si un botón de una
+    // notificación los cambia, esta página se actualiza sola.
+    NotifyPrefs.get(context)
+    val notify = NotifyPrefs.settings
+    fun change(transform: (NotifySettings) -> NotifySettings) = NotifyPrefs.update(context, transform)
 
     SettingsScaffold(tr("Notificaciones", "Notifications"), onBack = onBack) {
         if (!canNotify) {
@@ -573,29 +592,168 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 }
             }
         }
-        item { SectionTitle(tr("Avisos", "Alerts")) }
+        if (System.currentTimeMillis() < notify.mutedUntil) {
+            item {
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer, shape = RoundedCornerShape(24.dp)) {
+                    Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            tr("Avisos pausados hasta mañana (salvo alertas rojas)", "Alerts paused until tomorrow (except red alerts)"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { change { it.copy(mutedUntil = 0L) } }) { Text(tr("Reanudar", "Resume")) }
+                    }
+                }
+            }
+        }
+
+        item { SectionTitle(tr("Lluvia", "Rain")) }
         item {
             Rows {
                 SettingRow(
                     tr("Lluvia cerca", "Rain nearby"),
-                    tr("Te avisa cuando va a llover donde estás", "Tells you when rain is coming where you are"),
+                    tr("Cuándo empieza, cuánto dura y qué tan fuerte", "When it starts, how long and how heavy"),
                     trailing = { Switch(checked = rainAlerts && canNotify, onCheckedChange = { toggle("lluvia", it, viewModel::setRainAlerts) }) },
                 )
+                if (rainAlerts) {
+                    ChoiceRow(tr("Avisar con anticipación de", "Warn ahead by"), listOf(15, 30, 60), notify.rainLead, { "$it min" }) { lead ->
+                        change { it.copy(rainLead = lead) }
+                    }
+                    SettingRow(
+                        tr("Cuando para de llover", "When rain stops"),
+                        tr("\"Para de llover en unos 15 min\"", "\"Rain stops in about 15 min\""),
+                        trailing = { Switch(checked = notify.rainStops, onCheckedChange = { on -> change { it.copy(rainStops = on) } }) },
+                    )
+                }
+            }
+        }
+
+        item { SectionTitle(tr("Alertas oficiales", "Official alerts")) }
+        item {
+            Rows {
                 SettingRow(
                     tr("Alertas del SMN", "Official alerts (Argentina)"),
-                    tr("Tormentas, viento, calor y otras alertas oficiales en Argentina", "Storms, wind, heat and other official alerts in Argentina"),
+                    tr("Con su nivel (amarilla, naranja o roja) y aviso cuando terminan", "With their level (yellow, orange or red) and a notice when they end"),
                     trailing = { Switch(checked = smnAlerts && canNotify, onCheckedChange = { toggle("smn", it, viewModel::setSmnAlerts) }) },
                 )
             }
         }
+
+        item { SectionTitle(tr("Resumen diario", "Daily summary")) }
+        item {
+            Rows {
+                SettingRow(
+                    tr("Resumen del día", "Daily summary"),
+                    tr("Máxima, mínima, lluvia, UV y viento. Desde las 17, el de mañana", "High, low, rain, UV and wind. From 5 PM, tomorrow's"),
+                    trailing = {
+                        Switch(checked = notify.summary && canNotify, onCheckedChange = { on ->
+                            toggle("resumen", on) { enabled ->
+                                change { it.copy(summary = enabled) }
+                                SummaryNotifier.schedule(context)
+                            }
+                        })
+                    },
+                )
+                if (notify.summary) {
+                    ChoiceRow(tr("A las", "At"), listOf(6, 7, 8, 9, 18, 20, 21), notify.summaryHour, { hourLabel(it) }) { hour ->
+                        change { it.copy(summaryHour = hour) }
+                        SummaryNotifier.schedule(context)
+                    }
+                }
+            }
+        }
+
+        item { SectionTitle(tr("Cambios bruscos", "Big changes")) }
+        item {
+            Rows {
+                SettingRow(
+                    tr("Avisar cambios bruscos", "Alert on big changes"),
+                    tr("Una vez por día cada uno, en un horario que tenga sentido", "Once a day each, at a sensible time"),
+                    trailing = {
+                        Switch(checked = notify.changes && canNotify, onCheckedChange = { on ->
+                            toggle("cambios", on) { enabled -> change { it.copy(changes = enabled) } }
+                        })
+                    },
+                )
+                if (notify.changes) {
+                    SettingRow(
+                        tr("Bajón o subida de temperatura", "Temperature swing"),
+                        tr("Mañana 6° o más distinto que hoy", "Tomorrow 6° or more different from today"),
+                        trailing = { Switch(checked = notify.changeTemperature, onCheckedChange = { on -> change { it.copy(changeTemperature = on) } }) },
+                    )
+                    SettingRow(
+                        tr("Heladas", "Frost"),
+                        tr("Mínima de 1° o menos, avisado a la tarde", "Low of 1° or less, in the afternoon"),
+                        trailing = { Switch(checked = notify.changeFrost, onCheckedChange = { on -> change { it.copy(changeFrost = on) } }) },
+                    )
+                    SettingRow(
+                        tr("Viento fuerte", "Strong wind"),
+                        tr("50 km/h o más", "50 km/h or more"),
+                        trailing = { Switch(checked = notify.changeWind, onCheckedChange = { on -> change { it.copy(changeWind = on) } }) },
+                    )
+                    SettingRow(
+                        tr("UV muy alto", "Very high UV"),
+                        tr("Índice 8 o más, avisado a la mañana", "Index 8 or more, in the morning"),
+                        trailing = { Switch(checked = notify.changeUv, onCheckedChange = { on -> change { it.copy(changeUv = on) } }) },
+                    )
+                }
+            }
+        }
+
         item { SectionTitle(tr("Siempre a la vista", "Always visible")) }
         item {
             Rows {
                 SettingRow(
                     tr("Temperatura en la barra de estado", "Temperature in the status bar"),
-                    tr("Los grados al lado de la hora, con una notificación silenciosa", "The temperature next to the clock, with a silent notification"),
+                    tr("Los grados al lado de la hora; al expandirla, las próximas horas", "The temperature next to the clock; expand it for the next hours"),
                     trailing = { Switch(checked = statusTemperature && canNotify, onCheckedChange = { toggle("temperatura", it, viewModel::setStatusTemperature) }) },
                 )
+            }
+        }
+
+        item { SectionTitle(tr("Horario de silencio", "Quiet hours")) }
+        item {
+            Rows {
+                SettingRow(
+                    tr("No avisar de noche", "No alerts at night"),
+                    tr("Las alertas rojas del SMN avisan igual", "Red official alerts still come through"),
+                    trailing = { Switch(checked = notify.quiet, onCheckedChange = { on -> change { it.copy(quiet = on) } }) },
+                )
+                if (notify.quiet) {
+                    ChoiceRow(tr("Desde", "From"), listOf(21, 22, 23, 0), notify.quietStart, { hourLabel(it) }) { hour ->
+                        change { it.copy(quietStart = hour) }
+                    }
+                    ChoiceRow(tr("Hasta", "Until"), listOf(6, 7, 8, 9), notify.quietEnd, { hourLabel(it) }) { hour ->
+                        change { it.copy(quietEnd = hour) }
+                    }
+                }
+            }
+        }
+
+        item { SectionTitle(tr("Probar", "Try it")) }
+        item {
+            Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Text(
+                        tr("Mandá un aviso de ejemplo para ver cómo queda.", "Send a sample to see how it looks."),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            tr("Lluvia", "Rain") to { RainNotifier.test(context) },
+                            tr("Alerta", "Alert") to { AlertNotifier.test(context) },
+                            tr("Resumen", "Summary") to { SummaryNotifier.notify(context, test = true) },
+                            tr("Cambio brusco", "Big change") to { ChangeNotifier.test(context) },
+                        ).forEach { (label, send) ->
+                            FilledTonalButton(
+                                enabled = canNotify,
+                                onClick = { send() },
+                            ) { Text(label) }
+                        }
+                    }
+                }
             }
         }
         item {
@@ -610,6 +768,9 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
         }
     }
 }
+
+/** "7:00" o "7 AM" según el formato elegido en Unidades. */
+private fun hourLabel(hour: Int): String = shortHour(java.time.LocalDate.now().atTime(hour, 0))
 
 // --- Ubicación ---
 

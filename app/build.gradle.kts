@@ -13,10 +13,10 @@ android {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
+        versionCode = 22
         // Solo español e inglés: evita que las librerías sumen traducciones que la app no tiene.
         resourceConfigurations += listOf("es", "en")
-        versionName = "1.14.0"
+        versionName = "1.15.0"
     }
 
     signingConfigs {

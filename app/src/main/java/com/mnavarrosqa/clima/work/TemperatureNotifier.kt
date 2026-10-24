@@ -14,8 +14,13 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import android.widget.RemoteViews
+import com.mnavarrosqa.clima.R
+import com.mnavarrosqa.clima.data.shortHour
+import com.mnavarrosqa.clima.work.Notify.refreshAction
 import com.mnavarrosqa.clima.MainActivity
 import com.mnavarrosqa.clima.data.Insights
+import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.degrees
@@ -27,7 +32,7 @@ import com.mnavarrosqa.clima.data.tr
  */
 object TemperatureNotifier {
     private const val CHANNEL_ID = "temperatura"
-    private const val NOTIFICATION_ID = 3
+    private const val NOTIFICATION_ID = Notify.ID_STATUS
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -53,18 +58,26 @@ object TemperatureNotifier {
         val snapshot = repository.cached() ?: return
         val current = snapshot.current
         val today = snapshot.today()
-        val intent = PendingIntent.getActivity(
-            context,
-            2,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val intent = Notify.open(context, 2, CURRENT_PLACE_ID)
         val details = listOfNotNull(
             today?.let { tr("Máx", "High") + " ${it.max.degrees()} · " + tr("Mín", "Low") + " ${it.min.degrees()}" },
             snapshot.place,
         ).joinToString(" · ")
+        // Al expandirla: las próximas seis horas con su ícono, como un widget chico.
+        val hours = snapshot.upcomingHours(6)
+        val expanded = RemoteViews(context.packageName, R.layout.notification_hours).apply {
+            setTextViewText(R.id.hours_title, Insights.headline(snapshot) ?: details)
+            hours.forEachIndexed { i, hour ->
+                setTextViewText(HOUR_TIME[i], if (i == 0) tr("Ahora", "Now") else shortHour(hour.dateTime))
+                setImageViewResource(HOUR_ICON[i], WeatherCodes.icon(hour.code, hour.isDay))
+                setTextViewText(HOUR_TEMP[i], hour.temperature.degrees())
+            }
+        }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(IconCompat.createWithBitmap(temperatureIcon(current.temperature.degrees())))
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomBigContentView(expanded)
+            .refreshAction(context, NOTIFICATION_ID)
             .setContentTitle("${current.temperature.degrees()} ${WeatherCodes.description(current.code)}")
             .setContentText(Insights.headline(snapshot) ?: details)
             .setSubText(details.takeIf { Insights.headline(snapshot) != null })
@@ -78,6 +91,10 @@ object TemperatureNotifier {
             .build()
         manager.notify(NOTIFICATION_ID, notification)
     }
+
+    private val HOUR_TIME = intArrayOf(R.id.hour_time_0, R.id.hour_time_1, R.id.hour_time_2, R.id.hour_time_3, R.id.hour_time_4, R.id.hour_time_5)
+    private val HOUR_ICON = intArrayOf(R.id.hour_icon_0, R.id.hour_icon_1, R.id.hour_icon_2, R.id.hour_icon_3, R.id.hour_icon_4, R.id.hour_icon_5)
+    private val HOUR_TEMP = intArrayOf(R.id.hour_temp_0, R.id.hour_temp_1, R.id.hour_temp_2, R.id.hour_temp_3, R.id.hour_temp_4, R.id.hour_temp_5)
 
     /** El número dibujado en blanco: Android lo pinta como ícono de la barra de estado. */
     private fun temperatureIcon(text: String): Bitmap {

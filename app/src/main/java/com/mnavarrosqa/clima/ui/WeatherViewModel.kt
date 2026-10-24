@@ -17,6 +17,7 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.widget.updateWeatherWidgets
 import com.mnavarrosqa.clima.work.AlertNotifier
 import com.mnavarrosqa.clima.work.RainNotifier
+import com.mnavarrosqa.clima.work.WeatherWorker
 import com.mnavarrosqa.clima.work.TemperatureNotifier
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -222,6 +223,8 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
     fun setRainAlerts(enabled: Boolean) {
         repository.rainAlertsEnabled = enabled
+        // Con el aviso de lluvia prendido se revisa cada 15 minutos.
+        WeatherWorker.schedule(getApplication<Application>())
         if (enabled) RainNotifier.check(getApplication<Application>())
     }
 }

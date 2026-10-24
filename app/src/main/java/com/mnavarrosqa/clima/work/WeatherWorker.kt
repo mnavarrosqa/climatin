@@ -12,7 +12,10 @@ import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.widget.updateWeatherWidgets
 import java.util.concurrent.TimeUnit
 
-/** Refresca el clima cada 30 minutos aunque la app esté cerrada. */
+/**
+ * Refresca el clima aunque la app esté cerrada: cada 15 minutos si el aviso de lluvia está
+ * prendido (es lo mínimo que permite Android), si no cada 30.
+ */
 class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -20,6 +23,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         updateWeatherWidgets(applicationContext)
         RainNotifier.check(applicationContext)
         AlertNotifier.check(applicationContext)
+        ChangeNotifier.check(applicationContext)
         TemperatureNotifier.update(applicationContext)
         return when {
             error == null -> Result.success()
@@ -32,13 +36,15 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         private const val NAME = "clima-periodico"
 
         fun schedule(context: Context) {
-            val request = PeriodicWorkRequestBuilder<WeatherWorker>(30, TimeUnit.MINUTES)
+            val minutes = if (WeatherRepository.get(context).rainAlertsEnabled) 15L else 30L
+            val request = PeriodicWorkRequestBuilder<WeatherWorker>(minutes, TimeUnit.MINUTES)
                 .setConstraints(
                     Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
                 )
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+                // UPDATE cambia el intervalo sin perder el turno que ya estaba agendado.
+                .enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
     }
 }

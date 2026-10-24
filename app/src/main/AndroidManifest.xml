@@ -164,6 +164,10 @@
                 android:resource="@xml/indicador_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".work.NotificationActionReceiver"
+            android:exported="false" />
+
         <activity
             android:name=".widget.WidgetGalleryActivity"
             android:exported="false" />

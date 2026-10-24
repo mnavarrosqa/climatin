@@ -3,7 +3,10 @@ package com.mnavarrosqa.clima
 import android.app.Application
 import android.content.res.Configuration
 import com.mnavarrosqa.clima.widget.updateWeatherWidgets
+import androidx.work.ExistingWorkPolicy
 import com.mnavarrosqa.clima.work.AlertNotifier
+import com.mnavarrosqa.clima.work.Notify
+import com.mnavarrosqa.clima.work.SummaryNotifier
 import com.mnavarrosqa.clima.work.RainNotifier
 import com.mnavarrosqa.clima.work.TemperatureNotifier
 import com.mnavarrosqa.clima.work.WeatherWorker
@@ -22,7 +25,9 @@ class ClimaApp : Application() {
         RainNotifier.createChannel(this)
         AlertNotifier.createChannel(this)
         TemperatureNotifier.createChannel(this)
+        Notify.createChannels(this)
         WeatherWorker.schedule(this)
+        SummaryNotifier.schedule(this, ExistingWorkPolicy.KEEP)
     }
 
     /**

@@ -139,7 +139,7 @@ private val SkyShadow = Shadow(Color.Black.copy(alpha = 0.4f), Offset(0f, 2f), 1
 private fun TextStyle.onSky() = copy(shadow = SkyShadow)
 
 /** Destino de un acceso directo desde un widget: una ciudad y, opcionalmente, un día (yyyy-MM-dd) o el mapa de lluvia. */
-data class DeepLinkTarget(val placeId: String, val day: String?, val radar: Boolean = false)
+data class DeepLinkTarget(val placeId: String, val day: String?, val radar: Boolean = false, val alert: String? = null)
 
 @Composable
 fun WeatherRoute(
@@ -323,11 +323,14 @@ private fun WeatherPager(
     val pagerState = rememberPagerState { pages.size }
     // Día a abrir en la página de destino del acceso directo.
     var pendingDay by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Alerta a mostrar abierta (desde la notificación del SMN).
+    var openAlert by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(deepLink) {
         val target = deepLink ?: return@LaunchedEffect
         val index = pages.indexOf(target.placeId).takeIf { it >= 0 } ?: 0
         pagerState.animateScrollToPage(index)
         pendingDay = target.day?.let { pages[index] to it }
+        openAlert = target.alert
         onDeepLinkHandled()
     }
     // Un toque leve al cambiar de ciudad y al soltar para actualizar.
@@ -377,6 +380,7 @@ private fun WeatherPager(
                         openDay = pendingDay?.takeIf { it.first == pages[page] }?.second,
                         onDayOpened = { pendingDay = null },
                         onCollapsedChange = { collapsed[pages[page]] = it },
+                        openAlert = openAlert,
                         banner = update?.let { release ->
                             @Composable {
                                 UpdateBanner(
@@ -487,6 +491,7 @@ private fun WeatherPage(
     openDay: String? = null,
     onDayOpened: () -> Unit = {},
     onCollapsedChange: (Boolean) -> Unit = {},
+    openAlert: String? = null,
     banner: (@Composable () -> Unit)? = null,
 ) {
     val cards = viewModel.cards.collectAsStateWithLifecycle().value.visible
@@ -515,6 +520,7 @@ private fun WeatherPage(
         banner = banner,
         onCollapsedChange = onCollapsedChange,
         cards = cards,
+        openAlert = openAlert,
     )
 }
 
@@ -537,6 +543,7 @@ fun ForecastContent(
     banner: (@Composable () -> Unit)? = null,
     onCollapsedChange: (Boolean) -> Unit = {},
     cards: List<ForecastCard> = ForecastCard.entries,
+    openAlert: String? = null,
 ) {
     // La lista del resumen (la única en pantallas angostas) decide si el encabezado se achica.
     val summaryState = rememberLazyListState()
@@ -588,7 +595,7 @@ fun ForecastContent(
                         },
                 ) { Hero(snapshot, isCurrentLocation) }
             }
-            items(snapshot.alerts, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert) } }
+            items(snapshot.alerts, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) } }
             // Las alertas ya tienen su tarjeta: la frase busca lo siguiente más útil.
             Insights.headline(snapshot.copy(alerts = emptyList()))?.let { text ->
                 item { Box(Modifier.reveal(1, shownAt)) { InsightChip(text) } }
@@ -814,8 +821,10 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
 
 /** Alerta oficial: tocarla muestra u oculta la descripción completa. */
 @Composable
-private fun AlertCard(alert: WeatherAlert) {
-    var expanded by rememberSaveable(alert.id) { mutableStateOf(false) }
+private fun AlertCard(alert: WeatherAlert, startExpanded: Boolean = false) {
+    var expanded by rememberSaveable(alert.id) { mutableStateOf(startExpanded) }
+    // Si llega desde la notificación con la tarjeta ya en pantalla, se abre igual.
+    LaunchedEffect(startExpanded) { if (startExpanded) expanded = true }
     val severe = alert.isSevere
     Surface(
         color = if (severe) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer,
