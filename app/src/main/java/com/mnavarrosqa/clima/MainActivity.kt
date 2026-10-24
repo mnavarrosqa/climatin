@@ -20,7 +20,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) deepLink = parse(intent)
+        // Al volver desde Recientes, Android entrega otra vez el intent original: no se repite el acceso directo.
+        val fromHistory = ((intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (savedInstanceState == null && !fromHistory) deepLink = parse(intent)
         addOnNewIntentListener { deepLink = parse(it) }
         setContent {
             ClimaTheme {

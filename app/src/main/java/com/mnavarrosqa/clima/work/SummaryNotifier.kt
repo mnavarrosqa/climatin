@@ -51,7 +51,9 @@ object SummaryNotifier {
 
     fun notify(context: Context, test: Boolean = false) {
         val snapshot = WeatherRepository.get(context).cached() ?: return
-        if (!test && !Notify.allowed(context)) return
+        // El resumen sale a la hora que eligió la persona aunque caiga en horario de silencio
+        // (si no, con resumen a las 7 y silencio hasta las 8 no saldría nunca); solo lo frena la pausa.
+        if (!test && (NotifyPrefs.isMuted(context) || !RainNotifier.canNotify(context))) return
         show(context, snapshot)
     }
 
@@ -98,10 +100,20 @@ object SummaryNotifier {
 /** Corre a la hora del resumen: actualiza si puede, avisa y agenda el de mañana. */
 class SummaryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        runCatching { WeatherRepository.get(applicationContext).refreshAll() }
-        SummaryNotifier.notify(applicationContext)
-        // Se encadena detrás de este trabajo: con REPLACE se cancelaría a sí mismo.
-        SummaryNotifier.schedule(applicationContext, ExistingWorkPolicy.APPEND_OR_REPLACE)
+        try {
+            try {
+                WeatherRepository.get(applicationContext).refreshAll()
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (offline: Exception) {
+                // Sin conexión: se resume con lo guardado.
+            }
+            runCatching { SummaryNotifier.notify(applicationContext) }
+        } finally {
+            // Se encadena detrás de este trabajo (con REPLACE se cancelaría a sí mismo), y siempre:
+            // si un día falla, mañana sale igual.
+            SummaryNotifier.schedule(applicationContext, ExistingWorkPolicy.APPEND_OR_REPLACE)
+        }
         return Result.success()
     }
 }

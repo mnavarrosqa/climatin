@@ -61,7 +61,14 @@ object RainNotifier {
         if (!repository.rainAlertsEnabled || !Notify.allowed(context)) return
         val snapshot = repository.cached() ?: return
         val settings = NotifyPrefs.get(context)
-        val outlook = snapshot.rainOutlook(withinMinutes = settings.rainLead) ?: return
+        val outlook = snapshot.rainOutlook(withinMinutes = settings.rainLead)
+        if (outlook == null) {
+            // El pronóstico cambió y la lluvia avisada ya no viene: se saca la cuenta regresiva.
+            if (System.currentTimeMillis() < NotifyPrefs.until(context, "lluvia")) {
+                NotificationManagerCompat.from(context).cancel(Notify.ID_RAIN)
+            }
+            return
+        }
         val now = LocalDateTime.now()
         val key = if (outlook is RainOutlook.Stops) "lluvia_para" else "lluvia"
         if (outlook is RainOutlook.Stops && !settings.rainStops) return
@@ -108,7 +115,8 @@ object RainNotifier {
                 .setShowWhen(true)
                 .setUsesChronometer(true)
                 .setChronometerCountDown(true)
-                .setTimeoutAfter((outlook.inMinutes + (outlook.lastsMinutes ?: 120)) * 60_000L)
+                // Se va cuando empieza la lluvia (más un margen): después la cuenta quedaría en negativo.
+                .setTimeoutAfter((outlook.inMinutes + 10) * 60_000L)
                 .setOnlyAlertOnce(true)
             // Android 16: pide mostrarse como Live Update (chip en la barra de estado). El sistema
             // decide si lo concede; si no, queda como notificación común.

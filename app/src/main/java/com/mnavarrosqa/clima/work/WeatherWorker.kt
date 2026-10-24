@@ -8,6 +8,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.mnavarrosqa.clima.data.NoLocationException
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.widget.updateWeatherWidgets
 import java.util.concurrent.TimeUnit
@@ -19,7 +20,8 @@ import java.util.concurrent.TimeUnit
 class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val error = WeatherRepository.get(applicationContext).refreshAll()
+        // "Actualizar" desde una notificación fuerza la descarga aunque se haya actualizado hace poco.
+        val error = WeatherRepository.get(applicationContext).refreshAll(force = inputData.getBoolean(FORCE, false))
         updateWeatherWidgets(applicationContext)
         // Cada aviso por separado: si uno falla, los demás igual salen.
         runCatching { RainNotifier.check(applicationContext) }
@@ -27,7 +29,8 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         runCatching { ChangeNotifier.check(applicationContext) }
         runCatching { TemperatureNotifier.update(applicationContext) }
         return when {
-            error == null -> Result.success()
+            // Sin ubicación ni ciudades no tiene sentido reintentar.
+            error == null || error is NoLocationException -> Result.success()
             runAttemptCount < 3 -> Result.retry()
             else -> Result.failure()
         }
@@ -35,6 +38,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
     companion object {
         private const val NAME = "clima-periodico"
+        const val FORCE = "forzar"
 
         fun schedule(context: Context) {
             val minutes = if (WeatherRepository.get(context).rainAlertsEnabled) 15L else 30L

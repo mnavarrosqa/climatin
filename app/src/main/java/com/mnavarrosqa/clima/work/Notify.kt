@@ -13,6 +13,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.mnavarrosqa.clima.MainActivity
 import com.mnavarrosqa.clima.R
 
@@ -83,7 +84,9 @@ object Notify {
     /** Pide una actualización ya, sin esperar a la periódica. */
     fun refreshNow(context: Context) {
         // Sin "expedited": en Android 11 o anterior exigiría un servicio en primer plano.
-        val request = OneTimeWorkRequestBuilder<WeatherWorker>().build()
+        val request = OneTimeWorkRequestBuilder<WeatherWorker>()
+            .setInputData(workDataOf(WeatherWorker.FORCE to true))
+            .build()
         WorkManager.getInstance(context).enqueueUniqueWork("clima-ahora", ExistingWorkPolicy.REPLACE, request)
     }
 

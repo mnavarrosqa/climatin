@@ -135,10 +135,11 @@ class WeatherRepository private constructor(private val context: Context) {
 
     private val capLock = Mutex()
 
-    private suspend fun capAlerts(): List<CapAlert> = capLock.withLock {
+    /** Null si el SMN no respondió y no hay nada en memoria: no es lo mismo que "no hay alertas". */
+    private suspend fun capAlerts(): List<CapAlert>? = capLock.withLock {
         capCache?.let { (at, alerts) -> if (System.currentTimeMillis() - at < 10 * 60_000) return@withLock alerts }
         val alerts = runCatching { SmnAlerts.fetchAll(context.cacheDir) }
-            .getOrElse { return@withLock capCache?.second.orEmpty() }
+            .getOrElse { return@withLock capCache?.second }
         capCache = System.currentTimeMillis() to alerts
         alerts
     }
@@ -168,7 +169,10 @@ class WeatherRepository private constructor(private val context: Context) {
             val air = async { OpenMeteo.airQuality(latitude, longitude) }
             val alerts = async {
                 if (Geo.isInArgentina(latitude, longitude)) {
-                    capAlerts().filter { it.covers(latitude, longitude) }.map { it.alert }
+                    // Si el SMN falla, se mantienen las alertas de la última vez: si no, una alerta
+                    // vigente "terminaría" y volvería a sonar como nueva en la siguiente corrida.
+                    capAlerts()?.filter { it.covers(latitude, longitude) }?.map { it.alert }
+                        ?: cached(placeId)?.alerts.orEmpty()
                 } else {
                     emptyList()
                 }

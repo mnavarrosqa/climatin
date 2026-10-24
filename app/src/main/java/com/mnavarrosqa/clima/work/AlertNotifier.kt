@@ -46,26 +46,38 @@ object AlertNotifier {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
+    /** La app y el worker pueden revisar a la vez: así una alerta no suena dos veces. */
+    @Synchronized
     fun check(context: Context) {
         val repository = WeatherRepository.get(context)
-        if (!repository.smnAlertsEnabled || !RainNotifier.canNotify(context)) return
-        val snapshot = repository.cached() ?: return
-        val notified = repository.notifiedAlerts
-        snapshot.alerts.filter { it.id !in notified }.forEach { alert ->
-            if (Notify.allowed(context, urgent = AlertLevel.of(alert) == AlertLevel.RED)) show(context, alert)
+        if (!repository.smnAlertsEnabled || !RainNotifier.canNotify(context)) {
+            // Al reactivarlas no tienen que aparecer "terminó" de alertas viejas.
+            NotifyPrefs.setActiveAlerts(context, emptySet())
+            return
         }
-        // Las que estaban y ya no están, terminaron.
+        val snapshot = repository.cached() ?: return
+        val currentIds = snapshot.alerts.map { it.id }.toSet()
+        val notified = repository.notifiedAlerts
+        // Solo cuenta como avisada la que se mostró: si cae en horario de silencio o en pausa,
+        // se avisa cuando se pueda (mientras siga vigente).
+        val shown = snapshot.alerts.filter { it.id !in notified }.filter { alert ->
+            Notify.allowed(context, urgent = AlertLevel.of(alert) == AlertLevel.RED).also { if (it) show(context, alert) }
+        }.map { it.id }
+        // Se guardan solo las vigentes para que la lista no crezca sin fin.
+        repository.notifiedAlerts = (notified intersect currentIds) + shown
+
+        // Las que estaban y ya no están, terminaron. Si ahora no se puede avisar, quedan pendientes.
         val active = snapshot.alerts.map { it.id + "|" + it.event }.toSet()
         val ended = NotifyPrefs.activeAlerts(context) - active
-        if (Notify.allowed(context)) {
+        if (ended.isEmpty() || Notify.allowed(context)) {
             ended.forEach { entry ->
                 val (id, event) = entry.split('|', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
                 showEnded(context, id, event)
             }
+            NotifyPrefs.setActiveAlerts(context, active)
+        } else {
+            NotifyPrefs.setActiveAlerts(context, active + ended)
         }
-        NotifyPrefs.setActiveAlerts(context, active)
-        // Se guardan solo las vigentes para que la lista no crezca sin fin.
-        repository.notifiedAlerts = snapshot.alerts.map { it.id }.toSet()
     }
 
     fun test(context: Context) {
@@ -97,6 +109,7 @@ object AlertNotifier {
             .setStyle(NotificationCompat.BigTextStyle().bigText(listOfNotNull(alert.headline, alert.description).joinToString("\n\n")))
             .setContentIntent(Notify.open(context, alert.id.hashCode(), CURRENT_PLACE_ID, alert = alert.id))
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setPriority(if (level == AlertLevel.RED) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
             .muteAction(context, alert.id.hashCode())
