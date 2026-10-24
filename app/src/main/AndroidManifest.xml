@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <uses-feature
+        android:name="android.software.live_wallpaper"
+        android:required="false" />
+
     <application
         android:name=".ClimaApp"
         android:allowBackup="true"
@@ -128,5 +132,29 @@
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".wallpaper.SkyWallpaperService"
+            android:exported="true"
+            android:label="@string/wallpaper_name"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/sky_wallpaper" />
+        </service>
+
+        <service
+            android:name=".tile.ClimaTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_weather"
+            android:label="@string/tile_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

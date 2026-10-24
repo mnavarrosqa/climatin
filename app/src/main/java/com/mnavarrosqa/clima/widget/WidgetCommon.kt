@@ -31,6 +31,7 @@ import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.mnavarrosqa.clima.MainActivity
+import com.mnavarrosqa.clima.tile.ClimaTileService
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.ui.theme.DarkColors
@@ -160,4 +161,5 @@ suspend fun updateWeatherWidgets(context: Context) {
     runCatching { PildoraWidget().updateAll(context) }
     runCatching { SemanaWidget().updateAll(context) }
     runCatching { SolWidget().updateAll(context) }
+    ClimaTileService.requestUpdate(context)
 }

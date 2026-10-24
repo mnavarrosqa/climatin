@@ -1,6 +1,10 @@
 package com.mnavarrosqa.clima.ui
 
 import android.Manifest
+import android.app.WallpaperManager
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -60,6 +64,7 @@ import com.mnavarrosqa.clima.data.LocationProvider
 import com.mnavarrosqa.clima.data.PressureUnit
 import com.mnavarrosqa.clima.data.TemperatureUnit
 import com.mnavarrosqa.clima.data.WindUnit
+import com.mnavarrosqa.clima.wallpaper.SkyWallpaperService
 import com.mnavarrosqa.clima.work.RainNotifier
 import kotlinx.coroutines.delay
 
@@ -286,6 +291,18 @@ fun CitiesScreen(
                     )
                 }
             }
+            item {
+                Group(Modifier.padding(top = 2.dp)) {
+                    ListItem(
+                        headlineContent = { Text("Fondo de pantalla animado") },
+                        supportingContent = { Text("El cielo de la app como fondo, según el clima de donde estás") },
+                        trailingContent = {
+                            FilledTonalButton(onClick = { openLiveWallpaper(context) }) { Text("Poner") }
+                        },
+                        colors = groupColors(),
+                    )
+                }
+            }
             item { SectionTitle("Unidades") }
             item {
                 Group {
@@ -317,6 +334,15 @@ fun CitiesScreen(
             }
         }
     }
+}
+
+private fun openLiveWallpaper(context: Context) {
+    val component = ComponentName(context, SkyWallpaperService::class.java)
+    val direct = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+        .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component)
+    // Algunos launchers no aceptan ir directo: entonces se abre el selector general.
+    runCatching { context.startActivity(direct) }
+        .onFailure { runCatching { context.startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)) } }
 }
 
 @Composable

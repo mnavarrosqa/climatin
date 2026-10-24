@@ -17,4 +17,7 @@
     <string name="widget_semana_description">Los próximos días en lista</string>
     <string name="widget_sol_name">Sol</string>
     <string name="widget_sol_description">Amanecer, atardecer y dónde está el sol ahora</string>
+    <string name="wallpaper_name">Cielo de Climatin</string>
+    <string name="wallpaper_description">El cielo animado según el clima de donde estás</string>
+    <string name="tile_name">Clima</string>
 </resources>
