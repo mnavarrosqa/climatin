@@ -1,0 +1,1 @@
+Nuevo ícono y animaciones más suaves: nubes difusas en capas, lluvia con estela, estrellas fugaces, transiciones entre pantallas y gráficos que se dibujan al aparecer.

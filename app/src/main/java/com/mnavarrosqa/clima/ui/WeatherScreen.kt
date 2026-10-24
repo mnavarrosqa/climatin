@@ -1,6 +1,21 @@
 package com.mnavarrosqa.clima.ui
 
 import android.Manifest
+import android.os.SystemClock
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlin.math.absoluteValue
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -109,28 +124,43 @@ fun WeatherRoute(viewModel: WeatherViewModel = viewModel()) {
     }
 
     val radar = radarAt?.split(',')?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 2 }
-    when {
-        radar != null -> RadarScreen(radar[0], radar[1], onBack = { radarAt = null })
-        showCities -> CitiesScreen(
-            viewModel = viewModel,
-            onBack = { showCities = false },
-            onLocationPermission = { granted ->
-                hasPermission = granted
-                if (granted) viewModel.refresh()
-            },
-        )
-        pages.isEmpty() -> PermissionScreen(
-            onAllow = { launcher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
-            onPickCity = { showCities = true },
-        )
-        // Al cambiar las unidades se rearma el pronóstico para que todos los textos se reformateen.
-        else -> key(units) {
-            WeatherPager(
-                pages,
-                viewModel,
-                onOpenCities = { showCities = true },
-                onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
+    val screen = when {
+        radar != null -> "radar"
+        showCities -> "ciudades"
+        pages.isEmpty() -> "permiso"
+        else -> "clima"
+    }
+    AnimatedContent(
+        targetState = screen,
+        transitionSpec = {
+            (fadeIn(tween(320, delayMillis = 60)) + scaleIn(tween(380, easing = EaseOutCubic), initialScale = 0.94f))
+                .togetherWith(fadeOut(tween(180)) + scaleOut(tween(220), targetScale = 1.03f))
+        },
+        label = "pantalla",
+    ) { target ->
+        when (target) {
+            "radar" -> radar?.let { RadarScreen(it[0], it[1], onBack = { radarAt = null }) }
+            "ciudades" -> CitiesScreen(
+                viewModel = viewModel,
+                onBack = { showCities = false },
+                onLocationPermission = { granted ->
+                    hasPermission = granted
+                    if (granted) viewModel.refresh()
+                },
             )
+            "permiso" -> PermissionScreen(
+                onAllow = { launcher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
+                onPickCity = { showCities = true },
+            )
+            // Al cambiar las unidades se rearma el pronóstico para que todos los textos se reformateen.
+            else -> key(units) {
+                WeatherPager(
+                    pages,
+                    viewModel,
+                    onOpenCities = { showCities = true },
+                    onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
+                )
+            }
         }
     }
 }
@@ -200,7 +230,19 @@ private fun WeatherPager(
             modifier = Modifier.fillMaxSize(),
         ) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                WeatherPage(placeId = pages[page], viewModel = viewModel, error = error, onOpenRadar = onOpenRadar)
+                Box(
+                    Modifier.graphicsLayer {
+                        // La página que se va se achica y se apaga un poco: da profundidad al deslizar.
+                        val offset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+                            .absoluteValue.coerceIn(0f, 1f)
+                        alpha = 1f - 0.45f * offset
+                        val scale = 1f - 0.08f * offset
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                ) {
+                    WeatherPage(placeId = pages[page], viewModel = viewModel, error = error, onOpenRadar = onOpenRadar)
+                }
             }
         }
         Row(
@@ -218,12 +260,14 @@ private fun WeatherPager(
                 if (pages.size > 1) {
                     pages.indices.forEach { index ->
                         val selected = index == pagerState.currentPage
+                        val width by animateDpAsState(if (selected) 20.dp else 6.dp, Motion.snappy(), label = "punto")
+                        val dotAlpha by animateFloatAsState(if (selected) 1f else 0.45f, label = "punto alfa")
                         Box(
                             Modifier
                                 .padding(horizontal = 3.dp)
-                                .size(if (selected) 8.dp else 6.dp)
+                                .size(width = width, height = 6.dp)
                                 .clip(CircleShape)
-                                .background(if (selected) OnSky else OnSky.copy(alpha = 0.45f)),
+                                .background(OnSky.copy(alpha = dotAlpha)),
                         )
                     }
                 }
@@ -247,6 +291,7 @@ private fun WeatherPage(
     val insets = WindowInsets.systemBars.asPaddingValues()
     val current = snapshot
     var selectedDay by remember { mutableStateOf<Day?>(null) }
+    val shownAt = remember { SystemClock.uptimeMillis() }
     if (current != null) {
         selectedDay?.let { day -> DaySheet(current, day, onDismiss = { selectedDay = null }) }
     }
@@ -274,17 +319,19 @@ private fun WeatherPage(
                 }
             }
         } else {
-            item { Hero(current, isCurrentLocation = placeId == CURRENT_PLACE_ID) }
-            items(current.alerts, key = { "alerta-" + it.id }) { alert -> AlertCard(alert) }
-            current.minutesUntilRain()?.let { minutes -> item { RainSoonChip(minutes) } }
+            item { Box(Modifier.reveal(0, shownAt)) { Hero(current, isCurrentLocation = placeId == CURRENT_PLACE_ID) } }
+            items(current.alerts, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert) } }
+            current.minutesUntilRain()?.let { minutes -> item { Box(Modifier.reveal(1, shownAt)) { RainSoonChip(minutes) } } }
             item {
-                GlassCard("Próximas horas") {
-                    HourlyChart(current.upcomingHours(24))
+                Box(Modifier.reveal(2, shownAt)) {
+                    GlassCard("Próximas horas") {
+                        HourlyChart(current.upcomingHours(24))
+                    }
                 }
             }
-            item { DailyCard(current, onDay = { selectedDay = it }) }
-            item { RadarCard(onClick = { onOpenRadar(current.latitude, current.longitude) }) }
-            item { DetailsGrid(current) }
+            item { Box(Modifier.reveal(3, shownAt)) { DailyCard(current, onDay = { selectedDay = it }) } }
+            item { Box(Modifier.reveal(4, shownAt)) { RadarCard(onClick = { onOpenRadar(current.latitude, current.longitude) }) } }
+            item { Box(Modifier.reveal(5, shownAt)) { DetailsGrid(current) } }
             item {
                 Text(
                     "Actualizado a las ${updatedAt(current.fetchedAt)} · Datos de Open-Meteo",
@@ -341,18 +388,25 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
+                val shownTemperature by animateFloatAsState(
+                    current.temperature.toFloat(),
+                    tween(900, easing = EaseOutCubic),
+                    label = "temperatura",
+                )
                 Text(
-                    current.temperature.degrees(),
+                    shownTemperature.toDouble().degrees(),
                     fontSize = 112.sp,
                     lineHeight = 112.sp,
                     fontWeight = FontWeight.Light,
                     color = OnSky,
                 )
-                Text(
-                    WeatherCodes.description(current.code),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = OnSky,
-                )
+                AnimatedContent(
+                    targetState = WeatherCodes.description(current.code),
+                    transitionSpec = { fadeIn(tween(400)).togetherWith(fadeOut(tween(200))) },
+                    label = "estado",
+                ) { description ->
+                    Text(description, style = MaterialTheme.typography.titleLarge, color = OnSky)
+                }
                 if (today != null) {
                     Text(
                         "Máx ${today.max.degrees()} · Mín ${today.min.degrees()}",
@@ -383,7 +437,8 @@ private fun AlertCard(alert: WeatherAlert) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
-            .clickable { expanded = !expanded },
+            .pressable { expanded = !expanded }
+            .animateContentSize(Motion.gentle()),
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -416,7 +471,7 @@ private fun RadarCard(onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
-            .clickable(onClick = onClick),
+            .pressable(onClick),
     ) {
         Row(
             Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
@@ -502,7 +557,7 @@ private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
                     weekMax,
                     Modifier
                         .clip(RoundedCornerShape(16.dp))
-                        .clickable { onDay(day) }
+                        .pressable { onDay(day) }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 )
             }
@@ -558,6 +613,9 @@ private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax:
     val start = ((min - weekMin) / span).toFloat().coerceIn(0f, 1f)
     val end = ((max - weekMin) / span).toFloat().coerceIn(start, 1f)
     val colors = MaterialTheme.colorScheme
+    var grown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { grown = true }
+    val grow by animateFloatAsState(if (grown) 1f else 0f, tween(700, delayMillis = 250, easing = EaseOutCubic), label = "rango")
     Row(
         modifier
             .height(6.dp)
@@ -569,6 +627,10 @@ private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax:
             Modifier
                 .weight((end - start).coerceAtLeast(0.04f))
                 .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = grow
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                }
                 .clip(CircleShape)
                 .background(Brush.horizontalGradient(listOf(colors.primary, colors.tertiary))),
         )

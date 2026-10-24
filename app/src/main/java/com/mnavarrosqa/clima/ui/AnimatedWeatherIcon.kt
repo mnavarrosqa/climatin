@@ -21,8 +21,8 @@ import kotlin.math.PI
 import kotlin.math.sin
 
 /**
- * Ícono del clima con un movimiento suave según el tipo: el sol gira, la luna late, las nubes
- * flotan de costado, la lluvia y la nieve suben y bajan, la tormenta parpadea.
+ * Ícono del clima con un movimiento suave según el tipo: el sol se mece, la luna late, las nubes
+ * flotan de costado, la lluvia y la nieve suben y bajan, la tormenta parpadea. Un ciclo dura 24 s.
  */
 @Composable
 fun AnimatedWeatherIcon(code: Int, isDay: Boolean, size: Dp, modifier: Modifier = Modifier) {
@@ -30,7 +30,7 @@ fun AnimatedWeatherIcon(code: Int, isDay: Boolean, size: Dp, modifier: Modifier 
     val clock by rememberInfiniteTransition(label = "icono").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(12_000, easing = LinearEasing), RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(tween(24_000, easing = LinearEasing), RepeatMode.Restart),
         label = "reloj",
     )
     val wave = sin(clock * 2 * PI.toFloat() * 3)
@@ -42,7 +42,11 @@ fun AnimatedWeatherIcon(code: Int, isDay: Boolean, size: Dp, modifier: Modifier 
             .graphicsLayer {
                 when (kind) {
                     WeatherKind.CLEAR -> if (isDay) {
-                        rotationZ = clock * 360f
+                        // Vaivén leve en lugar de girar: se siente vivo sin marear.
+                        rotationZ = wave * 6f
+                        val pulse = 1f + 0.03f * sin(clock * 2 * PI.toFloat() * 2)
+                        scaleX = pulse
+                        scaleY = pulse
                     } else {
                         val pulse = 1f + 0.04f * wave
                         scaleX = pulse

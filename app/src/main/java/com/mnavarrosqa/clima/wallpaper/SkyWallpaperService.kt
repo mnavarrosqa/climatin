@@ -13,7 +13,9 @@ import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.ui.SkyPainter
+import com.mnavarrosqa.clima.ui.SKY_CYCLE_MS
 import com.mnavarrosqa.clima.ui.skyColors
+import com.mnavarrosqa.clima.ui.toGradient
 
 /**
  * Fondo de pantalla animado con el cielo del clima de donde estás. Dibuja a unos 20 cuadros por
@@ -57,11 +59,11 @@ class SkyWallpaperService : WallpaperService() {
         @RequiresApi(Build.VERSION_CODES.O_MR1)
         override fun onComputeColors(): WallpaperColors {
             // Le dice al sistema qué colores tiene el fondo para armar la paleta de Material You.
-            val (top, bottom) = skyColors(kind, isDay)
+            val colors = skyColors(kind, isDay)
             return WallpaperColors(
-                android.graphics.Color.valueOf(top.toArgb()),
-                android.graphics.Color.valueOf(bottom.toArgb()),
-                null,
+                android.graphics.Color.valueOf(colors[0].toArgb()),
+                android.graphics.Color.valueOf(colors[1].toArgb()),
+                android.graphics.Color.valueOf(colors[2].toArgb()),
             )
         }
 
@@ -82,8 +84,7 @@ class SkyWallpaperService : WallpaperService() {
             val canvas = runCatching { holder.lockCanvas() }.getOrNull()
             if (canvas != null) {
                 try {
-                    val (top, bottom) = skyColors(kind, isDay)
-                    val clock = ((SystemClock.uptimeMillis() - start) % 20_000L) / 20_000f
+                    val clock = ((SystemClock.uptimeMillis() - start) % SKY_CYCLE_MS) / SKY_CYCLE_MS.toFloat()
                     painter.draw(
                         canvas,
                         canvas.width.toFloat(),
@@ -92,8 +93,7 @@ class SkyWallpaperService : WallpaperService() {
                         clock,
                         kind,
                         isDay,
-                        top.toArgb(),
-                        bottom.toArgb(),
+                        skyColors(kind, isDay).toGradient(),
                     )
                 } finally {
                     holder.unlockCanvasAndPost(canvas)

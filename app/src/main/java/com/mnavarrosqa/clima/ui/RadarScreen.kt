@@ -1,5 +1,8 @@
 package com.mnavarrosqa.clima.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +79,14 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             }
             .onFailure { error = "No pude cargar el radar. Revisá la conexión." }
     }
+    // Fundido entre cuadros para que la lluvia se mueva sin saltos.
+    var previousIndex by remember { mutableIntStateOf(0) }
+    val fade = remember { Animatable(1f) }
+    LaunchedEffect(frameIndex) {
+        fade.snapTo(0f)
+        fade.animateTo(1f, tween(450, easing = LinearEasing))
+        previousIndex = frameIndex
+    }
     LaunchedEffect(playing, frames.size) {
         while (playing && frames.isNotEmpty()) {
             delay(if (frameIndex == frames.lastIndex) 1500 else 600)
@@ -138,12 +149,18 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                     drawImage(it, dstOffset = position(tile), dstSize = size)
                 }
             }
-            if (frame != null && host != null) {
+            val previous = frames.getOrNull(previousIndex)
+            fun radarLayer(radarFrame: RadarFrame, alpha: Float) {
+                if (alpha <= 0.01f) return
                 tiles.forEach { tile ->
-                    images[Radar.radarTileUrl(host!!, frame, zoom, tile.x, tile.y)]?.let {
-                        drawImage(it, dstOffset = position(tile), dstSize = size, alpha = 0.8f)
+                    images[Radar.radarTileUrl(host!!, radarFrame, zoom, tile.x, tile.y)]?.let {
+                        drawImage(it, dstOffset = position(tile), dstSize = size, alpha = alpha)
                     }
                 }
+            }
+            if (frame != null && host != null) {
+                if (previous != null && previous != frame) radarLayer(previous, 0.8f * (1f - fade.value))
+                radarLayer(frame, 0.8f * fade.value)
             }
             val center = Offset(this.size.width / 2f, this.size.height / 2f)
             drawCircle(Color.White, radius = 9.dp.toPx(), center = center)

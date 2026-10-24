@@ -14,7 +14,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -44,6 +50,12 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
     val min = hours.minOf { it.temperature }
     val max = hours.maxOf { it.temperature }
     val span = (max - min).coerceAtLeast(1.0)
+    // La curva se dibuja de izquierda a derecha al aparecer y cuando llegan datos nuevos.
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(hours.first().time, hours.size) {
+        reveal.snapTo(0f)
+        reveal.animateTo(1f, tween(1100, easing = EaseOutCubic))
+    }
 
     Column(
         modifier
@@ -77,12 +89,17 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier) {
                 lineTo(points.first().x, size.height)
                 close()
             }
-            drawPath(
-                fill,
-                Brush.verticalGradient(listOf(colors.primary.copy(alpha = 0.35f), colors.primary.copy(alpha = 0f))),
-            )
-            drawPath(line, colors.primary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+            val visibleWidth = size.width * reveal.value
+            clipRect(right = visibleWidth) {
+                drawPath(
+                    fill,
+                    Brush.verticalGradient(listOf(colors.primary.copy(alpha = 0.35f), colors.primary.copy(alpha = 0f))),
+                )
+                drawPath(line, colors.primary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+            }
             points.forEachIndexed { i, p ->
+                // Cada punto aparece cuando la curva llega hasta él.
+                if (p.x > visibleWidth + slot / 2) return@forEachIndexed
                 drawCircle(colors.surface, radius = 5.dp.toPx(), center = p)
                 drawCircle(colors.primary, radius = 3.5.dp.toPx(), center = p)
                 val text = measurer.measure(hours[i].temperature.degrees(), labelStyle)

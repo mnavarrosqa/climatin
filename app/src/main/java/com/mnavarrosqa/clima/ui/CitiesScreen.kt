@@ -192,7 +192,8 @@ fun CitiesScreen(
             }
             items(places, key = { it.id }) { place ->
                 val index = places.indexOf(place)
-                Group(Modifier.padding(top = 2.dp)) {
+                // Al subir, bajar o borrar una ciudad, la lista se reacomoda con animación.
+                Group(Modifier.animateItem().padding(top = 2.dp)) {
                     ListItem(
                         headlineContent = { Text(place.name) },
                         supportingContent = place.detail?.let { detail -> @Composable { Text(detail) } },
