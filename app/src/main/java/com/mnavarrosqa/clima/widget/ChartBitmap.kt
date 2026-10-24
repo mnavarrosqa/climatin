@@ -21,7 +21,8 @@ object ChartBitmap {
 
     private data class Palette(val line: Int, val text: Int, val subtle: Int)
 
-    private fun palette(context: Context): Palette {
+    private fun palette(context: Context, onTransparent: Boolean): Palette {
+        if (onTransparent) return Palette(0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt(), 0xDDFFFFFF.toInt())
         val night = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -36,11 +37,11 @@ object ChartBitmap {
         }
     }
 
-    fun render(context: Context, hours: List<Hour>, widthPx: Int, heightPx: Int): Bitmap {
+    fun render(context: Context, hours: List<Hour>, widthPx: Int, heightPx: Int, onTransparent: Boolean = false): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         if (hours.size < 2) return bitmap
         val canvas = Canvas(bitmap)
-        val colors = palette(context)
+        val colors = palette(context, onTransparent)
         val metrics = context.resources.displayMetrics
         val density = metrics.density
         val textSize = 12f * density * context.resources.configuration.fontScale
@@ -109,6 +110,52 @@ object ChartBitmap {
                 val label = if (i == 0) "Ahora" else shortHour(hour.dateTime)
                 canvas.drawText(label, xs[i], heightPx - textSize * 0.3f, hourPaint)
             }
+        }
+        return bitmap
+    }
+
+    /**
+     * Arco del sol de amanecer a atardecer con la posición actual. [progress] va de 0 (amanecer)
+     * a 1 (atardecer); fuera de ese rango es de noche y el sol no se dibuja.
+     */
+    fun renderSunArc(context: Context, progress: Float, widthPx: Int, heightPx: Int, onTransparent: Boolean = false): Bitmap {
+        val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val colors = palette(context, onTransparent)
+        val density = context.resources.displayMetrics.density
+        val margin = 10f * density
+        val horizon = heightPx - 4f * density
+        val oval = android.graphics.RectF(margin, margin, widthPx - margin, horizon * 2 - margin)
+
+        val arcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = colors.subtle
+            alpha = 120
+            style = Paint.Style.STROKE
+            strokeWidth = 2f * density
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(6f * density, 6f * density), 0f)
+        }
+        canvas.drawArc(oval, 180f, 180f, false, arcPaint)
+        canvas.drawLine(
+            0f, horizon, widthPx.toFloat(), horizon,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = colors.subtle
+                alpha = 160
+                strokeWidth = 1.5f * density
+            },
+        )
+        if (progress in 0f..1f) {
+            val done = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = colors.line
+                style = Paint.Style.STROKE
+                strokeWidth = 3f * density
+                strokeCap = Paint.Cap.ROUND
+            }
+            canvas.drawArc(oval, 180f, 180f * progress, false, done)
+            val angle = Math.toRadians((180.0 + 180.0 * progress))
+            val cx = oval.centerX() + (oval.width() / 2) * kotlin.math.cos(angle).toFloat()
+            val cy = oval.centerY() + (oval.height() / 2) * kotlin.math.sin(angle).toFloat()
+            canvas.drawCircle(cx, cy, 11f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x55FFC107 })
+            canvas.drawCircle(cx, cy, 7f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFB300.toInt() })
         }
         return bitmap
     }

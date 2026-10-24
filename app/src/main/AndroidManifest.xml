@@ -73,6 +73,54 @@
                 android:resource="@xml/grafico_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.BurbujaWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_burbuja_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/burbuja_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.PildoraWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_pildora_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/pildora_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.SemanaWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_semana_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/semana_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.SolWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_sol_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sol_widget_info" />
+        </receiver>
+
         <activity
             android:name=".widget.WidgetConfigActivity"
             android:exported="true">

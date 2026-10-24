@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/preview_background"
+    android:background="@drawable/preview_surface"
     android:orientation="vertical"
     android:padding="16dp">
 
@@ -13,27 +13,182 @@
         android:orientation="horizontal">
 
         <ImageView
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_weather_clear_day" />
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_weather_clear_day" />
 
-        <TextView
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:text="24° Despejado"
-            android:textColor="@color/preview_on_background"
-            android:textSize="20sp" />
+            android:layout_marginStart="10dp"
+            android:orientation="vertical">
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="24° Despejado"
+        android:textColor="@color/preview_text"
+        android:textSize="18sp" />
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Córdoba"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
+        </LinearLayout>
     </LinearLayout>
 
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:gravity="center_vertical"
-        android:text="Hoy 26°/13°   Dom 23°/12°   Lun 19°/10°"
-        android:textColor="@color/preview_on_background_variant"
-        android:textSize="13sp" />
+        android:gravity="bottom"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hoy"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
+
+            <ImageView
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_weather_clear_day"
+            android:layout_marginVertical="2dp" />
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="26°"
+        android:textColor="@color/preview_text"
+        android:textSize="14sp" />
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="13°"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Mañ."
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
+
+            <ImageView
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_weather_partly_cloudy_day"
+            android:layout_marginVertical="2dp" />
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="23°"
+        android:textColor="@color/preview_text"
+        android:textSize="14sp" />
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="12°"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Lun"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
+
+            <ImageView
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_weather_rain"
+            android:layout_marginVertical="2dp" />
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="19°"
+        android:textColor="@color/preview_text"
+        android:textSize="14sp" />
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="10°"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Mar"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
+
+            <ImageView
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_weather_cloudy"
+            android:layout_marginVertical="2dp" />
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="21°"
+        android:textColor="@color/preview_text"
+        android:textSize="14sp" />
+
+            <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="11°"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

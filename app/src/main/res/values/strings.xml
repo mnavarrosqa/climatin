@@ -9,4 +9,12 @@
     <string name="widget_vistazo_description">Fecha y clima sobre tu fondo de pantalla</string>
     <string name="widget_grafico_name">Gráfico</string>
     <string name="widget_grafico_description">La temperatura de las próximas horas</string>
+    <string name="widget_burbuja_name">Burbuja</string>
+    <string name="widget_burbuja_description">Círculo con la temperatura y el cielo</string>
+    <string name="widget_pildora_name">Píldora</string>
+    <string name="widget_pildora_description">Una línea: ícono, temperatura y estado</string>
+    <string name="widget_semana_name">Semana</string>
+    <string name="widget_semana_description">Los próximos días en lista</string>
+    <string name="widget_sol_name">Sol</string>
+    <string name="widget_sol_description">Amanecer, atardecer y dónde está el sol ahora</string>
 </resources>

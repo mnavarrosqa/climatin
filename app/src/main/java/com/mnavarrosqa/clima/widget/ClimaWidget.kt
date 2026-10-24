@@ -7,7 +7,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
-import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
@@ -71,8 +70,9 @@ private fun ClimaContent(snapshot: WeatherSnapshot) {
 
 @Composable
 private fun TinyContent(snapshot: WeatherSnapshot) {
+    val colors = widgetColors()
     val current = snapshot.current
-    WidgetSurface {
+    WidgetSurface(colors) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
                 provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
@@ -82,7 +82,7 @@ private fun TinyContent(snapshot: WeatherSnapshot) {
             Spacer(GlanceModifier.width(4.dp))
             Text(
                 current.temperature.degrees(),
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 20.sp),
+                style = TextStyle(color = colors.text, fontSize = 20.sp),
             )
         }
     }
@@ -90,8 +90,9 @@ private fun TinyContent(snapshot: WeatherSnapshot) {
 
 @Composable
 private fun SquareContent(snapshot: WeatherSnapshot) {
+    val colors = widgetColors()
     val current = snapshot.current
-    WidgetSurface(modifier = GlanceModifier.padding(12.dp)) {
+    WidgetSurface(colors, modifier = GlanceModifier.padding(12.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Image(
                 provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
@@ -100,12 +101,12 @@ private fun SquareContent(snapshot: WeatherSnapshot) {
             )
             Text(
                 current.temperature.degrees(),
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 34.sp),
+                style = TextStyle(color = colors.text, fontSize = 34.sp),
             )
             Text(
                 snapshot.place ?: WeatherCodes.description(current.code),
                 maxLines = 1,
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
             )
         }
     }
@@ -113,9 +114,10 @@ private fun SquareContent(snapshot: WeatherSnapshot) {
 
 @Composable
 private fun WideContent(snapshot: WeatherSnapshot, showHours: Boolean) {
+    val colors = widgetColors()
     val current = snapshot.current
     val today = snapshot.today()
-    WidgetSurface(modifier = GlanceModifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
+    WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = GlanceModifier.defaultWeight()) {
@@ -123,25 +125,25 @@ private fun WideContent(snapshot: WeatherSnapshot, showHours: Boolean) {
                         snapshot.place ?: "Tu ubicación",
                         maxLines = 1,
                         style = TextStyle(
-                            color = GlanceTheme.colors.onSurfaceVariant,
+                            color = colors.textVariant,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                         ),
                     )
                     Text(
                         current.temperature.degrees(),
-                        style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 44.sp),
+                        style = TextStyle(color = colors.text, fontSize = 44.sp),
                     )
                     Text(
                         WeatherCodes.description(current.code),
                         maxLines = 1,
-                        style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp),
+                        style = TextStyle(color = colors.text, fontSize = 14.sp),
                     )
                     if (today != null) {
                         Text(
                             "Máx ${today.max.degrees()} · Mín ${today.min.degrees()}",
                             maxLines = 1,
-                            style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                            style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
                         )
                     }
                 }
@@ -153,7 +155,7 @@ private fun WideContent(snapshot: WeatherSnapshot, showHours: Boolean) {
             }
             if (showHours) {
                 Spacer(GlanceModifier.height(12.dp))
-                HoursRow(snapshot, count = 5)
+                HoursRow(snapshot, count = 5, colors = colors)
             }
         }
     }
@@ -161,12 +163,12 @@ private fun WideContent(snapshot: WeatherSnapshot, showHours: Boolean) {
 
 /** Fila de próximas horas, compartida con el widget de pronóstico. */
 @Composable
-fun HoursRow(snapshot: WeatherSnapshot, count: Int) {
+fun HoursRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {
     val hours = snapshot.upcomingHours(count)
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .background(GlanceTheme.colors.secondaryContainer)
+            .background(colors.chip)
             .cornerRadius(16.dp)
             .padding(vertical = 8.dp),
     ) {
@@ -177,7 +179,7 @@ fun HoursRow(snapshot: WeatherSnapshot, count: Int) {
             ) {
                 Text(
                     if (index == 0) "Ahora" else shortHour(hour.dateTime),
-                    style = TextStyle(color = GlanceTheme.colors.onSecondaryContainer, fontSize = 11.sp),
+                    style = TextStyle(color = colors.onChip, fontSize = 11.sp),
                 )
                 Image(
                     provider = ImageProvider(WeatherCodes.icon(hour.code, hour.isDay)),
@@ -187,7 +189,7 @@ fun HoursRow(snapshot: WeatherSnapshot, count: Int) {
                 Text(
                     hour.temperature.degrees(),
                     style = TextStyle(
-                        color = GlanceTheme.colors.onSecondaryContainer,
+                        color = colors.onChip,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                     ),

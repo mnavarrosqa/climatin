@@ -2,10 +2,11 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/preview_background"
+    android:background="@drawable/preview_surface"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:padding="16dp">
+    android:paddingHorizontal="20dp"
+    android:paddingVertical="14dp">
 
     <LinearLayout
         android:layout_width="0dp"
@@ -14,25 +15,32 @@
         android:orientation="vertical">
 
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="22°"
-            android:textColor="@color/preview_on_background"
-            android:textSize="48sp" />
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Córdoba"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="13sp" />
 
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Parcialmente nublado"
-            android:textColor="@color/preview_on_background"
-            android:textSize="14sp" />
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="22°"
+        android:textColor="@color/preview_text"
+        android:textSize="44sp" />
 
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Máx 25° · Mín 14°"
-            android:textColor="@color/preview_on_background_variant"
-            android:textSize="12sp" />
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Parcialmente nublado"
+        android:textColor="@color/preview_text"
+        android:textSize="14sp" />
+
+        <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Máx 25° · Mín 14°"
+        android:textColor="@color/preview_text_variant"
+        android:textSize="12sp" />
     </LinearLayout>
 
     <ImageView

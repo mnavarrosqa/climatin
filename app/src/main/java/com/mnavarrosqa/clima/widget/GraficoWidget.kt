@@ -7,7 +7,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
-import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
@@ -56,6 +55,7 @@ class GraficoWidget : GlanceAppWidget() {
 
 @Composable
 private fun GraficoContent(snapshot: WeatherSnapshot) {
+    val colors = widgetColors()
     val context = LocalContext.current
     val size = LocalSize.current
     val current = snapshot.current
@@ -70,9 +70,10 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
         snapshot.upcomingHours(hourCount),
         (chartWidth.value * density).roundToInt(),
         (chartHeight.value * density).roundToInt(),
+        onTransparent = colors.transparent,
     )
 
-    WidgetSurface(modifier = GlanceModifier.padding(padding)) {
+    WidgetSurface(colors, modifier = GlanceModifier.padding(padding)) {
         Column(modifier = GlanceModifier.fillMaxWidth()) {
             Row(
                 modifier = GlanceModifier.fillMaxWidth().height(header),
@@ -89,7 +90,7 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
                         "${current.temperature.degrees()} ${WeatherCodes.description(current.code)}",
                         maxLines = 1,
                         style = TextStyle(
-                            color = GlanceTheme.colors.onSurface,
+                            color = colors.text,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Medium,
                         ),
@@ -97,13 +98,13 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
                     Text(
                         snapshot.place ?: "Tu ubicación",
                         maxLines = 1,
-                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                        style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
                     )
                 }
                 snapshot.today()?.let { today ->
                     Text(
                         "${today.max.degrees()} / ${today.min.degrees()}",
-                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 13.sp),
+                        style = TextStyle(color = colors.textVariant, fontSize = 13.sp),
                     )
                 }
             }

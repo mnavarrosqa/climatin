@@ -6,35 +6,67 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.lifecycle.lifecycleScope
 import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.Place
+import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherRepository
+import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.ui.theme.ClimaTheme
 import kotlinx.coroutines.launch
 
-/** Se abre al agregar un widget (o al tocar el lápiz) para elegir qué ciudad muestra. */
+/** Se abre al agregar un widget (o al tocar el lápiz) para elegir ciudad y estilo. */
 class WidgetConfigActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,19 +83,51 @@ class WidgetConfigActivity : ComponentActivity() {
             return
         }
 
-        val places = WeatherRepository.get(this).places()
+        val repository = WeatherRepository.get(this)
+        val places = repository.places()
+        // "De un vistazo" y "Burbuja" arrancan con otro estilo por defecto.
+        val provider = AppWidgetManager.getInstance(this).getAppWidgetInfo(appWidgetId)?.provider?.className.orEmpty()
+        val defaultStyle = when {
+            provider.endsWith("VistazoWidgetReceiver") -> WidgetStyle.TRANSPARENT
+            provider.endsWith("BurbujaWidgetReceiver") -> WidgetStyle.COLOR
+            else -> WidgetStyle.SYSTEM
+        }
+
         setContent {
             ClimaTheme {
-                PlacePicker(places) { placeId ->
-                    lifecycleScope.launch {
-                        val context = this@WidgetConfigActivity
-                        val glanceId = GlanceAppWidgetManager(context).getGlanceIdBy(appWidgetId)
-                        updateAppWidgetState(context, glanceId) { prefs -> prefs[WidgetPlace.KEY] = placeId }
-                        updateWeatherWidgets(context)
-                        setResult(RESULT_OK, result)
-                        finish()
+                var placeId by remember { mutableStateOf(CURRENT_PLACE_ID) }
+                var style by remember { mutableStateOf(defaultStyle) }
+                LaunchedEffect(Unit) {
+                    // Al reconfigurar, arranca con lo que el widget ya tenía.
+                    runCatching {
+                        val glanceId = GlanceAppWidgetManager(this@WidgetConfigActivity).getGlanceIdBy(appWidgetId)
+                        val prefs = getAppWidgetState(this@WidgetConfigActivity, PreferencesGlanceStateDefinition, glanceId)
+                        placeId = repository.resolvePlaceId(prefs[WidgetPrefs.PLACE])
+                        style = WidgetStyle.from(prefs[WidgetPrefs.STYLE], defaultStyle)
                     }
                 }
+                ConfigScreen(
+                    places = places,
+                    placeId = placeId,
+                    onPlace = { placeId = it },
+                    style = style,
+                    onStyle = { style = it },
+                    previewTemperature = repository.cached(placeId)?.current?.temperature?.degrees() ?: "22°",
+                    previewCode = repository.cached(placeId)?.current?.code ?: 2,
+                    onDone = {
+                        lifecycleScope.launch {
+                            val context = this@WidgetConfigActivity
+                            val glanceId = GlanceAppWidgetManager(context).getGlanceIdBy(appWidgetId)
+                            updateAppWidgetState(context, glanceId) { prefs ->
+                                prefs[WidgetPrefs.PLACE] = placeId
+                                prefs[WidgetPrefs.STYLE] = style.name
+                            }
+                            updateWeatherWidgets(context)
+                            setResult(RESULT_OK, result)
+                            finish()
+                        }
+                    },
+                )
             }
         }
     }
@@ -71,29 +135,68 @@ class WidgetConfigActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PlacePicker(places: List<Place>, onPick: (String) -> Unit) {
-    Scaffold(topBar = { LargeTopAppBar(title = { Text("¿Qué ciudad muestra?") }) }) { padding ->
+private fun ConfigScreen(
+    places: List<Place>,
+    placeId: String,
+    onPlace: (String) -> Unit,
+    style: WidgetStyle,
+    onStyle: (WidgetStyle) -> Unit,
+    previewTemperature: String,
+    previewCode: Int,
+    onDone: () -> Unit,
+) {
+    Scaffold(
+        topBar = { LargeTopAppBar(title = { Text("Personalizá el widget") }) },
+        bottomBar = {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+            ) {
+                Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Listo") }
+            }
+        },
+    ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
                 top = padding.calculateTopPadding(),
                 bottom = padding.calculateBottomPadding() + 16.dp,
             ),
         ) {
+            item { StylePreview(style, previewTemperature, previewCode) }
+            item { SectionTitle("Estilo") }
             item {
-                ListItem(
-                    headlineContent = { Text("Donde estoy") },
-                    supportingContent = { Text("Sigue tu ubicación") },
-                    leadingContent = { Icon(Icons.Rounded.LocationOn, contentDescription = null) },
-                    modifier = Modifier.clickable { onPick(CURRENT_PLACE_ID) },
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WidgetStyle.entries.forEach { option ->
+                        FilterChip(
+                            selected = option == style,
+                            onClick = { onStyle(option) },
+                            label = { Text(option.label) },
+                        )
+                    }
+                }
+            }
+            item { SectionTitle("Ciudad") }
+            item {
+                PlaceRow(
+                    title = "Donde estoy",
+                    subtitle = "Sigue tu ubicación",
+                    current = true,
+                    selected = placeId == CURRENT_PLACE_ID,
+                    onClick = { onPlace(CURRENT_PLACE_ID) },
                 )
             }
             items(places, key = { it.id }) { place ->
-                ListItem(
-                    headlineContent = { Text(place.name) },
-                    supportingContent = place.detail?.let { detail -> @Composable { Text(detail) } },
-                    leadingContent = { Icon(Icons.Rounded.Place, contentDescription = null) },
-                    modifier = Modifier.clickable { onPick(place.id) },
+                PlaceRow(
+                    title = place.name,
+                    subtitle = place.detail,
+                    current = false,
+                    selected = placeId == place.id,
+                    onClick = { onPlace(place.id) },
                 )
             }
             if (places.isEmpty()) {
@@ -108,4 +211,66 @@ private fun PlacePicker(places: List<Place>, onPick: (String) -> Unit) {
             }
         }
     }
+}
+
+/** Muestra cómo queda el estilo elegido, sobre un fondo de pantalla de ejemplo. */
+@Composable
+private fun StylePreview(style: WidgetStyle, temperature: String, code: Int) {
+    val colors = MaterialTheme.colorScheme
+    val (background, text) = when (style) {
+        WidgetStyle.SYSTEM -> colors.surfaceContainerHigh to colors.onSurface
+        WidgetStyle.COLOR -> colors.primaryContainer to colors.onPrimaryContainer
+        WidgetStyle.TRANSPARENT -> Color.Transparent to Color.White
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(Brush.linearGradient(listOf(colors.tertiary, colors.primary))),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(color = background, contentColor = text, shape = RoundedCornerShape(24.dp)) {
+            Row(
+                Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(temperature, fontSize = 40.sp)
+                    Text(WeatherCodes.description(code), style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(Modifier.width(16.dp))
+                Image(
+                    painter = painterResource(WeatherCodes.icon(code)),
+                    contentDescription = null,
+                    modifier = Modifier.size(56.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 4.dp, top = 24.dp, bottom = 8.dp),
+    )
+}
+
+@Composable
+private fun PlaceRow(title: String, subtitle: String?, current: Boolean, selected: Boolean, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = subtitle?.let { s -> @Composable { Text(s) } },
+        leadingContent = {
+            Icon(if (current) Icons.Rounded.LocationOn else Icons.Rounded.Place, contentDescription = null)
+        },
+        trailingContent = { RadioButton(selected = selected, onClick = onClick) },
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+    )
 }

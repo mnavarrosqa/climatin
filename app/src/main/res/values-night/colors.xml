@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="window_background">#FF111318</color>
+    <color name="preview_surface">#FF1D2024</color>
+    <color name="preview_text">#FFE1E2E9</color>
+    <color name="preview_text_variant">#FFC4C6CF</color>
+    <color name="preview_container">#FF1F4876</color>
+    <color name="preview_on_container">#FFD6E3FF</color>
+    <color name="preview_chip">#FF3E4758</color>
+    <color name="preview_line">#FFA4C9FF</color>
 </resources>
