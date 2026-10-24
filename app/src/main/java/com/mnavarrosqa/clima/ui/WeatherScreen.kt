@@ -130,7 +130,7 @@ private val OnSky = Color.White
 private val OnSkyVariant = Color.White.copy(alpha = 0.9f)
 
 /** Sombra suave para que el texto blanco se lea sobre un cielo claro, como en el Clima de Apple. */
-private val SkyShadow = Shadow(Color.Black.copy(alpha = 0.32f), Offset(0f, 2f), 12f)
+private val SkyShadow = Shadow(Color.Black.copy(alpha = 0.4f), Offset(0f, 2f), 16f)
 
 private fun TextStyle.onSky() = copy(shadow = SkyShadow)
 
@@ -331,17 +331,6 @@ private fun WeatherPager(
             kind = skySnapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
             isDay = skySnapshot?.current?.isDay ?: true,
             modifier = Modifier.fillMaxSize(),
-        )
-        // Velo oscuro arriba: el cielo de día es muy claro y la temperatura blanca se perdía.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.22f),
-                        0.45f to Color.Transparent,
-                    ),
-                ),
         )
         PullToRefreshBox(
             isRefreshing = refreshing,
@@ -624,7 +613,17 @@ fun ForecastContent(
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            // Velo oscuro arriba: el cielo de día es muy claro y la temperatura blanca se perdía.
+            .background(
+                Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.3f),
+                    0.5f to Color.Transparent,
+                ),
+            ),
+    ) {
         if (maxWidth >= TwoPaneWidth) {
             Row(Modifier.fillMaxSize()) {
                 // Izquierda: el ahora (temperatura, avisos, mapa y detalles); derecha: lo que viene.
