@@ -17,6 +17,18 @@ android {
         versionName = "1.5"
     }
 
+    signingConfigs {
+        // Clave propia para Play Store, si el CI (o tu máquina) define las variables. Ver PUBLICAR.md.
+        create("release") {
+            System.getenv("CLIMATIN_KEYSTORE")?.let { path ->
+                storeFile = file(path)
+                storePassword = System.getenv("CLIMATIN_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("CLIMATIN_KEY_ALIAS")
+                keyPassword = System.getenv("CLIMATIN_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -25,9 +37,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Firmado con la clave de debug para poder instalarlo a mano.
-            // Para Play Store hay que configurar una clave propia.
-            signingConfig = signingConfigs.getByName("debug")
+            // Sin clave propia se firma con la de debug, para poder instalarlo a mano.
+            signingConfig = signingConfigs.getByName(
+                if (System.getenv("CLIMATIN_KEYSTORE") != null) "release" else "debug",
+            )
         }
     }
 

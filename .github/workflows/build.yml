@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      KEYSTORE_BASE64: ${{ secrets.CLIMATIN_KEYSTORE_BASE64 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -18,8 +20,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Tests
         run: ./gradlew --no-daemon testDebugUnitTest
+      # Con el secreto CLIMATIN_KEYSTORE_BASE64 cargado, el release sale firmado para Play Store.
+      - name: Clave de firma
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/climatin.jks"
+          echo "CLIMATIN_KEYSTORE=$RUNNER_TEMP/climatin.jks" >> "$GITHUB_ENV"
       - name: Compilar
-        run: ./gradlew --no-daemon assembleDebug assembleRelease
+        env:
+          CLIMATIN_KEYSTORE_PASSWORD: ${{ secrets.CLIMATIN_KEYSTORE_PASSWORD }}
+          CLIMATIN_KEY_ALIAS: ${{ secrets.CLIMATIN_KEY_ALIAS }}
+          CLIMATIN_KEY_PASSWORD: ${{ secrets.CLIMATIN_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assembleDebug assembleRelease bundleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: clima-apk
@@ -27,3 +39,9 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/release/app-release.apk
             wear/build/outputs/apk/release/wear-release.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: climatin-play
+          path: |
+            app/build/outputs/bundle/release/app-release.aab
+            wear/build/outputs/bundle/release/wear-release.aab
