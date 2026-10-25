@@ -111,8 +111,11 @@ private val UvColors = listOf(Color(0xFF4CAF50), Color(0xFFFFEB3B), Color(0xFFFF
 /** Escala del índice europeo de calidad del aire (0 a 100+). */
 private val AqiColors = listOf(Color(0xFF50F0E6), Color(0xFF50CCAA), Color(0xFFF0E641), Color(0xFFFF5050), Color(0xFF960032))
 
+/** Qué parte de los detalles se muestra: todos, o la primera o segunda mitad (en dos paneles). */
+enum class DetailsPart { ALL, FIRST, SECOND }
+
 @Composable
-fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
+fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: DetailsPart = DetailsPart.ALL) {
     val current = snapshot.current
     val today = snapshot.today()
     val date = snapshot.nowAtPlace().toLocalDate()
@@ -404,8 +407,16 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
         }
         pending?.let { add(listOf(it)) }
     }
+    // En dos paneles se reparten: la izquierda (que ya tiene la temperatura) se lleva menos.
+    val split = rows.size / 2
+    val shown = when (part) {
+        DetailsPart.ALL -> rows
+        DetailsPart.FIRST -> rows.take(split)
+        DetailsPart.SECOND -> rows.drop(split)
+    }
+    if (shown.isEmpty()) return
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        rows.forEach { row ->
+        shown.forEach { row ->
             Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 row.forEach { detail -> DetailTile(detail, Modifier.weight(1f).fillMaxHeight()) }
                 if (row.size == 1 && !row[0].wide) Spacer(Modifier.weight(1f))

@@ -1,0 +1,1 @@
+Plegables y tablets: las dos columnas quedan parejas (los detalles se reparten entre las dos) y en tablets apaisadas el pronóstico va en tres columnas: el ahora, lo que viene y los detalles.

@@ -673,6 +673,9 @@ private fun WeatherPage(
 /** Ancho desde el que el pronóstico se divide en dos paneles (plegables abiertos y tablets). */
 private val TwoPaneWidth = 600.dp
 
+/** Desde este ancho (tablet apaisada) van tres columnas. */
+private val ThreePaneWidth = 1100.dp
+
 /**
  * El pronóstico de un lugar. En pantallas angostas va en una columna; en anchas, en dos paneles:
  * el cielo, la temperatura y los avisos a la izquierda, y horas, días y detalles a la derecha.
@@ -777,9 +780,10 @@ fun ForecastContent(
         }
     }
     // Cada tarjeta, en el orden que eligió la persona (Ajustes → Pantalla del clima).
-    val card: LazyListScope.(ForecastCard, Int) -> Unit = { which, index ->
+    // En paneles, los detalles se pueden repartir en dos mitades ([part]).
+    val card: LazyListScope.(ForecastCard, Int, DetailsPart) -> Unit = { which, index, part ->
         if (snapshot != null) {
-            item(key = which.name) {
+            item(key = which.name + part.name) {
                 Box(Modifier.reveal(index, shownAt)) {
                     when (which) {
                         ForecastCard.HOURS -> GlassCard(tr("Próximas horas", "Next hours")) {
@@ -791,16 +795,14 @@ fun ForecastContent(
                         }
                         ForecastCard.DAYS -> DailyCard(snapshot, onDay = onDay)
                         ForecastCard.RADAR -> RadarCard(snapshot.latitude, snapshot.longitude, onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })
-                        ForecastCard.DETAILS -> DetailsGrid(snapshot)
+                        ForecastCard.DETAILS -> DetailsGrid(snapshot, part = part)
                     }
                 }
             }
         }
     }
-    val details: LazyListScope.(Boolean) -> Unit = { twoPane ->
+    val footer: LazyListScope.() -> Unit = {
         if (snapshot != null) {
-            // En dos paneles, el mapa y los detalles van a la izquierda.
-            cards.filter { !twoPane || !it.leftPane }.forEachIndexed { i, which -> card(which, 2 + i) }
             item {
                 Text(
                     tr("Actualizado", "Updated") + " $ageLabel (${updatedAt(snapshot.fetchedAt)}) · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
@@ -814,6 +816,10 @@ fun ForecastContent(
             }
         }
     }
+    // Las tarjetas elegidas, en su orden, que van en una columna: [pick] dice si va y con qué parte.
+    fun LazyListScope.cardsWhere(pick: (ForecastCard) -> DetailsPart?) {
+        cards.forEachIndexed { i, which -> pick(which)?.let { part -> card(which, 2 + i, part) } }
+    }
 
     BoxWithConstraints(
         Modifier
@@ -826,35 +832,84 @@ fun ForecastContent(
                 ),
             ),
     ) {
-        if (maxWidth >= TwoPaneWidth) {
-            Row(Modifier.fillMaxSize()) {
-                // Izquierda: el ahora (temperatura, avisos, mapa y detalles); derecha: lo que viene.
+        val paneSpacing = if (Appearance.compact) 8.dp else 12.dp
+        // Cada panel con su relleno: entre paneles va la mitad, así el hueco es parejo.
+        fun panePadding(first: Boolean, last: Boolean) = PaddingValues(
+            start = if (first) 16.dp else paneSpacing / 2,
+            end = if (last) 16.dp else paneSpacing / 2,
+            top = padding.calculateTopPadding(),
+            bottom = padding.calculateBottomPadding(),
+        )
+        when {
+            // Tablet apaisada: el ahora, lo que viene y los detalles, en tres columnas.
+            maxWidth >= ThreePaneWidth -> Row(Modifier.fillMaxSize()) {
                 LazyColumn(
                     state = summaryState,
-                    modifier = Modifier.weight(0.42f).fillMaxSize(),
-                    contentPadding = padding,
+                    modifier = Modifier.weight(0.31f).fillMaxSize(),
+                    contentPadding = panePadding(first = true, last = false),
                     verticalArrangement = spacing,
                 ) {
                     summary()
-                    cards.filter { it.leftPane }.forEachIndexed { i, which -> card(which, 2 + i) }
+                    cardsWhere { if (it == ForecastCard.RADAR) DetailsPart.ALL else null }
                 }
                 LazyColumn(
-                    modifier = Modifier.weight(0.58f).fillMaxSize(),
-                    contentPadding = padding,
+                    modifier = Modifier.weight(0.37f).fillMaxSize(),
+                    contentPadding = panePadding(first = false, last = false),
                     verticalArrangement = spacing,
                 ) {
-                    details(true)
+                    cardsWhere { if (it == ForecastCard.HOURS || it == ForecastCard.DAYS) DetailsPart.ALL else null }
+                    footer()
+                }
+                LazyColumn(
+                    modifier = Modifier.weight(0.32f).fillMaxSize(),
+                    contentPadding = panePadding(first = false, last = true),
+                    verticalArrangement = spacing,
+                ) {
+                    cardsWhere { if (it == ForecastCard.DETAILS) DetailsPart.ALL else null }
                 }
             }
-        } else {
-            LazyColumn(
+            // Plegable abierto o tablet: dos columnas parejas. Los detalles se reparten entre las
+            // dos (antes iban todos a la izquierda y la derecha quedaba corta).
+            maxWidth >= TwoPaneWidth -> Row(Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = summaryState,
+                    modifier = Modifier.weight(0.46f).fillMaxSize(),
+                    contentPadding = panePadding(first = true, last = false),
+                    verticalArrangement = spacing,
+                ) {
+                    summary()
+                    cardsWhere {
+                        when (it) {
+                            ForecastCard.RADAR -> DetailsPart.ALL
+                            ForecastCard.DETAILS -> DetailsPart.FIRST
+                            else -> null
+                        }
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier.weight(0.54f).fillMaxSize(),
+                    contentPadding = panePadding(first = false, last = true),
+                    verticalArrangement = spacing,
+                ) {
+                    cardsWhere {
+                        when (it) {
+                            ForecastCard.HOURS, ForecastCard.DAYS -> DetailsPart.ALL
+                            ForecastCard.DETAILS -> DetailsPart.SECOND
+                            else -> null
+                        }
+                    }
+                    footer()
+                }
+            }
+            else -> LazyColumn(
                 state = summaryState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = padding,
                 verticalArrangement = spacing,
             ) {
                 summary()
-                details(false)
+                cardsWhere { DetailsPart.ALL }
+                footer()
             }
         }
     }
