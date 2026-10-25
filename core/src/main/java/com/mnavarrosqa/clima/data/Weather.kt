@@ -39,8 +39,8 @@ data class WeatherSnapshot(
      */
     fun nowAtPlace(): LocalDateTime = LocalDateTime.now(zone)
 
-    // Se arma una vez: los widgets y los avisos piden la hora del lugar muchas veces.
-    private val zone: java.time.ZoneId by lazy(LazyThreadSafetyMode.PUBLICATION) {
+    /** Zona del lugar. Se arma una vez: los widgets y los avisos piden la hora del lugar muchas veces. */
+    val zone: java.time.ZoneId by lazy(LazyThreadSafetyMode.PUBLICATION) {
         timezone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() } ?: ZoneOffset.ofTotalSeconds(utcOffsetSeconds)
     }
 

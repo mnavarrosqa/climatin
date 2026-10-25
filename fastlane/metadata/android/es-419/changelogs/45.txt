@@ -1,0 +1,1 @@
+Tarjeta del sol nueva: el recorrido del día con el horizonte, a qué hora se pone y cuánta luz queda. De noche muestra la luna: su fase, cuánto está iluminada, su recorrido y a qué hora sale y se pone.

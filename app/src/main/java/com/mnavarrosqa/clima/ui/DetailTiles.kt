@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import com.mnavarrosqa.clima.data.degrees
 import androidx.compose.ui.semantics.onClick
@@ -44,6 +45,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.mnavarrosqa.clima.data.shortHour
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -52,7 +56,6 @@ import com.mnavarrosqa.clima.data.Moon
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.pressureText
-import com.mnavarrosqa.clima.data.timeOf
 import com.mnavarrosqa.clima.data.windFrom
 import com.mnavarrosqa.clima.data.windText
 import java.time.Duration
@@ -94,23 +97,18 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
     val current = snapshot.current
     val today = snapshot.today()
     val date = snapshot.nowAtPlace().toLocalDate()
-    val details = buildList {
-        // En zonas polares (sol de medianoche) Open-Meteo puede no traer horas válidas: sin tarjeta, sin cierre.
-        today?.takeIf { day -> runCatching { LocalDateTime.parse(day.sunrise); LocalDateTime.parse(day.sunset) }.isSuccess }?.let {
-            add(
-                Detail(
-                    tr("Sol", "Sun"),
-                    timeOf(it.sunrise) + " – " + timeOf(it.sunset),
-                    daylightText(it.sunrise, it.sunset),
-                    wide = true,
-                ) { SunArc(it.sunrise, it.sunset, snapshot.nowAtPlace()) }.apply {
-                    info = tr(
-                        "La luz más linda es la hora dorada: la primera hora después del amanecer y la última antes del atardecer. Si querés un aviso, prendé \"Hora dorada\" en Ajustes → Notificaciones.",
-                        "The nicest light is the golden hour: the first hour after sunrise and the last before sunset. Turn on \"Golden hour\" in Settings → Notifications for a heads-up.",
-                    )
-                },
-            )
+    // El sol y la luna se mueven: la tarjeta se rearma cada minuto, no solo con datos nuevos.
+    val minute by produceState(System.currentTimeMillis() / 60_000) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000)
+            value = System.currentTimeMillis() / 60_000
         }
+    }
+    val sky = remember(snapshot, minute) { skyDetail(snapshot) }
+    val night = sky?.second == true
+    val details = buildList {
+        // De día el sol; de noche la luna, con su recorrido (y entonces no va la tarjeta chica de la luna).
+        sky?.let { add(it.first) }
         (current.uvIndex ?: today?.uvIndex)?.let {
             add(
                 Detail(tr("Índice UV", "UV index"), "${it.roundToInt()}", WeatherCodes.uvLabel(it).replaceFirstChar { c -> c.uppercase() }) {
@@ -198,7 +196,7 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
                 )
             },
         )
-        add(
+        if (!night) add(
             Detail(tr("Luna", "Moon"), Moon.phaseName(date)) { MoonPhase(Moon.age(date).toFloat(), southern = snapshot.latitude < 0) }.apply {
                 val age = Moon.age(date)
                 val toFull = (((0.5 - age).let { if (it < 0) it + 1 else it }) * 29.53).roundToInt()
@@ -264,11 +262,6 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
             }
         }
     }
-}
-
-private fun daylightText(sunrise: String, sunset: String): String {
-    val minutes = Duration.between(LocalDateTime.parse(sunrise), LocalDateTime.parse(sunset)).toMinutes()
-    return tr("${minutes / 60} h ${minutes % 60} min de luz", "${minutes / 60} h ${minutes % 60} min of daylight")
 }
 
 @Composable
@@ -415,82 +408,233 @@ private fun WindCompass(fromDegrees: Float) {
 /** La luna con la parte iluminada que corresponde a su edad (0 nueva, 0.5 llena). */
 @Composable
 private fun MoonPhase(age: Float, southern: Boolean) {
-    // La parte en sombra es gris pizarra en los dos temas: sobre una tarjeta clara se distingue.
-    val dark = Color(0xFF3A4150)
-    val light = Color(0xFFF3EBD2)
     Canvas(Modifier.size(48.dp)) {
-        val r = size.minDimension / 2
-        val c = Offset(size.width / 2, size.height / 2)
-        drawCircle(dark, r, c)
-        val circle = Rect(c, r)
-        val terminator = r * abs(cos(2 * PI * age)).toFloat()
-        val ellipse = Rect(c.x - terminator, c.y - r, c.x + terminator, c.y + r)
-        // Desde el hemisferio sur la luna se ve dada vuelta.
-        val waxing = (age < 0.5f) != southern
-        val crescent = age < 0.25f || age > 0.75f
-        val lit = Path().apply {
-            moveTo(c.x, c.y - r)
-            // Mitad iluminada: la derecha mientras crece, la izquierda mientras mengua.
-            arcTo(circle, -90f, if (waxing) 180f else -180f, false)
-            // Borde entre luz y sombra: hacia el lado iluminado si es creciente, al otro si es gibosa.
-            val towardLit = if (waxing) -180f else 180f
-            arcTo(ellipse, 90f, if (crescent) towardLit else -towardLit, false)
-            close()
-        }
-        drawPath(lit, light)
+        drawMoonDisk(Offset(size.width / 2, size.height / 2), size.minDimension / 2, age, southern)
     }
 }
 
-/** Arco del sol entre amanecer y atardecer, con el sol en la hora actual. */
+/** La luna con su fase: la parte en sombra es gris pizarra en los dos temas, así se distingue sobre una tarjeta clara. */
+private fun DrawScope.drawMoonDisk(c: Offset, r: Float, age: Float, southern: Boolean, alpha: Float = 1f) {
+    val dark = Color(0xFF3A4150).copy(alpha = alpha)
+    val light = Color(0xFFF3EBD2).copy(alpha = alpha)
+    drawCircle(dark, r, c)
+    val circle = Rect(c, r)
+    val terminator = r * abs(cos(2 * PI * age)).toFloat()
+    val ellipse = Rect(c.x - terminator, c.y - r, c.x + terminator, c.y + r)
+    // Desde el hemisferio sur la luna se ve dada vuelta.
+    val waxing = (age < 0.5f) != southern
+    val crescent = age < 0.25f || age > 0.75f
+    val lit = Path().apply {
+        moveTo(c.x, c.y - r)
+        // Mitad iluminada: la derecha mientras crece, la izquierda mientras mengua.
+        arcTo(circle, -90f, if (waxing) 180f else -180f, false)
+        // Borde entre luz y sombra: hacia el lado iluminado si es creciente, al otro si es gibosa.
+        val towardLit = if (waxing) -180f else 180f
+        arcTo(ellipse, 90f, if (crescent) towardLit else -towardLit, false)
+        close()
+    }
+    drawPath(lit, light)
+}
+
+
+/**
+ * La tarjeta del cielo: de día el sol, de noche la luna. Devuelve la tarjeta y si es de noche.
+ * Null en zonas polares, donde Open-Meteo puede no traer amanecer ni atardecer.
+ */
+private fun skyDetail(snapshot: WeatherSnapshot): Pair<Detail, Boolean>? {
+    val now = snapshot.nowAtPlace()
+    val suns = snapshot.days.mapNotNull { day ->
+        runCatching { LocalDateTime.parse(day.sunrise) to LocalDateTime.parse(day.sunset) }.getOrNull()
+    }
+    val (rise, set) = suns.firstOrNull { it.first.toLocalDate() == now.toLocalDate() } ?: return null
+    val southern = snapshot.latitude < 0
+    if (!now.isBefore(rise) && now.isBefore(set)) {
+        val total = Duration.between(rise, set).toMinutes()
+        val left = Duration.between(now, set).toMinutes()
+        val dayStart = now.toLocalDate().atStartOfDay()
+        val noon = rise.plusMinutes(total / 2)
+        // Altura del sol aproximada con una onda de 24 horas que cruza el horizonte al amanecer y
+        // al atardecer: alcanza para dibujar el recorrido.
+        val horizon = cos(PI * total / 1440.0)
+        val samples = FloatArray(SKY_SAMPLES) { i ->
+            val minute = i * 1440.0 / (SKY_SAMPLES - 1)
+            val fromNoon = minute - Duration.between(dayStart, noon).toMinutes()
+            (cos(2 * PI * fromNoon / 1440.0) - horizon).toFloat()
+        }
+        val detail = Detail(
+            tr("Sol", "Sun"),
+            tr("Se pone a las ${shortHour(set)}", "Sets at ${shortHour(set)}"),
+            tr("Quedan ${durationText(left)} de luz · ${durationText(total)} en total", "${durationText(left)} of daylight left · ${durationText(total)} in total"),
+            wide = true,
+        ) {
+            SkyPath(
+                samples = samples,
+                now = Duration.between(dayStart, now).toMinutes() / 1440f,
+                body = null,
+                left = "↑ " + shortHour(rise),
+                right = "↓ " + shortHour(set),
+            )
+        }.apply {
+            val golden = set.minusHours(1)
+            info = tr(
+                "Sale a las ${shortHour(rise)} y se pone a las ${shortHour(set)}. La luz más linda es la hora dorada: la primera hora después del amanecer y la última antes del atardecer (hoy, desde las ${shortHour(golden)}). Si querés un aviso, prendé \"Hora dorada\" en Ajustes → Notificaciones.",
+                "Rises at ${shortHour(rise)} and sets at ${shortHour(set)}. The nicest light is the golden hour: the first hour after sunrise and the last before sunset (today, from ${shortHour(golden)}). Turn on \"Golden hour\" in Settings → Notifications for a heads-up.",
+            )
+        }
+        return detail to false
+    }
+    // De noche: de la puesta de hoy al amanecer de mañana, o de la de ayer al de hoy.
+    val nightStart = if (now.isBefore(rise)) suns.lastOrNull { it.second.isBefore(rise) }?.second else set
+    val nightEnd = if (now.isBefore(rise)) rise else suns.firstOrNull { it.first.isAfter(set) }?.first
+    // El recorrido de la luna en 24 horas, de mediodía a mediodía: la noche queda en el medio.
+    val windowStart = (if (now.isBefore(rise)) now.toLocalDate().minusDays(1) else now.toLocalDate()).atTime(12, 0)
+    fun at(fraction: Float) = windowStart.plusMinutes((fraction * 1440).roundToInt().toLong())
+    val samples = FloatArray(SKY_SAMPLES) { i ->
+        val time = windowStart.plusMinutes((i * 1440L) / (SKY_SAMPLES - 1))
+        Moon.altitude(time.atZone(snapshot.zone).toInstant(), snapshot.latitude, snapshot.longitude).toFloat()
+    }
+    // Cuándo sale y se pone dentro de esas 24 horas (entre dos muestras, se interpola).
+    var moonrise: LocalDateTime? = null
+    var moonset: LocalDateTime? = null
+    for (i in 1 until samples.size) {
+        val a = samples[i - 1]
+        val b = samples[i]
+        if ((a < 0) == (b < 0)) continue
+        val time = at((i - 1 + a / (a - b)) / (SKY_SAMPLES - 1))
+        if (b >= 0 && moonrise == null) moonrise = time
+        if (b < 0 && moonset == null) moonset = time
+    }
+    val date = now.toLocalDate()
+    val age = Moon.age(date)
+    val lit = (Moon.illumination(age) * 100).roundToInt()
+    val nowFraction = Duration.between(windowStart, now).toMinutes() / 1440f
+    val up = samples[(nowFraction * (SKY_SAMPLES - 1)).roundToInt().coerceIn(0, SKY_SAMPLES - 1)] >= 0
+    val visibility = when {
+        up && moonset != null && moonset.isAfter(now) -> tr("A la vista hasta las ${shortHour(moonset)}", "Up until ${shortHour(moonset)}")
+        up -> tr("A la vista", "Up now")
+        moonrise != null && moonrise.isAfter(now) -> tr("Sale a las ${shortHour(moonrise)}", "Rises at ${shortHour(moonrise)}")
+        else -> tr("Bajo el horizonte esta noche", "Below the horizon tonight")
+    }
+    val events = listOfNotNull(moonrise?.let { it to "↑ " + shortHour(it) }, moonset?.let { it to "↓ " + shortHour(it) }).sortedBy { it.first }
+    val detail = Detail(
+        tr("Luna", "Moon"),
+        Moon.phaseName(date),
+        tr("Iluminada $lit% · $visibility", "$lit% lit · $visibility"),
+        wide = true,
+    ) {
+        SkyPath(
+            samples = samples,
+            now = nowFraction,
+            body = MoonBody(age.toFloat(), southern),
+            left = events.getOrNull(0)?.second,
+            right = events.getOrNull(1)?.second,
+            shade = if (nightStart != null && nightEnd != null) {
+                Duration.between(windowStart, nightStart).toMinutes() / 1440f..Duration.between(windowStart, nightEnd).toMinutes() / 1440f
+            } else {
+                null
+            },
+        )
+    }.apply {
+        val toFull = (((0.5 - age).let { if (it < 0) it + 1 else it }) * 29.53).roundToInt()
+        val toNew = (((1.0 - age) % 1.0) * 29.53).roundToInt()
+        val sunrise = nightEnd?.let { tr(" Amanece a las ${shortHour(it)}.", " Sunrise at ${shortHour(it)}.") } ?: ""
+        info = tr(
+            "La línea es la altura de la luna en estas 24 horas y la franja, la noche. Luna llena en $toFull días y luna nueva en $toNew. Desde el hemisferio sur se ve dada vuelta: la parte iluminada mientras crece queda a la izquierda.$sunrise",
+            "The line is the moon's height over these 24 hours and the band is the night. Full moon in $toFull days and new moon in $toNew. From the southern hemisphere it looks upside down: the lit part while waxing is on the left.$sunrise",
+        )
+    }
+    return detail to true
+}
+
+private const val SKY_SAMPLES = 97
+
+private fun durationText(minutes: Long): String =
+    if (minutes >= 60) "${minutes / 60} h ${minutes % 60} min" else "$minutes min"
+
+/** La luna que se dibuja en el recorrido, con su fase. */
+private class MoonBody(val age: Float, val southern: Boolean)
+
+/**
+ * Recorrido del sol o de la luna en 24 horas: la línea es la altura (arriba del horizonte, de
+ * color; abajo, gris), lo que ya pasó va lleno y lo que falta, punteado. [now] y [shade] van de
+ * 0 a 1 en esas 24 horas. Sin [body] se dibuja el sol.
+ */
 @Composable
-private fun SunArc(sunrise: String, sunset: String, now: LocalDateTime) {
+private fun SkyPath(
+    samples: FloatArray,
+    now: Float,
+    body: MoonBody?,
+    left: String?,
+    right: String?,
+    shade: ClosedFloatingPointRange<Float>? = null,
+) {
     val colors = MaterialTheme.colorScheme
-    val start = remember(sunrise) { LocalDateTime.parse(sunrise) }
-    val end = remember(sunset) { LocalDateTime.parse(sunset) }
-    val total = Duration.between(start, end).toMinutes().coerceAtLeast(1)
-    val elapsed = Duration.between(start, now).toMinutes()
-    val fraction = (elapsed.toFloat() / total).coerceIn(0f, 1f)
-    val isDay = elapsed in 0..total
-    val grow by growth()
     val darkTheme = LocalDarkTheme.current
-    Row(verticalAlignment = Alignment.Bottom) {
+    val grow by growth()
+    val dayColors = if (darkTheme) listOf(Color(0xFFFFB74D), Color(0xFFFFD54F)) else listOf(Color(0xFFF57C00), Color(0xFFFFA000))
+    val moonColor = if (darkTheme) Color(0xFFC5CAE9) else Color(0xFF5C6BC0)
+    val below = colors.onSurfaceVariant.copy(alpha = 0.55f)
+    val future = colors.onSurfaceVariant.copy(alpha = 0.35f)
+    val nightBand = colors.onSurface.copy(alpha = 0.06f)
+    Column {
         Canvas(
             Modifier
-                .weight(1f)
-                .height(64.dp),
+                .fillMaxWidth()
+                .height(84.dp),
         ) {
+            val pad = 10.dp.toPx()
+            val horizon = size.height * 0.64f
+            val up = samples.maxOrNull()?.coerceAtLeast(0.01f) ?: 1f
+            val down = (-(samples.minOrNull() ?: -1f)).coerceAtLeast(0.01f)
+            fun y(v: Float) = if (v >= 0) horizon - v / up * (horizon - pad) else horizon + (-v) / down * (size.height - pad / 2 - horizon)
+            fun x(fraction: Float) = fraction * size.width
+            val curve = Path().apply {
+                samples.forEachIndexed { i, v ->
+                    val px = x(i / (samples.size - 1f))
+                    if (i == 0) moveTo(px, y(v)) else lineTo(px, y(v))
+                }
+            }
+            shade?.let { band ->
+                val from = x(band.start.coerceIn(0f, 1f))
+                val to = x(band.endInclusive.coerceIn(0f, 1f))
+                if (to > from) drawRect(nightBand, topLeft = Offset(from, 0f), size = Size(to - from, size.height))
+            }
             val stroke = 3.dp.toPx()
-            val sun = 9.dp.toPx()
-            val horizon = size.height - 2.dp.toPx()
-            val arcRect = Rect(sun, sun, size.width - sun, horizon + (horizon - sun))
+            // Lo que falta: punteado y suave.
+            drawPath(curve, future, style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 5.dp.toPx()))))
             drawLine(colors.onSurfaceVariant.copy(alpha = 0.4f), Offset(0f, horizon), Offset(size.width, horizon), 1.dp.toPx())
-            drawArc(
-                colors.onSurfaceVariant.copy(alpha = 0.45f),
-                180f,
-                180f,
-                false,
-                arcRect.topLeft,
-                arcRect.size,
-                style = Stroke(stroke, cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 6.dp.toPx()))),
-            )
-            val shown = fraction * grow
-            drawArc(
-                Brush.horizontalGradient(if (darkTheme) listOf(Color(0xFFFFB74D), Color(0xFFFFD54F)) else listOf(Color(0xFFF57C00), Color(0xFFFFA000))),
-                180f,
-                180f * shown,
-                false,
-                arcRect.topLeft,
-                arcRect.size,
-                style = Stroke(stroke, cap = StrokeCap.Round),
-            )
-            if (isDay) {
-                val angle = PI + PI * shown
-                val position = Offset(
-                    arcRect.center.x + arcRect.width / 2 * cos(angle).toFloat(),
-                    arcRect.center.y + arcRect.height / 2 * sin(angle).toFloat(),
-                )
-                drawCircle(Color(0xFFFFD54F).copy(alpha = 0.35f), sun * 1.6f, position)
-                drawCircle(Color(0xFFFFC107), sun, position)
+            // Lo que ya pasó: de color arriba del horizonte y gris abajo. Crece al aparecer.
+            val shown = (now * grow).coerceIn(0f, 1f)
+            clipRect(right = x(shown)) {
+                clipRect(bottom = horizon) {
+                    if (body == null) {
+                        drawPath(curve, Brush.horizontalGradient(dayColors), style = Stroke(stroke, cap = StrokeCap.Round))
+                    } else {
+                        drawPath(curve, moonColor, style = Stroke(stroke, cap = StrokeCap.Round))
+                    }
+                }
+                clipRect(top = horizon) { drawPath(curve, below, style = Stroke(stroke, cap = StrokeCap.Round)) }
+            }
+            // El sol o la luna donde está ahora; bajo el horizonte, apagado.
+            val index = shown * (samples.size - 1)
+            val i0 = index.toInt().coerceIn(0, samples.size - 1)
+            val i1 = (i0 + 1).coerceAtMost(samples.size - 1)
+            val value = samples[i0] + (samples[i1] - samples[i0]) * (index - i0)
+            val position = Offset(x(shown), y(value))
+            val visible = value >= 0
+            val r = 9.dp.toPx()
+            if (body == null) {
+                drawCircle(Color(0xFFFFD54F).copy(alpha = if (visible) 0.35f else 0.12f), r * 1.6f, position)
+                drawCircle(Color(0xFFFFC107).copy(alpha = if (visible) 1f else 0.4f), r, position)
+            } else {
+                drawCircle(moonColor.copy(alpha = if (visible) 0.3f else 0.1f), r * 1.5f, position)
+                drawMoonDisk(position, r, body.age, body.southern, alpha = if (visible) 1f else 0.45f)
+            }
+        }
+        if (left != null || right != null) {
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(left.orEmpty(), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                Text(right.orEmpty(), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
             }
         }
     }
