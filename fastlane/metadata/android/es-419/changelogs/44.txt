@@ -1,0 +1,1 @@
+Los widgets muestran la temperatura de la hora actual aunque el sistema haya demorado la actualización. El gráfico por horas y la temperatura grande gastan menos al animarse.

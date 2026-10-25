@@ -53,6 +53,27 @@ data class WeatherSnapshot(
         return hours.subList(start, minOf(hours.size, start + count)).toList()
     }
 
+    /**
+     * Si el pronóstico tiene más de una hora, "ahora" se toma del pronóstico por hora de la hora
+     * actual: el dato de cuando se bajó ya no corresponde. Si no hay hora para hoy, queda igual.
+     */
+    fun withCurrentFromHours(now: Long = System.currentTimeMillis()): WeatherSnapshot {
+        if (now - fetchedAt < 60 * 60_000L) return this
+        val hour = upcomingHours(1).firstOrNull() ?: return this
+        if (hour.dateTime != nowAtPlace().truncatedTo(ChronoUnit.HOURS)) return this
+        return copy(
+            current = current.copy(
+                temperature = hour.temperature,
+                code = hour.code,
+                isDay = hour.isDay,
+                feelsLike = hour.feelsLike ?: current.feelsLike,
+                windSpeed = hour.windSpeed ?: current.windSpeed,
+                precipitation = hour.precipitation ?: current.precipitation,
+                pressure = hour.pressure ?: current.pressure,
+            ),
+        )
+    }
+
     /** Presión hace unas [hoursAgo] horas, para saber si sube o baja. */
     fun pressureHoursAgo(hoursAgo: Long = 3): Double? {
         val target = nowAtPlace().truncatedTo(ChronoUnit.HOURS).minusHours(hoursAgo)

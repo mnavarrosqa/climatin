@@ -89,7 +89,10 @@ fun HourlyChart(
     val colors = MaterialTheme.colorScheme
     // Una entrada de caché por hora: si no, al dibujar la curva se vuelven a medir los 24 textos en cada cuadro.
     val measurer = rememberTextMeasurer(cacheSize = 32)
-    val labelStyle = MaterialTheme.typography.labelLarge.copy(color = colors.onSurface)
+    // Recordado: el dibujo en caché del gráfico se rearma si cambia algo de lo que usa, y un estilo
+    // nuevo en cada recomposición (al tocar una hora) lo rearmaba entero.
+    val baseLabel = MaterialTheme.typography.labelLarge
+    val labelStyle = remember(baseLabel, colors.onSurface) { baseLabel.copy(color = colors.onSurface) }
     // La escala incluye la línea de ayer, para que no se salga del gráfico.
     val ghost = yesterday.takeIf { list -> list.size == hours.size && list.count { it != null } >= 2 }
     val min = minOf(hours.minOf { it.temperature }, ghost?.filterNotNull()?.minOrNull() ?: Double.MAX_VALUE)

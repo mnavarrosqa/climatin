@@ -999,11 +999,15 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                 // así el "°" nunca baja de renglón.
                 val temperatureText = shownTemperature.toDouble().degrees()
                 val measurer = rememberTextMeasurer()
-                val measured = measurer.measure(
-                    temperatureText,
-                    TextStyle(fontSize = 112.sp * scale, fontWeight = FontWeight.Light, fontFamily = Flex),
-                    softWrap = false,
-                ).size.width
+                // Se mide la temperatura final una vez, no cada número de los 900 ms de animación.
+                val targetText = current.temperature.degrees()
+                val measured = remember(targetText, scale, measurer) {
+                    measurer.measure(
+                        targetText,
+                        TextStyle(fontSize = 112.sp * scale, fontWeight = FontWeight.Light, fontFamily = Flex),
+                        softWrap = false,
+                    ).size.width
+                }
                 val fit = (constraints.maxWidth.toFloat() / measured.coerceAtLeast(1)).coerceAtMost(1f) * 0.97f
                 val temperatureSize = 112.sp * scale * fit.coerceAtLeast(0.4f)
             Column {

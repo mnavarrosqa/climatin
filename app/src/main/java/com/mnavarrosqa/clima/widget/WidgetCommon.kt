@@ -266,7 +266,9 @@ fun widgetSnapshot(): WeatherSnapshot? {
     val placeId = widgetPlaceId()
     val snapshot by remember(placeId) { repository.snapshots(placeId) }
         .collectAsState(repository.cached(placeId))
-    return snapshot
+    // Si el sistema demoró las actualizaciones, la temperatura de ahora sale del pronóstico por
+    // hora en vez de quedar la de hace horas.
+    return snapshot?.withCurrentFromHours()
 }
 
 suspend fun updateWeatherWidgets(context: Context) {
