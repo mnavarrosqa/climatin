@@ -1,6 +1,7 @@
 package com.mnavarrosqa.clima.work
 
 import android.content.Context
+import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -36,6 +37,19 @@ data class NotifySettings(
     val goldenHour: Boolean = false,
     /** Android 16: la temperatura de la barra de estado como chip (Live Update). */
     val liveTemperature: Boolean = false,
+    /** De qué lugar es el resumen diario: "donde estoy" o el id de una ciudad guardada. */
+    val summaryPlace: String = CURRENT_PLACE_ID,
+    /** "Mi rutina": un aviso antes de salir con el clima de la ida y de la vuelta. */
+    val routine: Boolean = false,
+    /** Horas de salida y de vuelta (0–23). Si la vuelta es antes que la salida, es al día siguiente. */
+    val routineLeave: Int = 8,
+    val routineBack: Int = 18,
+    /** Solo de lunes a viernes. */
+    val routineWeekdays: Boolean = true,
+    /** UV de 8 o más hoy, con la franja horaria, a la mañana. */
+    val uvAlert: Boolean = false,
+    /** Calidad del aire mala ahora o en las próximas horas. */
+    val airAlert: Boolean = false,
 )
 
 /**
@@ -77,6 +91,13 @@ object NotifyPrefs {
             liveAlerts = p.getBoolean("vivo_alertas", d.liveAlerts),
             goldenHour = p.getBoolean("hora_dorada", d.goldenHour),
             liveTemperature = p.getBoolean("vivo_temperatura", d.liveTemperature),
+            summaryPlace = p.getString("resumen_lugar", null) ?: d.summaryPlace,
+            routine = p.getBoolean("rutina", d.routine),
+            routineLeave = p.getInt("rutina_salida", d.routineLeave),
+            routineBack = p.getInt("rutina_vuelta", d.routineBack),
+            routineWeekdays = p.getBoolean("rutina_semana", d.routineWeekdays),
+            uvAlert = p.getBoolean("aviso_uv", d.uvAlert),
+            airAlert = p.getBoolean("aviso_aire", d.airAlert),
         )
         loaded = true
     }
@@ -102,6 +123,13 @@ object NotifyPrefs {
             .putBoolean("vivo_alertas", value.liveAlerts)
             .putBoolean("hora_dorada", value.goldenHour)
             .putBoolean("vivo_temperatura", value.liveTemperature)
+            .putString("resumen_lugar", value.summaryPlace)
+            .putBoolean("rutina", value.routine)
+            .putInt("rutina_salida", value.routineLeave)
+            .putInt("rutina_vuelta", value.routineBack)
+            .putBoolean("rutina_semana", value.routineWeekdays)
+            .putBoolean("aviso_uv", value.uvAlert)
+            .putBoolean("aviso_aire", value.airAlert)
             .apply()
     }
 

@@ -21,10 +21,15 @@ import com.mnavarrosqa.clima.R
 object Notify {
     const val CHANNEL_SUMMARY = "resumen"
     const val CHANNEL_CHANGES = "cambios"
+    const val CHANNEL_ROUTINE = "rutina"
+    const val CHANNEL_HEALTH = "uv_aire"
 
     const val ID_RAIN = 1
     const val ID_STATUS = 3
     const val ID_SUMMARY = 4
+    const val ID_ROUTINE = 7
+    const val ID_UV = 8
+    const val ID_AIR = 9
     const val ID_CHANGES_BASE = 10
 
     private const val ACTION_MUTE = "com.mnavarrosqa.clima.NO_AVISAR_HOY"
@@ -41,6 +46,14 @@ object Notify {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_CHANGES, tr("Cambios bruscos", "Big changes"), NotificationManager.IMPORTANCE_DEFAULT)
                 .apply { description = tr("Bajón o subida de temperatura, heladas, viento fuerte y UV muy alto", "Big temperature swings, frost, strong wind and very high UV") },
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ROUTINE, tr("Mi rutina", "My routine"), NotificationManager.IMPORTANCE_DEFAULT)
+                .apply { description = tr("Antes de salir: el clima de la ida y de la vuelta", "Before heading out: the weather going and coming back") },
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_HEALTH, tr("UV y calidad del aire", "UV and air quality"), NotificationManager.IMPORTANCE_DEFAULT)
+                .apply { description = tr("UV muy alto y aire contaminado, una vez por día", "Very high UV and polluted air, once a day") },
         )
     }
 

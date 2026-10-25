@@ -28,7 +28,7 @@ import kotlin.math.roundToInt
 
 /**
  * Resumen diario a la hora elegida: máxima y mínima, cuándo llueve, UV y viento. Desde las 17
- * resume el día siguiente ("Mañana en Córdoba…").
+ * resume el día siguiente ("Mañana en Córdoba…"). Es de donde estás o de una ciudad guardada.
  */
 object SummaryNotifier {
     private const val WORK = "resumen-diario"
@@ -50,16 +50,31 @@ object SummaryNotifier {
         work.enqueueUniqueWork(WORK, policy, request)
     }
 
+    /**
+     * El lugar elegido para el resumen. Si la ciudad se borró, vuelve a "donde estoy" (sin tocar
+     * el ajuste: si la vuelve a agregar con el mismo id, sigue elegida).
+     */
+    fun placeId(context: Context): String {
+        val chosen = NotifyPrefs.get(context).summaryPlace
+        if (chosen == CURRENT_PLACE_ID) return chosen
+        return if (WeatherRepository.get(context).places().any { it.id == chosen }) chosen else CURRENT_PLACE_ID
+    }
+
     fun notify(context: Context, test: Boolean = false) {
-        val snapshot = WeatherRepository.get(context).cached() ?: return
+        val repository = WeatherRepository.get(context)
+        val chosen = placeId(context)
+        // Sin pronóstico de la ciudad (recién agregada, sin conexión), mejor el de donde estás que nada.
+        val cityForecast = repository.cached(chosen)
+        val placeId = if (cityForecast != null) chosen else CURRENT_PLACE_ID
+        val snapshot = cityForecast ?: repository.cached() ?: return
         // El resumen sale a la hora que eligió la persona aunque caiga en horario de silencio
         // (si no, con resumen a las 7 y silencio hasta las 8 no saldría nunca); solo lo frena la pausa.
         if (!test && (NotifyPrefs.isMuted(context) || !RainNotifier.canNotify(context))) return
-        show(context, snapshot)
+        show(context, snapshot, placeId)
     }
 
     @SuppressLint("MissingPermission")
-    private fun show(context: Context, snapshot: WeatherSnapshot) {
+    private fun show(context: Context, snapshot: WeatherSnapshot, placeId: String) {
         if (!RainNotifier.canNotify(context)) return
         val now = snapshot.nowAtPlace()
         val tomorrow = now.hour >= 17
@@ -89,11 +104,12 @@ object SummaryNotifier {
             .setContentTitle(title)
             .setContentText(lines.take(2).joinToString(" · "))
             .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n")))
-            .setContentIntent(Notify.open(context, 30, CURRENT_PLACE_ID))
+            // Código propio: con el 30 de la hora dorada, un PendingIntent pisaría la ciudad del otro.
+            .setContentIntent(Notify.open(context, 32, placeId))
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
         // Con lluvia probable, el mapa queda a un toque para ver por dónde viene.
-        if (rainyHour != null) builder.radarAction(context, CURRENT_PLACE_ID, 31)
+        if (rainyHour != null) builder.radarAction(context, placeId, 31)
         val notification = builder
             .muteAction(context, Notify.ID_SUMMARY)
             .build()

@@ -14,6 +14,9 @@ suspend fun afterRefresh(context: Context, urgentWear: Boolean = false) {
     runCatching { ChangeNotifier.check(context) }
     runCatching { TemperatureNotifier.update(context) }
     runCatching { SunNotifier.check(context) }
+    runCatching { HealthNotifier.check(context) }
+    // Por si se perdió el trabajo de la rutina (app actualizada, datos borrados): KEEP no lo atrasa.
+    runCatching { if (NotifyPrefs.get(context).routine) RoutineNotifier.schedule(context, androidx.work.ExistingWorkPolicy.KEEP) }
     runCatching { WearSync.send(context, urgent = urgentWear) }
     runCatching { scheduleMidnightRedraw(context) }
 }

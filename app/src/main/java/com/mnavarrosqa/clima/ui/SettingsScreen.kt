@@ -124,6 +124,9 @@ import com.mnavarrosqa.clima.widget.WidgetCatalog
 import com.mnavarrosqa.clima.widget.WidgetGalleryActivity
 import com.mnavarrosqa.clima.work.AlertNotifier
 import com.mnavarrosqa.clima.work.ChangeNotifier
+import com.mnavarrosqa.clima.work.HealthNotifier
+import com.mnavarrosqa.clima.work.RoutineNotifier
+import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.work.NotifyPrefs
 import com.mnavarrosqa.clima.work.NotifySettings
 import com.mnavarrosqa.clima.work.RainNotifier
@@ -332,6 +335,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
         tr("Barra de estado", "Status bar").takeIf { statusTemperature },
         tr("Resumen", "Summary").takeIf { NotifyPrefs.get(context).summary },
         tr("Cambios", "Changes").takeIf { NotifyPrefs.settings.changes },
+        tr("Rutina", "Routine").takeIf { NotifyPrefs.settings.routine },
     ).joinToString(" · ").ifEmpty { tr("Apagadas", "Off") }
     val location = when {
         !hasLocation -> tr("Sin permiso: solo ves tus ciudades guardadas", "No permission: saved cities only")
@@ -787,6 +791,12 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
             }
             "cambios" -> NotifyPrefs.update(context) { it.copy(changes = granted) }
             "sol" -> NotifyPrefs.update(context) { it.copy(goldenHour = granted) }
+            "rutina" -> {
+                NotifyPrefs.update(context) { it.copy(routine = granted) }
+                RoutineNotifier.schedule(context)
+            }
+            "uv" -> NotifyPrefs.update(context) { it.copy(uvAlert = granted) }
+            "aire" -> NotifyPrefs.update(context) { it.copy(airAlert = granted) }
             else -> viewModel.setRainAlerts(granted)
         }
         pending = null
@@ -806,9 +816,20 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
     val notify = NotifyPrefs.settings
     fun change(transform: (NotifySettings) -> NotifySettings) = NotifyPrefs.update(context, transform)
 
-    // Qué hora se está eligiendo: la del resumen o el principio o el final del silencio.
+    val places by viewModel.places.collectAsStateWithLifecycle()
+
+    // Qué hora se está eligiendo: la del resumen, la de la rutina o el principio o el final del silencio.
     var picking by rememberSaveable { mutableStateOf<String?>(null) }
     when (picking) {
+        "salida" -> HourPickerDialog(tr("Salgo a las", "I leave at"), notify.routineLeave, onDismiss = { picking = null }) { hour ->
+            change { it.copy(routineLeave = hour) }
+            RoutineNotifier.schedule(context)
+            picking = null
+        }
+        "vuelta" -> HourPickerDialog(tr("Vuelvo a las", "I'm back at"), notify.routineBack, onDismiss = { picking = null }) { hour ->
+            change { it.copy(routineBack = hour) }
+            picking = null
+        }
         "resumen" -> HourPickerDialog(tr("Resumen a las", "Summary at"), notify.summaryHour, onDismiss = { picking = null }) { hour ->
             change { it.copy(summaryHour = hour) }
             SummaryNotifier.schedule(context)
@@ -928,6 +949,52 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                         onClick = { picking = "resumen" },
                         trailing = Chevron,
                     )
+                    // Con ciudades guardadas se puede elegir de cuál; si la elegida se borró, queda "Mi ubicación".
+                    if (places.isNotEmpty()) {
+                        val options = listOf(CURRENT_PLACE_ID) + places.map { it.id }
+                        val selected = notify.summaryPlace.takeIf { it in options } ?: CURRENT_PLACE_ID
+                        ChoiceRow(
+                            tr("De", "For"),
+                            options,
+                            selected,
+                            { id -> places.firstOrNull { it.id == id }?.shownName ?: tr("Mi ubicación", "My location") },
+                        ) { id -> change { it.copy(summaryPlace = id) } }
+                    }
+                }
+            }
+        }
+
+        item { SectionTitle(tr("Mi rutina", "My routine")) }
+        item {
+            Rows {
+                SettingRow(
+                    tr("Aviso antes de salir", "Heads-up before leaving"),
+                    tr("Una hora antes: el clima de la ida y de la vuelta, y si hace falta paraguas o abrigo", "An hour before: the weather going and coming back, and whether you need an umbrella or a jacket"),
+                    checked = notify.routine && canNotify,
+                    onCheckedChange = { on ->
+                        toggle("rutina", on) { enabled ->
+                            change { it.copy(routine = enabled) }
+                            RoutineNotifier.schedule(context)
+                        }
+                    },
+                )
+                if (notify.routine) {
+                    SettingRow(tr("Salgo a las", "I leave at"), hourLabel(notify.routineLeave), onClick = { picking = "salida" }, trailing = Chevron)
+                    SettingRow(
+                        tr("Vuelvo a las", "I'm back at"),
+                        hourLabel(notify.routineBack) + if (notify.routineBack <= notify.routineLeave) tr(" del día siguiente", " the next day") else "",
+                        onClick = { picking = "vuelta" },
+                        trailing = Chevron,
+                    )
+                    SettingRow(
+                        tr("Solo días de semana", "Weekdays only"),
+                        tr("De lunes a viernes", "Monday to Friday"),
+                        checked = notify.routineWeekdays,
+                        onCheckedChange = { on ->
+                            change { it.copy(routineWeekdays = on) }
+                            RoutineNotifier.schedule(context)
+                        },
+                    )
                 }
             }
         }
@@ -969,6 +1036,24 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                         onCheckedChange = { on -> change { it.copy(changeUv = on) } },
                     )
                 }
+            }
+        }
+
+        item { SectionTitle(tr("UV y calidad del aire", "UV and air quality")) }
+        item {
+            Rows {
+                SettingRow(
+                    tr("UV muy alto", "Very high UV"),
+                    tr("Índice 8 o más, a la mañana y con el horario: \"UV muy alto de 11 a 16\"", "Index 8 or more, in the morning with the hours: \"Very high UV from 11 to 4\""),
+                    checked = notify.uvAlert && canNotify,
+                    onCheckedChange = { on -> toggle("uv", on) { enabled -> change { it.copy(uvAlert = enabled) } } },
+                )
+                SettingRow(
+                    tr("Calidad del aire mala", "Poor air quality"),
+                    tr("Cuando está mala o va a empeorar, una vez por día", "When it's poor or getting worse, once a day"),
+                    checked = notify.airAlert && canNotify,
+                    onCheckedChange = { on -> toggle("aire", on) { enabled -> change { it.copy(airAlert = enabled) } } },
+                )
             }
         }
 
@@ -1099,6 +1184,9 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                             tr("Resumen", "Summary") to { SummaryNotifier.notify(context, test = true) },
                             tr("Cambio brusco", "Big change") to { ChangeNotifier.test(context) },
                             tr("Hora dorada", "Golden hour") to { SunNotifier.test(context) },
+                            tr("Mi rutina", "My routine") to { RoutineNotifier.test(context) },
+                            tr("UV", "UV") to { HealthNotifier.testUv(context) },
+                            tr("Aire", "Air") to { HealthNotifier.testAir(context) },
                         ).forEach { (label, send) ->
                             FilledTonalButton(
                                 enabled = canNotify,
