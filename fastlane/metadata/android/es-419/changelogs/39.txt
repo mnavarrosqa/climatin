@@ -1,0 +1,1 @@
+Pantalla de inicio animada: la "c" del ícono se dibuja sola, aparece el sol y se abre el pronóstico.

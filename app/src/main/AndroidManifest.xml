@@ -29,6 +29,7 @@
         <activity
             android:name=".ClimaActivity"
             android:exported="true"
+            android:theme="@style/Theme.Clima.Starting"
             android:launchMode="singleTop" />
 
         <!--

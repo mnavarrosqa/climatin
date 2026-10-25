@@ -13,10 +13,10 @@ android {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 26
         targetSdk = 36
-        versionCode = 38
+        versionCode = 39
         // Solo español e inglés: evita que las librerías sumen traducciones que la app no tiene.
         resourceConfigurations += listOf("es", "en")
-        versionName = "1.19.1"
+        versionName = "1.19.2"
     }
 
     signingConfigs {
@@ -104,6 +104,8 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.activity:activity-compose:1.10.1")
+    // Pantalla de inicio animada (y la misma en Android viejos, con el ícono quieto).
+    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
 

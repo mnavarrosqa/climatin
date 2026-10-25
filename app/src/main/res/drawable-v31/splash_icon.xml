@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ícono animado de la pantalla de inicio (Android 12+): la "c" del Monograma se dibuja de punta a
+  punta mientras gira un cuarto de vuelta, y al final aparece el punto de sol con un rebote.
+-->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="108dp" android:height="108dp"
+            android:viewportWidth="108" android:viewportHeight="108">
+            <group android:name="todo" android:pivotX="54" android:pivotY="54"
+                android:scaleX="0.78" android:scaleY="0.78" android:rotation="-90">
+                <path
+                    android:name="arco"
+                    android:pathData="M70,40 A22,22 0 1,0 70,68"
+                    android:strokeWidth="11"
+                    android:strokeLineCap="round"
+                    android:strokeColor="#FFFFD54F"
+                    android:trimPathEnd="0" />
+                <group android:name="punto" android:pivotX="74" android:pivotY="54"
+                    android:scaleX="0" android:scaleY="0">
+                    <path android:fillColor="#FFFFE68A" android:pathData="M69,54a5,5 0 1,0 10,0a5,5 0 1,0 -10,0z" />
+                </group>
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="arco">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:duration="650"
+                android:interpolator="@android:interpolator/fast_out_slow_in"
+                android:propertyName="trimPathEnd"
+                android:valueFrom="0"
+                android:valueTo="1"
+                android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+    <target android:name="todo">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:duration="700"
+                android:interpolator="@android:interpolator/fast_out_slow_in"
+                android:propertyName="rotation"
+                android:valueFrom="-90"
+                android:valueTo="0"
+                android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+    <target android:name="punto">
+        <aapt:attr name="android:animation">
+            <set>
+                <objectAnimator
+                    android:duration="320"
+                    android:startOffset="520"
+                    android:interpolator="@android:interpolator/overshoot"
+                    android:propertyName="scaleX"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:valueType="floatType" />
+                <objectAnimator
+                    android:duration="320"
+                    android:startOffset="520"
+                    android:interpolator="@android:interpolator/overshoot"
+                    android:propertyName="scaleY"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:valueType="floatType" />
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>

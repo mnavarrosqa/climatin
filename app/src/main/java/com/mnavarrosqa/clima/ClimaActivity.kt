@@ -1,7 +1,15 @@
 package com.mnavarrosqa.clima
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.View
+import android.view.animation.AccelerateInterpolator
+import androidx.core.animation.doOnEnd
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,6 +27,28 @@ class ClimaActivity : ComponentActivity() {
     private var deepLink by mutableStateOf<DeepLinkTarget?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splash = installSplashScreen()
+        // Se queda hasta que termine de dibujarse el ícono (850 ms), así la animación se ve entera;
+        // mientras, los pronósticos guardados se terminan de leer en segundo plano.
+        val shownAt = SystemClock.uptimeMillis()
+        splash.setKeepOnScreenCondition { savedInstanceState == null && SystemClock.uptimeMillis() - shownAt < 850 }
+        // Al salir, el ícono se agranda y todo se desvanece hacia el pronóstico.
+        splash.setOnExitAnimationListener { provider ->
+            val icon = provider.iconView
+            val fade = ObjectAnimator.ofFloat(provider.view, View.ALPHA, 1f, 0f)
+            val grow = ObjectAnimator.ofPropertyValuesHolder(
+                icon,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.35f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.35f),
+            )
+            AnimatorSet().apply {
+                playTogether(fade, grow)
+                duration = 320
+                interpolator = AccelerateInterpolator()
+                doOnEnd { provider.remove() }
+                start()
+            }
+        }
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // Al volver desde Recientes, Android entrega otra vez el intent original: no se repite el acceso directo.
