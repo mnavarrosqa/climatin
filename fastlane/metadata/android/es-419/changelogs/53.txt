@@ -1,0 +1,1 @@
+Reloj: la app del reloj es nueva, con el clima de ahora, la lluvia que viene, las próximas horas y 7 días, con la corona para desplazar. El tile muestra ícono y próximas horas, y las complicaciones tienen íconos de un color y un anillo con la temperatura entre la mínima y la máxima.

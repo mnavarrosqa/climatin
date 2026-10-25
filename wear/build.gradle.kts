@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 // App de Wear OS: tarjeta (tile) y complicación con el clima, independiente del teléfono.
@@ -13,8 +14,8 @@ android {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 30
         targetSdk = 36
-        versionCode = 2_000_051
-        versionName = "1.23.2"
+        versionCode = 2_000_053
+        versionName = "1.24.0"
     }
 
     signingConfigs {
@@ -58,6 +59,10 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    // La pantalla de la app del reloj está hecha con Compose para Wear OS.
+    buildFeatures {
+        compose = true
+    }
 }
 
 dependencies {
@@ -65,6 +70,10 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    // Compose para Wear (Material 2: API estable). Trae ui, foundation y runtime de Compose.
+    implementation("androidx.wear.compose:compose-foundation:1.4.0")
+    implementation("androidx.wear.compose:compose-material:1.4.0")
     // Alguna dependencia de Wear trae un Fragment viejo; las APIs de resultados piden 1.3+.
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

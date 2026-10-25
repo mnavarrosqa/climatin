@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.wear.tiles.TileService
@@ -46,6 +47,17 @@ object WearStore {
         return runCatching { json.decodeFromString(WeatherSnapshot.serializer(), raw) }.getOrNull()
             ?.also { decoded = raw to it }
     }
+
+    /**
+     * Avisa cuando cambia lo guardado (llegó algo del teléfono o se bajó solo), para que la
+     * pantalla abierta se actualice. Android guarda el listener con referencia débil: quien lo
+     * registra tiene que conservarlo.
+     */
+    fun listen(context: Context, listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs(context).registerOnSharedPreferenceChangeListener(listener)
+
+    fun stopListening(context: Context, listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs(context).unregisterOnSharedPreferenceChangeListener(listener)
 
     /** Las unidades que eligió la persona en el teléfono (°C/°F, viento, 12/24 h). */
     fun loadUnits(context: Context) {
@@ -109,8 +121,8 @@ object WearStore {
         }
         val latitude = location?.latitude ?: previous?.latitude ?: error("Sin ubicación")
         val longitude = location?.longitude ?: previous?.longitude ?: error("Sin ubicación")
-        // El reloj muestra pocos días: con 5 alcanza (antes bajaba 15 cada 30 minutos).
-        val forecast = OpenMeteo.forecast(latitude, longitude, days = 5)
+        // La app del reloj muestra la semana: con 7 días alcanza (antes bajaba 15 cada 30 minutos).
+        val forecast = OpenMeteo.forecast(latitude, longitude, days = 7)
         val samePlace = previous != null && kotlin.math.abs(previous.latitude - latitude) < 0.05 && kotlin.math.abs(previous.longitude - longitude) < 0.05
         val snapshot = OpenMeteo.toSnapshot(
             forecast, CURRENT_PLACE_ID, previous?.place?.takeIf { samePlace }, latitude, longitude, null, System.currentTimeMillis(),
