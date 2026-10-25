@@ -222,7 +222,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { updateWeatherWidgets(getApplication<Application>()) }
     }
 
-    fun movePlace(id: String, offset: Int) = repository.movePlace(id, offset)
+    fun movePlace(id: String, offset: Int) {
+        repository.movePlace(id, offset)
+        // El widget de ciudades muestra el orden: se actualiza ya, no en la próxima descarga.
+        viewModelScope.launch { updateWeatherWidgets(getApplication<Application>()) }
+    }
 
     fun renamePlace(id: String, nickname: String?) {
         repository.renamePlace(id, nickname)

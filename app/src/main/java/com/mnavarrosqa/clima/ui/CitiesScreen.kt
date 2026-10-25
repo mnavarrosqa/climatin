@@ -153,14 +153,16 @@ fun CitiesScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     // Ciudad a la que se le está poniendo apodo.
-    var renaming by remember { mutableStateOf<Place?>(null) }
+    // Se guarda el id (no la ciudad) para que el diálogo sobreviva a girar la pantalla.
+    var renamingId by rememberSaveable { mutableStateOf<String?>(null) }
+    val renaming = renamingId?.let { id -> places.firstOrNull { it.id == id } }
     renaming?.let { place ->
         RenameDialog(
             place,
-            onDismiss = { renaming = null },
+            onDismiss = { renamingId = null },
             onSave = { nickname ->
                 viewModel.renamePlace(place.id, nickname)
-                renaming = null
+                renamingId = null
             },
         )
     }
@@ -271,7 +273,7 @@ fun CitiesScreen(
                     confirmValueChange = { value ->
                         if (value == SwipeToDismissBoxValue.StartToEnd) {
                             // Deslizar hacia la derecha pone un apodo; la tarjeta vuelve a su lugar.
-                            renaming = viewModel.places.value.firstOrNull { it.id == id }
+                            renamingId = id
                             false
                         } else if (value != SwipeToDismissBoxValue.Settled) {
                             // El estado se recuerda entre composiciones: se lee la lista actual.
@@ -365,7 +367,7 @@ fun CitiesScreen(
                                 customActions = listOf(
                                     CustomAccessibilityAction(tr("Subir", "Move up")) { viewModel.movePlace(id, -1); true },
                                     CustomAccessibilityAction(tr("Bajar", "Move down")) { viewModel.movePlace(id, 1); true },
-                                    CustomAccessibilityAction(tr("Cambiar nombre", "Rename")) { renaming = place; true },
+                                    CustomAccessibilityAction(tr("Cambiar nombre", "Rename")) { renamingId = id; true },
                                     CustomAccessibilityAction(tr("Quitar", "Remove")) { viewModel.removePlace(id); true },
                                 )
                             },

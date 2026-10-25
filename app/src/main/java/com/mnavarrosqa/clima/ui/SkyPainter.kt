@@ -214,7 +214,11 @@ class SkyPainter {
     }
 
     // La luna se arma una vez por tamaño y día: en cada cuadro solo se dibuja.
-    private var moonKey: List<Any>? = null
+    private var moonCx = -1f
+    private var moonCy = -1f
+    private var moonSouthern = false
+    private var moonDate: java.time.LocalDate? = null
+    private var moonDateCheckedAt = 0L
     private val moonLit = Path()
     private var moonShade: Shader? = null
     private var moonAge = 0.5
@@ -224,11 +228,21 @@ class SkyPainter {
      * tiene un sombreado suave hacia el borde y unos mares grises, como la de verdad.
      */
     private fun drawMoon(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        val today = java.time.LocalDate.now()
-        val key = listOf(cx, cy, today, southern)
-        if (moonKey != key || moonShade == null) {
-            moonKey = key
-            moonAge = Moon.age(today)
+        // La fecha se mira una vez por minuto, no en cada cuadro.
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - moonDateCheckedAt > 60_000L) {
+            moonDateCheckedAt = nowMs
+            val today = java.time.LocalDate.now()
+            if (today != moonDate) {
+                moonDate = today
+                moonShade = null
+            }
+        }
+        if (moonShade == null || cx != moonCx || cy != moonCy || southern != moonSouthern) {
+            moonCx = cx
+            moonCy = cy
+            moonSouthern = southern
+            moonAge = Moon.age(moonDate ?: java.time.LocalDate.now())
             val terminator = r * kotlin.math.abs(kotlin.math.cos(2 * PI * moonAge)).toFloat()
             // En el sur, la luz va del lado contrario.
             val waxing = (moonAge < 0.5) != southern

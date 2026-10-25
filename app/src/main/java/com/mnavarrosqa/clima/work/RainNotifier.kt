@@ -63,10 +63,11 @@ object RainNotifier {
         if (!repository.rainAlertsEnabled || !canNotify(context)) return
         val snapshot = repository.cached() ?: return
         val settings = NotifyPrefs.get(context)
-        val outlook = snapshot.rainOutlook(withinMinutes = settings.rainLead)
         // Si el aviso sigue a la vista, se actualiza en silencio (cuenta, barra y "para en…"),
         // aunque sea horario de silencio: no suena, solo cambia lo que dice.
         val live = LiveUpdate.isShowing(context, Notify.ID_RAIN)
+        // Ya avisada, se mira más lejos: si el pronóstico la corre unos minutos no se pierde.
+        val outlook = snapshot.rainOutlook(withinMinutes = if (live) maxOf(settings.rainLead, 120) else settings.rainLead)
         val raining = snapshot.current.precipitation >= 0.1 || WeatherCodes.kind(snapshot.current.code).let {
             it == WeatherKind.RAIN || it == WeatherKind.DRIZZLE || it == WeatherKind.STORM
         }
@@ -75,8 +76,11 @@ object RainNotifier {
             outlook == null -> when {
                 // Llueve y no se sabe hasta cuándo: queda "Está lloviendo".
                 live && raining -> show(context, null, snapshot.place, update = true)
-                // El pronóstico cambió y la lluvia avisada ya no viene: se saca.
-                live -> NotificationManagerCompat.from(context).cancel(Notify.ID_RAIN)
+                // El pronóstico cambió y la lluvia avisada ya no viene: se saca, y si vuelve se avisa.
+                live -> {
+                    NotificationManagerCompat.from(context).cancel(Notify.ID_RAIN)
+                    NotifyPrefs.setUntil(context, "lluvia", LocalDateTime.now())
+                }
             }
             live -> show(context, outlook, snapshot.place, update = true)
             !Notify.allowed(context) -> Unit
@@ -150,10 +154,10 @@ object RainNotifier {
         } else {
             builder.setShowWhen(false)
         }
-        // Se va sola un rato después de que termina la lluvia (o empieza, si no se sabe cuánto dura):
-        // después la cuenta quedaría en negativo. Mientras sigue, cada revisión la renueva.
+        // Se va sola poco después de llegar a cero: si la revisión siguiente se atrasa, la cuenta
+        // quedaría en negativo. Mientras sigue, cada revisión la renueva.
         val timeoutMinutes = when (outlook) {
-            is RainOutlook.Starts -> outlook.inMinutes + (outlook.lastsMinutes ?: 0) + 10
+            is RainOutlook.Starts -> outlook.inMinutes + 15
             is RainOutlook.Stops -> outlook.inMinutes + 10
             null -> 40
         }

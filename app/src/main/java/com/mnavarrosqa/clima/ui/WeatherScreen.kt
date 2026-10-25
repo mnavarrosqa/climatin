@@ -412,7 +412,8 @@ private fun WeatherPager(
                 )
             },
         ) {
-            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            // Con key, el estado de cada página (desplazamiento, encabezado) sigue a su ciudad al reordenar.
+            HorizontalPager(state = pagerState, key = { pages[it] }, modifier = Modifier.fillMaxSize()) { page ->
                 Box(
                     Modifier.graphicsLayer {
                         // La página que se va se achica y se apaga un poco: da profundidad al deslizar.
@@ -484,10 +485,13 @@ private fun WeatherPager(
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 CompactHeader(
                     skySnapshot,
-                    Modifier.graphicsLayer {
-                        alpha = barAlpha
-                        translationY = (1f - barAlpha) * 12.dp.toPx()
-                    },
+                    Modifier
+                        .graphicsLayer {
+                            alpha = barAlpha
+                            translationY = (1f - barAlpha) * 12.dp.toPx()
+                        }
+                        // Escondida, TalkBack no la lee: el encabezado grande ya dice lo mismo.
+                        .then(if (isCollapsed) Modifier else Modifier.clearAndSetSemantics { }),
                 )
                 Row(
                     modifier = Modifier
@@ -663,7 +667,7 @@ fun ForecastContent(
                         },
                 ) { Hero(snapshot, isCurrentLocation) }
             }
-            items(snapshot.alerts.distinctBy { it.id }, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) } }
+            items(snapshot.alerts.distinctBy { it.id }.filterNot { it.isExpired() }, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) } }
             // Las alertas ya tienen su tarjeta: la frase busca lo siguiente más útil.
             Insights.headline(snapshot.copy(alerts = emptyList()))?.let { text ->
                 item { Box(Modifier.reveal(1, shownAt)) { InsightChip(text) } }
@@ -677,7 +681,8 @@ fun ForecastContent(
                 Box(Modifier.reveal(index, shownAt)) {
                     when (which) {
                         ForecastCard.HOURS -> GlassCard(tr("Próximas horas", "Next hours")) {
-                            HourlyChart(snapshot.upcomingHours(24), sunEvents = sunEventsOf(snapshot.days).filter { it.time.isAfter(snapshot.nowAtPlace()) })
+                            val sunEvents = remember(snapshot) { sunEventsOf(snapshot.days).filter { it.time.isAfter(snapshot.nowAtPlace()) } }
+                            HourlyChart(snapshot.upcomingHours(24), sunEvents = sunEvents)
                         }
                         ForecastCard.DAYS -> DailyCard(snapshot, onDay = onDay)
                         ForecastCard.RADAR -> RadarCard(onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })

@@ -85,6 +85,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -492,7 +494,8 @@ private fun LazyListScope.appearancePage() {
     item { SectionTitle(tr("Ícono de la app", "App icon")) }
     item {
         val context = LocalContext.current
-        var current by remember { mutableStateOf(AppIcon.current(context)) }
+        val scope = rememberCoroutineScope()
+        val current = AppIcon.current(context)
         Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
             Row(
                 Modifier
@@ -507,10 +510,7 @@ private fun LazyListScope.appearancePage() {
                         selected = icon == current,
                         dimension = 64.dp,
                         onClick = {
-                            if (icon != current) {
-                                AppIcon.set(context, icon)
-                                current = icon
-                            }
+                            if (icon != current) scope.launch { AppIcon.set(context, icon) }
                         },
                     ) {
                         Image(painterResource(icon.background), contentDescription = null, modifier = Modifier.fillMaxSize())

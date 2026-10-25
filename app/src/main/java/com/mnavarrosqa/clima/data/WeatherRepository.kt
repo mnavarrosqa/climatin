@@ -149,7 +149,10 @@ class WeatherRepository private constructor(private val context: Context) {
         val firstError = (listOf(current.exceptionOrNull()?.takeIf { it !is NoLocationException }) +
             others.map { it.exceptionOrNull() }).firstOrNull { it != null }
             ?: current.exceptionOrNull()?.takeIf { others.isEmpty() }
-        if (firstError == null) lastRefreshAt = System.currentTimeMillis()
+        // Con que un lugar haya andado, se respeta el minuto de espera: si no, una ciudad que falla
+        // siempre hace que cada reintento vuelva a bajar todas.
+        val anyOk = current.isSuccess || others.any { it.isSuccess }
+        if (firstError == null || anyOk) lastRefreshAt = System.currentTimeMillis()
         return firstError
     }
 
@@ -167,7 +170,7 @@ class WeatherRepository private constructor(private val context: Context) {
         alerts
     }
 
-    suspend fun refreshCurrent(): Result<WeatherSnapshot> = runCatching {
+    suspend fun refreshCurrent(): Result<WeatherSnapshot> = runCatchingCancellable {
         val previous = cached(CURRENT_PLACE_ID)
         val coordinates = LocationProvider.current(context)
             ?: previous?.let { Coordinates(it.latitude, it.longitude) }
@@ -182,7 +185,7 @@ class WeatherRepository private constructor(private val context: Context) {
         fetch(CURRENT_PLACE_ID, name, coordinates.latitude, coordinates.longitude)
     }
 
-    suspend fun refreshPlace(place: Place): Result<WeatherSnapshot> = runCatching {
+    suspend fun refreshPlace(place: Place): Result<WeatherSnapshot> = runCatchingCancellable {
         fetch(place.id, place.shownName, place.latitude, place.longitude)
     }
 
@@ -195,7 +198,7 @@ class WeatherRepository private constructor(private val context: Context) {
                     // Si el SMN falla, se mantienen las alertas de la última vez: si no, una alerta
                     // vigente "terminaría" y volvería a sonar como nueva en la siguiente corrida.
                     capAlerts()?.filter { it.covers(latitude, longitude) }?.map { it.alert }
-                        ?: cached(placeId)?.alerts.orEmpty()
+                        ?: cached(placeId)?.alerts.orEmpty().filterNot { it.isExpired() }
                 } else {
                     emptyList()
                 }
@@ -211,10 +214,16 @@ class WeatherRepository private constructor(private val context: Context) {
             airQuality = air,
             fetchedAt = System.currentTimeMillis(),
         ).copy(alerts = alerts)
+        // Mientras bajaba, la ciudad pudo cambiar de apodo o quitarse: se guarda con el nombre de
+        // ahora, y si ya no está, no se guarda (quedaría un pronóstico huérfano).
+        val shown = if (placeId == CURRENT_PLACE_ID) snapshot else {
+            val place = places().firstOrNull { it.id == placeId } ?: return snapshot
+            snapshot.copy(place = place.shownName)
+        }
         prefs.edit()
-            .putString(snapshotKey(placeId), json.encodeToString(WeatherSnapshot.serializer(), snapshot))
+            .putString(snapshotKey(placeId), json.encodeToString(WeatherSnapshot.serializer(), shown))
             .apply()
-        return snapshot
+        return shown
     }
 
     // --- Ajustes ---
@@ -304,4 +313,13 @@ class WeatherRepository private constructor(private val context: Context) {
                 instance ?: WeatherRepository(context.applicationContext).also { instance = it }
             }
     }
+}
+
+/** Como runCatching, pero sin tragarse la cancelación: si no, un trabajo cancelado seguiría de largo. */
+private inline fun <T> runCatchingCancellable(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (cancel: kotlinx.coroutines.CancellationException) {
+    throw cancel
+} catch (error: Throwable) {
+    Result.failure(error)
 }

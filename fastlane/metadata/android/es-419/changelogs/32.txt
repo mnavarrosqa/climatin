@@ -1,0 +1,1 @@
+Arreglos: el apodo de una ciudad no se pierde al actualizar, "Terminar" en Salgo ahora siempre termina, el aviso de lluvia no se pierde si el pronóstico se corre unos minutos, alertas vencidas que ya no se muestran, cielo de tormenta correcto en modo quieto y fondo de pantalla que gasta menos batería.

@@ -75,6 +75,8 @@ object Outing {
     }
 
     fun start(context: Context) {
+        // Sin permiso de notificaciones no hay dónde mostrarlo: no se gasta batería en vano.
+        if (!RainNotifier.canNotify(context)) return
         val until = System.currentTimeMillis() + DURATION_MS
         NotifyPrefs.setTime(context, "salida_hasta", until)
         NotifyPrefs.setTime(context, "salida_desde", System.currentTimeMillis())
@@ -87,10 +89,15 @@ object Outing {
     }
 
     fun stop(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(WORK)
+        clear(context)
+    }
+
+    /** Lo que deja la salida terminada; el trabajo lo usa sin cancelarse a sí mismo. */
+    internal fun clear(context: Context) {
         NotifyPrefs.setTime(context, "salida_hasta", 0L)
         endsAt = 0L
         loaded = true
-        WorkManager.getInstance(context).cancelUniqueWork(WORK)
         NotificationManagerCompat.from(context).cancel(ID)
         SalgoTileService.requestUpdate(context)
     }
@@ -167,11 +174,13 @@ class OutingWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val context = applicationContext
         val until = NotifyPrefs.time(context, "salida_hasta")
         if (until <= System.currentTimeMillis()) {
-            Outing.stop(context)
+            Outing.clear(context)
             return Result.success()
         }
         val repository = WeatherRepository.get(context)
         val snapshot = repository.refreshCurrent().getOrNull() ?: repository.cached()
+        // Mientras bajaba se pudo tocar "Terminar" (o empezar otra salida): no se revive.
+        if (isStopped || NotifyPrefs.time(context, "salida_hasta") != until) return Result.success()
         snapshot?.let { runCatching { Outing.show(context, it, until) } }
         Outing.scheduleNext(context)
         return Result.success()

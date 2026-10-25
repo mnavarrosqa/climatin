@@ -74,7 +74,8 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
     val today = snapshot.today()
     val date = snapshot.nowAtPlace().toLocalDate()
     val details = buildList {
-        today?.let {
+        // En zonas polares (sol de medianoche) Open-Meteo puede no traer horas válidas: sin tarjeta, sin cierre.
+        today?.takeIf { day -> runCatching { LocalDateTime.parse(day.sunrise); LocalDateTime.parse(day.sunset) }.isSuccess }?.let {
             add(
                 Detail(
                     tr("Sol", "Sun"),

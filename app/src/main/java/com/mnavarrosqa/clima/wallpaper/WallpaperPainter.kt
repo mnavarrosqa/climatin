@@ -41,6 +41,9 @@ class WallpaperPainter {
     private val path = Path()
     private val tau = 2 * PI.toFloat()
     private val blobShaders = HashMap<Int, Shader>()
+    // Degradé de cada sierra, guardado mientras no cambien su color y su tamaño (antes, 3 por cuadro).
+    private val hillShaders = arrayOfNulls<Shader>(3)
+    private val hillKeys = arrayOfNulls<List<Number>>(3)
     private val lights = Random(7).let { r -> List(18) { floatArrayOf(r.nextFloat(), r.nextFloat(), r.nextFloat()) } }
 
     private val temperaturePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -108,11 +111,16 @@ class WallpaperPainter {
             // Las de atrás se pierden en el horizonte; las de adelante son casi silueta.
             var color = ColorUtils.blendARGB(horizon, shade, 0.35f + 0.25f * layer)
             if (snowy && layer == 0) color = ColorUtils.blendARGB(color, Color.WHITE, 0.55f)
-            paint.shader = LinearGradient(
-                0f, base - amplitude, 0f, height,
-                color, ColorUtils.blendARGB(color, shade, 0.5f),
-                Shader.TileMode.CLAMP,
-            )
+            val hillKey = listOf(color, base - amplitude, height)
+            if (hillKeys[layer] != hillKey) {
+                hillKeys[layer] = hillKey
+                hillShaders[layer] = LinearGradient(
+                    0f, base - amplitude, 0f, height,
+                    color, ColorUtils.blendARGB(color, shade, 0.5f),
+                    Shader.TileMode.CLAMP,
+                )
+            }
+            paint.shader = hillShaders[layer]
             canvas.drawPath(path, paint)
             paint.shader = null
 
@@ -183,6 +191,8 @@ class WallpaperPainter {
 
     /** Círculo de color que se desvanece hacia afuera. */
     private fun blob(canvas: Canvas, x: Float, y: Float, radius: Float, rgb: Int, alpha: Float) {
+        // Al amanecer y al atardecer los colores cambian cada minuto: que la caché no crezca sin fin.
+        if (blobShaders.size > 24) blobShaders.clear()
         paint.shader = blobShaders.getOrPut(rgb) {
             RadialGradient(
                 0f, 0f, 1f,

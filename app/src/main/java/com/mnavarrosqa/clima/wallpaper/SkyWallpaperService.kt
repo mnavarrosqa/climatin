@@ -65,10 +65,16 @@ class SkyWallpaperService : WallpaperService() {
             loadWeather()
         }
 
-        override fun onSharedPreferenceChanged(prefs: SharedPreferences?, key: String?) {
+        /** Guardar los ajustes cambia varias claves juntas: se recarga una sola vez, al final. */
+        private val reload = Runnable {
             settings = WallpaperPrefs.load(applicationContext)
             loadWeather()
             restart()
+        }
+
+        override fun onSharedPreferenceChanged(prefs: SharedPreferences?, key: String?) {
+            handler.removeCallbacks(reload)
+            handler.post(reload)
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
@@ -132,6 +138,7 @@ class SkyWallpaperService : WallpaperService() {
             scheduled = false
             choreographer.removeFrameCallback(this)
             handler.removeCallbacks(minuteTick)
+            handler.removeCallbacks(reload)
         }
 
         private fun loadWeather() {
@@ -161,8 +168,12 @@ class SkyWallpaperService : WallpaperService() {
             if (!visible) return
             val now = SystemClock.uptimeMillis()
             val animating = settings.motion != WallpaperMotion.STILL
-            if (animating && frameTimeNanos - lastFrameNanos < frameGapNanos()) {
-                schedule()
+            val gap = frameGapNanos()
+            if (animating && frameTimeNanos - lastFrameNanos < gap) {
+                // Se pide el cuadro para cuando toca, no en cada refresco de pantalla (en una de 120 Hz
+                // en modo ahorro eran 120 despertares por segundo para dibujar 30).
+                scheduled = true
+                choreographer.postFrameCallbackDelayed(this, ((gap - (frameTimeNanos - lastFrameNanos)) / 1_000_000L).coerceAtLeast(1L))
                 return
             }
             lastFrameNanos = frameTimeNanos

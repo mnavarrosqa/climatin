@@ -78,7 +78,10 @@ object SunNotifier {
 
     fun test(context: Context) {
         val now = System.currentTimeMillis()
+        // Se guarda como si fuera de verdad: si no, la revisión siguiente la pisaría con otro evento.
         NotifyPrefs.setTime(context, "sol_origen", now)
+        NotifyPrefs.setTime(context, "sol_evento", now + 30 * 60_000L)
+        NotifyPrefs.setTime(context, "sol_amanecer", 0L)
         show(context, now + 30 * 60_000L, sunrise = false, WeatherRepository.get(context).cached()?.place, update = false)
     }
 
@@ -108,9 +111,9 @@ object SunNotifier {
             .setUsesChronometer(event > now)
             .setChronometerCountDown(true)
             // Se va un rato después de que sale o se pone el sol.
-            .setTimeoutAfter(event - now + 20 * 60_000L)
+            .setTimeoutAfter((event - now + 20 * 60_000L).coerceAtLeast(60_000L))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .requestLive((if (sunrise) "🌅 " else "🌇 ") + LiveUpdate.chipMinutes(minutes))
+            .requestLive((if (sunrise) "🌅" else "🌇") + if (event > now) " " + LiveUpdate.chipMinutes(minutes) else "")
         var notification = builder.build()
         if (LiveUpdate.supported) notification = withTimeline(context, notification, event, sunrise, now)
         NotificationManagerCompat.from(context).notify(ID, notification)

@@ -19,6 +19,10 @@ data class WeatherAlert(
 ) {
     /** "Extreme" y "Severe" se muestran como peligro; el resto como aviso. */
     val isSevere: Boolean get() = severity.equals("Extreme", true) || severity.equals("Severe", true)
+
+    /** Ya venció (si el SMN no responde, las guardadas pueden quedar viejas). Sin fecha, no vence. */
+    fun isExpired(now: java.time.OffsetDateTime = java.time.OffsetDateTime.now()): Boolean =
+        expires?.let { runCatching { java.time.OffsetDateTime.parse(it).isBefore(now) }.getOrNull() } ?: false
 }
 
 object Geo {

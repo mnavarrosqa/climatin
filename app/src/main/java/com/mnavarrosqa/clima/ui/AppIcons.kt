@@ -2,7 +2,18 @@ package com.mnavarrosqa.clima.ui
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import com.mnavarrosqa.clima.ClimaActivity
+import com.mnavarrosqa.clima.work.Outing
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.annotation.DrawableRes
 import com.mnavarrosqa.clima.R
 import com.mnavarrosqa.clima.core.R as CoreR
@@ -30,8 +41,13 @@ enum class AppIcon(
     private fun component(context: Context) = ComponentName(context.packageName, "com.mnavarrosqa.clima$alias")
 
     companion object {
+        /** El elegido, leído del sistema una sola vez (son llamadas al sistema) y como estado de Compose. */
+        private var selected by mutableStateOf<AppIcon?>(null)
+
         /** El que está prendido ahora; si el sistema no dice nada, el que viene por defecto. */
-        fun current(context: Context): AppIcon {
+        fun current(context: Context): AppIcon = selected ?: read(context).also { selected = it }
+
+        private fun read(context: Context): AppIcon {
             val pm = context.packageManager
             return entries.firstOrNull { icon ->
                 when (pm.getComponentEnabledSetting(icon.component(context))) {
@@ -42,7 +58,13 @@ enum class AppIcon(
             } ?: MONOGRAMA
         }
 
-        fun set(context: Context, icon: AppIcon) {
+        /** Cambia el ícono. Son varias llamadas al sistema: va fuera del hilo principal. */
+        suspend fun set(context: Context, icon: AppIcon) {
+            selected = icon
+            withContext(Dispatchers.IO) { enable(context, icon) }
+        }
+
+        private fun enable(context: Context, icon: AppIcon) {
             val pm = context.packageManager
             // Primero se prende el nuevo: si no, por un instante la app quedaría sin ícono.
             pm.setComponentEnabledSetting(
@@ -56,6 +78,17 @@ enum class AppIcon(
                     PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                     PackageManager.DONT_KILL_APP,
                 )
+            }
+            // El acceso directo "Salgo ahora" queda colgado del ícono viejo: se lo pasa al nuevo.
+            runCatching {
+                val shortcut = ShortcutInfoCompat.Builder(context, "salgo")
+                    .setShortLabel(context.getString(R.string.tile_outing_name))
+                    .setLongLabel(tr("Salgo ahora: 2 horas de clima en vivo", "Heading out: 2 hours of live weather"))
+                    .setIcon(IconCompat.createWithResource(context, R.drawable.ic_shortcut_outing))
+                    .setIntent(Intent(context, ClimaActivity::class.java).setAction(Outing.ACTION_START))
+                    .setActivity(icon.component(context))
+                    .build()
+                ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
             }
         }
     }

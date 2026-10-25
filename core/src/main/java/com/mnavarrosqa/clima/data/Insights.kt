@@ -12,7 +12,7 @@ object Insights {
 
     fun headline(snapshot: WeatherSnapshot): String? {
         val now = snapshot.nowAtPlace()
-        snapshot.alerts.firstOrNull()?.let { return tr("Alerta: ${it.event}", "Alert: ${it.event}") }
+        snapshot.alerts.firstOrNull { !it.isExpired() }?.let { return tr("Alerta: ${it.event}", "Alert: ${it.event}") }
         snapshot.minutesUntilRain()?.let { return rainSoonText(it) }
         rainStops(snapshot, now)?.let { return it }
         rainLater(snapshot, now)?.let { return it }

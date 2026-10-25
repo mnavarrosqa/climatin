@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -38,6 +39,9 @@ private fun sky(top: Long, middle: Long, bottom: Long) = listOf(Color(top), Colo
 
 fun List<Color>.toGradient() = SkyGradient(this[0].toArgb(), this[1].toArgb(), this[2].toArgb())
 
+/** Momento del reloj para el cielo quieto: sin relámpagos ni estrella fugaz (un relámpago a 0.3 lo dejaba blanco). */
+const val STILL_CLOCK = 0.2f
+
 /** Duración de una vuelta del reloj del cielo. */
 const val SKY_CYCLE_MS = 60_000
 
@@ -51,15 +55,18 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
     // tercio de la velocidad, para quien se marea o prefiere algo más tranquilo.
     val motion = Appearance.skyMotion
     val clock: () -> Float = if (motion == SkyMotion.STILL) {
-        { 0.3f }
+        { STILL_CLOCK }
     } else {
         val cycle = if (motion == SkyMotion.REDUCED) SKY_CYCLE_MS * 3 else SKY_CYCLE_MS
-        val value = rememberInfiniteTransition(label = "cielo").animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(cycle, easing = LinearEasing), RepeatMode.Restart),
-            label = "reloj",
-        )
+        // Con key, pasar de animado a reducido arma la animación de nuevo con la velocidad nueva.
+        val value = key(motion) {
+            rememberInfiniteTransition(label = "cielo").animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(cycle, easing = LinearEasing), RepeatMode.Restart),
+                label = "reloj",
+            )
+        }
         val read: () -> Float = { value.value }
         read
     }
@@ -69,9 +76,9 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
         val middle by animateColorAsState(colors[1], tween(1200), label = "medio")
         val bottom by animateColorAsState(colors[2], tween(1200), label = "abajo")
         val painter = remember { SkyPainter() }
-        painter.southern = southern
         Canvas(Modifier.fillMaxSize()) {
             drawIntoCanvas {
+                painter.southern = southern
                 painter.draw(
                     it.nativeCanvas,
                     size.width,
@@ -94,11 +101,11 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
 @Composable
 fun StillSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier, southern: Boolean = false) {
     val painter = remember { SkyPainter() }
-    painter.southern = southern
     val gradient = remember(kind, isDay) { skyColors(kind, isDay).toGradient() }
     Canvas(modifier) {
         drawIntoCanvas {
-            painter.draw(it.nativeCanvas, size.width, size.height, density, 0.3f, kind, isDay, gradient)
+            painter.southern = southern
+            painter.draw(it.nativeCanvas, size.width, size.height, density, STILL_CLOCK, kind, isDay, gradient)
         }
     }
 }
