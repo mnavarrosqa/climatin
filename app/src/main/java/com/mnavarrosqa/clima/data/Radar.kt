@@ -29,8 +29,9 @@ class RainFrame(val epochSeconds: Long, val values: FloatArray)
 object RainMap {
     const val MIN_ZOOM = 4
     const val MAX_ZOOM = 9
-    const val COLUMNS = 12
-    const val ROWS = 16
+    // Más puntos que antes (12x16): la lluvia se ve más fina. Siguen siendo una sola consulta.
+    const val COLUMNS = 14
+    const val ROWS = 20
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -47,7 +48,7 @@ object RainMap {
 
     /**
      * Pide la lluvia de una grilla pareja en coordenadas de tesela (así se dibuja derecha sobre el
-     * mapa) entre ([x0], [y0]) y ([x1], [y1]): 3 horas atrás y 9 adelante, en una sola consulta.
+     * mapa) entre ([x0], [y0]) y ([x1], [y1]): 3 horas atrás y 12 adelante, en una sola consulta.
      */
     suspend fun load(x0: Double, y0: Double, x1: Double, y1: Double, zoom: Int): List<RainFrame> =
         withContext(Dispatchers.IO) {
@@ -64,7 +65,7 @@ object RainMap {
                 }
             }
             val url = "https://api.open-meteo.com/v1/forecast?latitude=${lats.joinToString(",")}" +
-                "&longitude=${lons.joinToString(",")}&hourly=precipitation&past_hours=3&forecast_hours=9&timezone=GMT"
+                "&longitude=${lons.joinToString(",")}&hourly=precipitation&past_hours=3&forecast_hours=12&timezone=GMT"
             val body = read(url).decodeToString()
             val points = json.decodeFromString(ListSerializer(PointResponse.serializer()), body)
             val times = points.firstOrNull()?.hourly?.time.orEmpty()

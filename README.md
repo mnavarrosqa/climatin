@@ -30,7 +30,7 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 - **Estilos de widget**: Sistema (colores del fondo de pantalla), Color (más intenso), Transparente (texto blanco sobre el fondo de pantalla) o Cielo (degradado del clima actual). Se eligen con vista previa al agregar el widget.
 - **Personalización de widgets** con el widget real como vista previa (tres tamaños, sobre fondo claro, oscuro, foto o cielo): estilo, color fijo o del fondo de pantalla, opacidad, esquinas, partes visibles (frase, ciudad, máx/mín, ⟳ y ›), qué hace al tocarlo, ciudad fija o que rota, y copiar de otro widget. En *Ajustes → Widgets* están los 11 para agregarlos sin pasar por el launcher.
 - **Vistas previas reales** en el selector de widgets, con los colores del sistema en claro y oscuro; en Android 15+, con tus datos.
-- **Mapa de lluvia** animado: la lluvia de Open-Meteo (de 3 horas atrás a 9 adelante, sin clave) sobre el mapa gris de Esri. Es lluvia calculada por el modelo, no radar.
+- **Mapa de lluvia** animado: la lluvia de Open-Meteo (de 3 horas atrás a 12 adelante, sin clave) sobre el mapa gris de Esri. Se arrastra, se pellizca, doble toque acerca, tocar un punto dice cuánto llueve ahí; muestra tus ciudades, una leyenda de colores y "Ahora" en la línea de tiempo. Es lluvia calculada por el modelo, no radar.
 - **Alertas del SMN** para lugares en Argentina, en la app y como notificación opcional.
 - **Detalle por día** (curva por hora, lluvia total, viento máximo, UV) y pronóstico de **14 días**.
 - **Unidades**: °C/°F, km/h, m/s, mph o nudos, hPa, inHg o mmHg, y 12/24 h.

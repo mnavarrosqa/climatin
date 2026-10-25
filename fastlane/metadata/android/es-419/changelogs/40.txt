@@ -1,0 +1,1 @@
+Mapa de lluvia nuevo: se arrastra y se pellizca, tocar un punto dice cuánto llueve ahí, muestra tus ciudades, leyenda de colores, 12 horas de pronóstico y botón "Ahora".
