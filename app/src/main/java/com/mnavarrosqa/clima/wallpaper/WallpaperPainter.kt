@@ -120,6 +120,8 @@ class WallpaperPainter {
                     Shader.TileMode.CLAMP,
                 )
             }
+            // Opaco: las luces de la noche dejan el pincel casi transparente y las sierras se veían a través.
+            paint.color = Color.BLACK
             paint.shader = hillShaders[layer]
             canvas.drawPath(path, paint)
             paint.shader = null

@@ -67,11 +67,12 @@ class InsightsTest {
 
     @Test
     fun paraguasParaMasTarde() {
-        // Lluvia a las 3 horas, siempre que siga siendo hoy.
+        // Lluvia a las 3 horas, siempre que siga siendo hoy. La probabilidad de las +4 es de la hora
+        // anterior: empieza a las +3.
         val rainHour = hour.plusHours(3)
         if (rainHour.toLocalDate() != now.toLocalDate()) return
         val hours = (0..14).map { i ->
-            Hour(hour.plusHours(i.toLong()).toString(), 20.0, 1, if (i == 3) 80 else 0, true)
+            Hour(hour.plusHours(i.toLong()).toString(), 20.0, 1, if (i == 4) 80 else 0, true)
         }
         assertEquals("Llevá paraguas: lluvia a las ${shortHour(rainHour)}", Insights.headline(snapshot(hours = hours)))
     }

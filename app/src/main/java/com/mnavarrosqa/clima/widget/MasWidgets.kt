@@ -299,6 +299,7 @@ class SolWidget : SimpleWeatherWidget() {
             (arcWidth.value * density).roundToInt(),
             (arcHeight.value * density).roundToInt(),
             onTransparent = colors.transparent,
+            accent = chartAccent(),
         )
         val title = when {
             sunrise == null || sunset == null -> tr("Sol", "Sun")

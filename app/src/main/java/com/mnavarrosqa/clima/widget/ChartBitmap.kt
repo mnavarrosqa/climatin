@@ -22,8 +22,10 @@ object ChartBitmap {
 
     private data class Palette(val line: Int, val text: Int, val subtle: Int)
 
-    private fun palette(context: Context, onTransparent: Boolean): Palette {
+    /** [accent] es el color fijo elegido al personalizar el widget (null: el del sistema). */
+    private fun palette(context: Context, onTransparent: Boolean, accent: Int? = null): Palette {
         if (onTransparent) return Palette(0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt(), 0xDDFFFFFF.toInt())
+        if (accent != null) return palette(context, false, null).copy(line = accent)
         val night = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -38,11 +40,11 @@ object ChartBitmap {
         }
     }
 
-    fun render(context: Context, hours: List<Hour>, widthPx: Int, heightPx: Int, onTransparent: Boolean = false): Bitmap {
+    fun render(context: Context, hours: List<Hour>, widthPx: Int, heightPx: Int, onTransparent: Boolean = false, accent: Int? = null): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         if (hours.size < 2) return bitmap
         val canvas = Canvas(bitmap)
-        val colors = palette(context, onTransparent)
+        val colors = palette(context, onTransparent, accent)
         val metrics = context.resources.displayMetrics
         val density = metrics.density
         val textSize = 12f * density * context.resources.configuration.fontScale
@@ -142,10 +144,10 @@ object ChartBitmap {
      * Arco del sol de amanecer a atardecer con la posición actual. [progress] va de 0 (amanecer)
      * a 1 (atardecer); fuera de ese rango es de noche y el sol no se dibuja.
      */
-    fun renderSunArc(context: Context, progress: Float, widthPx: Int, heightPx: Int, onTransparent: Boolean = false): Bitmap {
+    fun renderSunArc(context: Context, progress: Float, widthPx: Int, heightPx: Int, onTransparent: Boolean = false, accent: Int? = null): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val colors = palette(context, onTransparent)
+        val colors = palette(context, onTransparent, accent)
         val density = context.resources.displayMetrics.density
         val margin = 10f * density
         val horizon = heightPx - 4f * density
@@ -191,11 +193,12 @@ object ChartBitmap {
         widthPx: Int,
         heightPx: Int,
         onTransparent: Boolean,
+        accent: Int? = null,
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         if (values.isEmpty()) return bitmap
         val canvas = Canvas(bitmap)
-        val colors = palette(context, onTransparent)
+        val colors = palette(context, onTransparent, accent)
         val density = context.resources.displayMetrics.density
         val textSize = 11f * density * context.resources.configuration.fontScale
         val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

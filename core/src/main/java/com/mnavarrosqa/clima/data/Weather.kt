@@ -60,16 +60,17 @@ data class WeatherSnapshot(
         if (current.precipitation >= 0.1 || isRainy(current.code)) return null
         val now = nowAtPlace()
         val limit = now.plusHours(2)
+        // Cada valor es del tramo anterior a su hora: el tramo empieza 15 minutos (o una hora) antes.
         val fromMinutely = minutely.firstOrNull {
-            it.precipitation >= 0.1 && it.dateTime.isAfter(now.minusMinutes(15)) && it.dateTime.isBefore(limit)
+            it.precipitation >= 0.1 && it.dateTime.isAfter(now) && it.dateTime.minusMinutes(15).isBefore(limit)
         }
         if (fromMinutely != null) {
-            return Duration.between(now, fromMinutely.dateTime).toMinutes().toInt().coerceAtLeast(5)
+            return Duration.between(now, fromMinutely.dateTime.minusMinutes(15)).toMinutes().toInt().coerceAtLeast(5)
         }
-        val fromHourly = upcomingHours(3).drop(1).firstOrNull {
-            (it.precipitationProbability ?: 0) >= 60 && it.dateTime.isBefore(limit)
+        val fromHourly = upcomingHours(4).drop(1).firstOrNull {
+            (it.precipitationProbability ?: 0) >= 60 && it.dateTime.minusHours(1).isBefore(limit)
         } ?: return null
-        return Duration.between(now, fromHourly.dateTime).toMinutes().toInt().coerceAtLeast(5)
+        return Duration.between(now, fromHourly.dateTime.minusHours(1)).toMinutes().toInt().coerceAtLeast(5)
     }
 
     private fun isRainy(code: Int) = WeatherCodes.kind(code).let {

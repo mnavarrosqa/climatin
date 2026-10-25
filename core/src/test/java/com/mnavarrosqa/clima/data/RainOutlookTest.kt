@@ -20,7 +20,7 @@ class RainOutlookTest {
         current = Current(now.toString(), 20.0, 20.0, 50, true, code, 10.0, precipitation),
         hours = emptyList(),
         days = emptyList(),
-        // Un valor cada 15 minutos desde ahora.
+        // Un valor cada 15 minutos desde ahora; cada uno es de los 15 minutos anteriores a su hora.
         minutely = minutely.mapIndexed { i, mm -> Minutely(now.plusMinutes(15L * i).toString(), mm) },
     )
 
@@ -31,11 +31,11 @@ class RainOutlookTest {
 
     @Test
     fun lluviaQueEmpiezaYTermina() {
-        // Seca 30 min, después 45 min de lluvia moderada (1 mm cada 15 min = 4 mm/h), y seca otra vez.
+        // Seca 15 min (el primer valor ya pasó), después 45 min de lluvia moderada (1 mm cada 15 min = 4 mm/h), y seca otra vez.
         val outlook = snapshot(minutely = listOf(0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0)).rainOutlook()
         assertTrue(outlook is RainOutlook.Starts)
         outlook as RainOutlook.Starts
-        assertEquals(30, outlook.inMinutes)
+        assertEquals(15, outlook.inMinutes)
         assertEquals(45, outlook.lastsMinutes)
         assertEquals(RainIntensity.MODERATE, outlook.intensity)
     }
@@ -49,7 +49,7 @@ class RainOutlookTest {
 
     @Test
     fun avisaCuandoParaDeLlover() {
-        val outlook = snapshot(code = 63, precipitation = 1.0, minutely = listOf(1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)).rainOutlook()
+        val outlook = snapshot(code = 63, precipitation = 1.0, minutely = listOf(1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0)).rainOutlook()
         assertEquals(RainOutlook.Stops(30), outlook)
     }
 

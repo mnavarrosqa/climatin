@@ -73,6 +73,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
@@ -231,7 +233,8 @@ private fun SettingRow(
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            // Sin toque propio, TalkBack lee título, resumen e interruptor juntos, en un solo paso.
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier.semantics(mergeDescendants = true) { }),
     )
 }
 
@@ -704,7 +707,10 @@ private fun <T> ChoiceRow(label: String, options: List<T>, selected: T, labelOf:
             Text(label, style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.height(6.dp))
             Row(
-                Modifier.horizontalScroll(rememberScrollState()),
+                // Una sola opción a la vez: TalkBack lo anuncia como grupo.
+                Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .selectableGroup(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 options.forEach { option ->

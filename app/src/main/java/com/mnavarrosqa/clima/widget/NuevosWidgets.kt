@@ -56,18 +56,20 @@ class ProximaHoraWidget : SimpleWeatherWidget() {
         val context = LocalContext.current
         val size = LocalSize.current
         val now = snapshot.nowAtPlace()
+        // Cada valor es de los 15 minutos anteriores a su hora: se muestran los tramos que terminan después de ahora.
         val minutely = snapshot.minutely
-            .filter { !it.dateTime.isBefore(now.minusMinutes(14)) }
+            .filter { it.dateTime.isAfter(now) }
             .take(8)
         // Con datos cada 15 min se muestra la intensidad (2 mm ya es lluvia fuerte); si no, la probabilidad por hora.
         val bars = if (minutely.isNotEmpty() && minutely.any { it.precipitation > 0 }) {
             minutely.mapIndexed { i, m ->
-                val minutes = Duration.between(now, m.dateTime).toMinutes().coerceAtLeast(0)
+                val minutes = Duration.between(now, m.dateTime.minusMinutes(15)).toMinutes().coerceAtLeast(0)
                 (if (i == 0) tr("Ahora", "Now") else "${(minutes + 7) / 15 * 15}'") to (m.precipitation / 2.0).toFloat()
             }
         } else {
-            snapshot.upcomingHours(6).mapIndexed { i, h ->
-                (if (i == 0) tr("Ahora", "Now") else shortHour(h.dateTime)) to (h.precipitationProbability ?: 0) / 100f
+            // La probabilidad de cada hora es de la hora anterior: la barra se rotula con su comienzo.
+            snapshot.upcomingHours(7).drop(1).mapIndexed { i, h ->
+                (if (i == 0) tr("Ahora", "Now") else shortHour(h.dateTime.minusHours(1))) to (h.precipitationProbability ?: 0) / 100f
             }
         }
         val raining = snapshot.current.precipitation >= 0.1
@@ -85,6 +87,7 @@ class ProximaHoraWidget : SimpleWeatherWidget() {
             (chartWidth.value * density).roundToInt(),
             (chartHeight.value * density).roundToInt(),
             colors.transparent,
+            accent = chartAccent(),
         )
         WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {
             Column(modifier = GlanceModifier.fillMaxSize()) {

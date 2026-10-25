@@ -319,6 +319,8 @@ fun CitiesScreen(
                     state = dismiss,
                     modifier = itemModifier.padding(bottom = 10.dp),
                     backgroundContent = {
+                        // Solo mientras la tarjeta se corre: quieta, no tiene que haber nada atrás.
+                        if (runCatching { dismiss.requireOffset() }.getOrDefault(0f) == 0f) return@SwipeToDismissBox
                         val toStart = dismiss.dismissDirection == SwipeToDismissBoxValue.EndToStart
                         Box(
                             Modifier

@@ -75,6 +75,7 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
         (chartWidth.value * density).roundToInt(),
         (chartHeight.value * density).roundToInt(),
         onTransparent = colors.transparent,
+        accent = chartAccent(),
     )
 
     WidgetSurface(colors, modifier = GlanceModifier.padding(padding)) {

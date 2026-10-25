@@ -50,10 +50,11 @@ object Insights {
 
     /** Lluvia probable más tarde hoy (en las próximas 12 horas). */
     private fun rainLater(snapshot: WeatherSnapshot, now: LocalDateTime): String? {
-        val rainy = snapshot.upcomingHours(13).drop(2).firstOrNull {
-            (it.precipitationProbability ?: 0) >= 60 && it.dateTime.toLocalDate() == now.toLocalDate()
+        // La probabilidad de cada hora es la de la hora anterior: la lluvia empieza una hora antes.
+        val rainy = snapshot.upcomingHours(14).drop(2).firstOrNull {
+            (it.precipitationProbability ?: 0) >= 60 && it.dateTime.minusHours(1).toLocalDate() == now.toLocalDate()
         } ?: return null
-        return tr("Llevá paraguas: lluvia a las", "Bring an umbrella: rain at") + " ${shortHour(rainy.dateTime)}"
+        return tr("Llevá paraguas: lluvia a las", "Bring an umbrella: rain at") + " ${shortHour(rainy.dateTime.minusHours(1))}"
     }
 
     private fun uvWarning(snapshot: WeatherSnapshot, now: LocalDateTime): String? {

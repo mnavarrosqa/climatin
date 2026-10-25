@@ -43,8 +43,9 @@ class WeatherSnapshotTest {
         val minutely = (0..7).map { i ->
             Minutely(now.plusMinutes(15L * i).toString(), if (i == 2) 0.6 else 0.0)
         }
+        // El valor de las +30 es de los 15 minutos anteriores: empieza a llover en ~15 min.
         val minutes = snapshot(minutely = minutely).minutesUntilRain()
-        assertTrue("esperaba ~30 min y dio $minutes", minutes != null && minutes in 25..35)
+        assertTrue("esperaba ~15 min y dio $minutes", minutes != null && minutes in 10..20)
     }
 
     @Test

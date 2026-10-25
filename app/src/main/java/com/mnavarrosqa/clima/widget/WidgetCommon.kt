@@ -21,6 +21,7 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.layout.ContentScale
 import androidx.glance.LocalContext
+import androidx.compose.ui.graphics.toArgb
 import androidx.glance.currentState
 import androidx.glance.action.clickable
 import androidx.glance.action.actionStartActivity
@@ -61,6 +62,18 @@ fun ClimaGlanceTheme(content: @Composable () -> Unit) {
     } else {
         GlanceTheme(colors = ColorProviders(light = LightColors, dark = DarkColors), content = content)
     }
+}
+
+/**
+ * El color fijo elegido al personalizar el widget, para los gráficos que se dibujan como imagen
+ * (no pueden usar GlanceTheme). Null si sigue los colores del sistema.
+ */
+@Composable
+fun chartAccent(): Int? {
+    val (light, dark) = accentSchemes(WidgetAccent.from(currentState(WidgetOptionKeys.ACCENT))) ?: return null
+    val night = (LocalContext.current.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+        android.content.res.Configuration.UI_MODE_NIGHT_YES
+    return (if (night) dark.primary else light.primary).toArgb()
 }
 
 /** Lo que hace tocar el widget, según lo elegido al personalizarlo. */

@@ -132,6 +132,9 @@ class SkyPainter {
     ) {
         // Los fondos de pantalla "Formas" y "Oscuro" ponen su propio fondo y usan solo algunas capas.
         if (background) {
+            // Opaco siempre: si una capa anterior dejó el pincel transparente (la luna lo hacía),
+            // el cielo entero quedaba translúcido y se veía lo de atrás.
+            paint.color = Color.BLACK
             paint.shader = backgroundShader(height, colors)
             canvas.drawRect(0f, 0f, width, height, paint)
             paint.shader = null
@@ -260,7 +263,10 @@ class SkyPainter {
         paint.color = Color.argb(46, 200, 214, 255)
         canvas.drawCircle(cx, cy, r, paint)
         // Casi luna nueva: no hay parte iluminada que dibujar.
-        if (moonAge < 0.02 || moonAge > 0.98) return
+        if (moonAge < 0.02 || moonAge > 0.98) {
+            paint.color = Color.BLACK
+            return
+        }
         canvas.save()
         canvas.clipPath(moonLit)
         paint.shader = moonShade
@@ -272,6 +278,7 @@ class SkyPainter {
         canvas.drawCircle(cx + r * 0.22f, cy + r * 0.05f, r * 0.2f, paint)
         canvas.drawCircle(cx - r * 0.05f, cy + r * 0.38f, r * 0.15f, paint)
         canvas.restore()
+        paint.color = Color.BLACK
     }
 
     /** Dos capas de nubes: las de atrás más grandes, tenues y lentas. */

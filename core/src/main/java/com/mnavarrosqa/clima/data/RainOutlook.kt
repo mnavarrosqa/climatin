@@ -35,20 +35,22 @@ private data class RainSlot(val start: LocalDateTime, val minutes: Long, val mmP
 
 /**
  * Mira la lluvia de cada 15 minutos (2 horas) y después la de cada hora (hasta 6 horas), y dice si
- * empieza o para dentro de [withinMinutes]. Una hora sin dato de milímetros pero con 60% o más
+ * empieza o para dentro de [withinMinutes]. En Open-Meteo la lluvia de cada hora (y de cada cuarto
+ * de hora) es la del tramo *anterior* a esa hora: el tramo de las 15:00 es de 14:00 a 15:00. Una hora sin dato de milímetros pero con 60% o más
  * de probabilidad cuenta como lluvia débil.
  */
 fun WeatherSnapshot.rainOutlook(withinMinutes: Int = 120): RainOutlook? {
     val now = nowAtPlace()
     val slots = buildList {
-        minutely.filter { !it.dateTime.isBefore(now.minusMinutes(15)) }.forEach {
-            add(RainSlot(it.dateTime, 15, it.precipitation * 4))
+        // Solo los tramos que terminan después de ahora.
+        minutely.filter { it.dateTime.isAfter(now) }.forEach {
+            add(RainSlot(it.dateTime.minusMinutes(15), 15, it.precipitation * 4))
         }
         val coveredUntil = lastOrNull()?.let { it.start.plusMinutes(it.minutes) } ?: now.minusMinutes(1)
-        upcomingHours(7).filter { it.dateTime.plusHours(1).isAfter(coveredUntil) && it.dateTime.plusHours(1).isAfter(now) }.forEach { hour ->
+        upcomingHours(8).filter { it.dateTime.isAfter(coveredUntil) && it.dateTime.isAfter(now) }.forEach { hour ->
             val mm = hour.precipitation ?: if ((hour.precipitationProbability ?: 0) >= 60) 0.5 else 0.0
             val wet = mm >= 0.2 || (hour.precipitation == null && (hour.precipitationProbability ?: 0) >= 60)
-            add(RainSlot(maxOf(hour.dateTime, coveredUntil), 60, if (wet) mm.coerceAtLeast(0.2) else 0.0))
+            add(RainSlot(maxOf(hour.dateTime.minusHours(1), coveredUntil), 60, if (wet) mm.coerceAtLeast(0.2) else 0.0))
         }
     }.sortedBy { it.start }
     fun wet(slot: RainSlot) = slot.mmPerHour >= 0.4 || (slot.minutes == 60L && slot.mmPerHour >= 0.2)
