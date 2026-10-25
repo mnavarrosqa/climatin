@@ -70,6 +70,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -973,8 +974,19 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
     // Ajustes → Pantalla del clima: tamaño del número y qué datos van debajo.
     val scale = Appearance.heroSize.scale * if (compact) 0.85f else 1f
     val lines = Appearance.heroLines
-    Column(Modifier.padding(horizontal = 8.dp, vertical = if (compact) 0.dp else 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    // El ícono va arriba a la derecha, a la altura del nombre, donde el cielo tenía su sol.
+    val iconSize = 112.dp * scale.coerceAtMost(1.1f)
+    Box(Modifier.padding(horizontal = 8.dp, vertical = if (compact) 0.dp else 8.dp)) {
+    AnimatedWeatherIcon(
+        current.code,
+        current.isDay,
+        size = iconSize,
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            .offset(y = (-16).dp),
+    )
+    Column {
+        Row(Modifier.padding(end = iconSize * 0.8f), verticalAlignment = Alignment.CenterVertically) {
             if (isCurrentLocation) {
                 Icon(
                     Icons.Rounded.LocationOn,
@@ -1015,7 +1027,9 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                         softWrap = false,
                     ).size.width
                 }
-                val fit = (constraints.maxWidth.toFloat() / measured.coerceAtLeast(1)).coerceAtMost(1f) * 0.97f
+                // Se deja lugar abajo del ícono: el número no se le mete encima.
+                val available = constraints.maxWidth - with(LocalDensity.current) { (iconSize * 0.45f).toPx() }
+                val fit = (available / measured.coerceAtLeast(1)).coerceAtMost(1f) * 0.97f
                 val temperatureSize = 112.sp * scale * fit.coerceAtLeast(0.4f)
             Column {
                 Text(
@@ -1052,8 +1066,8 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                 }
             }
             }
-            AnimatedWeatherIcon(current.code, current.isDay, size = 120.dp * scale.coerceAtMost(1.1f))
         }
+    }
     }
 }
 

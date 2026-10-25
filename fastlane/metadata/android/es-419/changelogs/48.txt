@@ -1,0 +1,1 @@
+El ícono del clima pasa arriba a la derecha, a la altura del nombre de la ciudad.
