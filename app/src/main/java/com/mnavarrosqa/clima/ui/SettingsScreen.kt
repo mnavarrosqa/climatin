@@ -64,6 +64,20 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.RadioButton
 import com.mnavarrosqa.clima.ui.theme.Appearance
 import com.mnavarrosqa.clima.ui.theme.ThemeMode
+import com.mnavarrosqa.clima.ui.theme.Accent
+import com.mnavarrosqa.clima.ui.theme.HeroLine
+import com.mnavarrosqa.clima.ui.theme.HeroSize
+import com.mnavarrosqa.clima.ui.theme.SkyMotion
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -103,6 +117,11 @@ import com.mnavarrosqa.clima.work.NotifyPrefs
 import com.mnavarrosqa.clima.work.NotifySettings
 import com.mnavarrosqa.clima.work.RainNotifier
 import com.mnavarrosqa.clima.work.SummaryNotifier
+import com.mnavarrosqa.clima.work.SunNotifier
+import com.mnavarrosqa.clima.work.Outing
+import com.mnavarrosqa.clima.work.LiveUpdate
+import com.mnavarrosqa.clima.work.TemperatureNotifier
+import androidx.compose.foundation.layout.width
 import com.mnavarrosqa.clima.data.shortHour
 import kotlin.math.roundToInt
 
@@ -300,7 +319,8 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
                         ThemeMode.SYSTEM -> tr("Tema del sistema", "System theme")
                         ThemeMode.LIGHT -> tr("Claro", "Light")
                         ThemeMode.DARK -> tr("Oscuro", "Dark")
-                    } + if (Appearance.dynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) tr(" · colores del fondo de pantalla", " · wallpaper colors") else "",
+                    } + " · " + (if (Appearance.dynamicColors) tr("colores del fondo de pantalla", "wallpaper colors") else Appearance.accent.label.lowercase()) +
+                        " · " + tr("ícono", "icon") + " " + AppIcon.current(context).label.lowercase(),
                     icon = {
                         CategoryIcon(Color(0xFF455A64)) {
                             Text("◐", color = Color.White, fontSize = 22.sp)
@@ -429,24 +449,193 @@ private fun LazyListScope.appearancePage() {
     item {
         Hint(tr("El cielo del pronóstico no cambia con el tema: sigue al clima y a la hora del lugar.", "The forecast sky doesn't change with the theme: it follows the weather and local time."))
     }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        item { SectionTitle(tr("Colores", "Colors")) }
-        item {
-            val context = LocalContext.current
-            Rows {
-                SettingRow(
-                    tr("Colores del fondo de pantalla", "Wallpaper colors"),
-                    tr("Material You: botones y tarjetas toman los tonos de tu fondo", "Material You: buttons and cards take your wallpaper's tones"),
-                    trailing = { Switch(checked = Appearance.dynamicColors, onCheckedChange = { Appearance.setDynamicColors(context, it) }) },
+    item { SectionTitle(tr("Color de acento", "Accent color")) }
+    item {
+        val context = LocalContext.current
+        // "Del fondo de pantalla" es Material You: solo desde Android 12.
+        val accents = Accent.entries.filter { it != Accent.WALLPAPER || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S }
+        val selected = if (Appearance.dynamicColors || Appearance.accent != Accent.WALLPAPER) Appearance.accent else Accent.BLUE
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
+                Row(
+                    Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    accents.forEach { accent ->
+                        Swatch(
+                            label = accent.label,
+                            selected = accent == selected,
+                            onClick = { Appearance.setAccent(context, accent) },
+                        ) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        if (accent == Accent.WALLPAPER) {
+                                            Brush.sweepGradient(listOf(Color(0xFF3A5F90), Color(0xFF2E6B3A), Color(0xFF8F4C00), Color(0xFF9C3D6A), Color(0xFF3A5F90)))
+                                        } else {
+                                            SolidColor(accent.swatch)
+                                        },
+                                    ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    item {
+        Hint(tr("Botones, interruptores y resaltados. Los widgets tienen su propio color en su personalización.", "Buttons, switches and highlights. Widgets have their own color in their settings."))
+    }
+    item { SectionTitle(tr("Ícono de la app", "App icon")) }
+    item {
+        val context = LocalContext.current
+        var current by remember { mutableStateOf(AppIcon.current(context)) }
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                AppIcon.entries.forEach { icon ->
+                    Swatch(
+                        label = icon.label,
+                        selected = icon == current,
+                        dimension = 64.dp,
+                        onClick = {
+                            if (icon != current) {
+                                AppIcon.set(context, icon)
+                                current = icon
+                            }
+                        },
+                    ) {
+                        Image(painterResource(icon.background), contentDescription = null, modifier = Modifier.fillMaxSize())
+                        // El primer plano de un ícono adaptable tiene margen: se agranda para que
+                        // se vea como en la pantalla de inicio.
+                        Image(
+                            painterResource(icon.foreground),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    scaleX = 1.45f
+                                    scaleY = 1.45f
+                                },
+                        )
+                    }
+                }
+            }
+        }
+    }
+    item {
+        Hint(tr("El cambio puede tardar unos segundos. Algunas pantallas de inicio sacan el ícono viejo y hay que volver a ponerlo.", "It may take a few seconds. Some home screens remove the old icon and you'll need to add it again."))
+    }
+}
+
+/** Opción redonda con su nombre abajo: color de acento o ícono de la app. */
+@Composable
+private fun Swatch(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    dimension: androidx.compose.ui.unit.Dp = 48.dp,
+    content: @Composable () -> Unit,
+) {
+    val ring by animateDpAsState(if (selected) 3.dp else 0.dp, label = "anillo")
+    Column(
+        Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .widthIn(min = dimension + 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(dimension + 10.dp)
+                .border(ring, MaterialTheme.colorScheme.primary, CircleShape)
+                .padding(5.dp)
+                .clip(CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+            if (selected) {
+                Icon(
+                    Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(26.dp)
+                        .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                        .padding(3.dp),
                 )
             }
         }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
 // --- Pantalla del clima ---
 
+@OptIn(ExperimentalLayoutApi::class)
 private fun LazyListScope.screenPage(viewModel: WeatherViewModel) {
+    item { SectionTitle(tr("Temperatura", "Temperature")) }
+    item {
+        val context = LocalContext.current
+        Rows {
+            ChoiceRow(tr("Tamaño del número", "Number size"), HeroSize.entries, Appearance.heroSize, { it.label }) {
+                Appearance.setHeroSize(context, it)
+            }
+            Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(4.dp)) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Text(tr("Debajo de la temperatura", "Below the temperature"), style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HeroLine.entries.forEach { line ->
+                            val shown = line in Appearance.heroLines
+                            FilterChip(
+                                selected = shown,
+                                onClick = { Appearance.setHeroLine(context, line, !shown) },
+                                label = { Text(line.label) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    item { SectionTitle(tr("Diseño", "Layout")) }
+    item {
+        val context = LocalContext.current
+        Rows {
+            SettingRow(
+                tr("Pronóstico compacto", "Compact forecast"),
+                tr("Menos espacio entre tarjetas, encabezado más bajo y una semana de días", "Less space between cards, a shorter header and one week of days"),
+                onClick = { Appearance.setCompact(context, !Appearance.compact) },
+                trailing = { Switch(checked = Appearance.compact, onCheckedChange = { Appearance.setCompact(context, it) }) },
+            )
+            ChoiceRow(tr("Cielo animado", "Animated sky"), SkyMotion.entries, Appearance.skyMotion, { it.label }) {
+                Appearance.setSkyMotion(context, it)
+            }
+        }
+    }
+    item {
+        Hint(tr("Reducido mueve el cielo, la lluvia y la nieve más despacio; quieto lo deja fijo y gasta menos batería.", "Reduced moves the sky, rain and snow more slowly; still keeps it fixed and saves battery."))
+    }
+    item { SectionTitle(tr("Tarjetas", "Cards")) }
     item { Hint(tr("Elegí qué tarjetas ves en el pronóstico y en qué orden.", "Choose which cards you see in the forecast and in what order.")) }
     item {
         val layout by viewModel.cards.collectAsStateWithLifecycle()
@@ -557,6 +746,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 SummaryNotifier.schedule(context)
             }
             "cambios" -> NotifyPrefs.update(context) { it.copy(changes = granted) }
+            "sol" -> NotifyPrefs.update(context) { it.copy(goldenHour = granted) }
             else -> viewModel.setRainAlerts(granted)
         }
         pending = null
@@ -710,6 +900,96 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
             }
         }
 
+        item { SectionTitle(tr("Salgo ahora", "Heading out")) }
+        item {
+            val active = Outing.active(context) && Outing.endsAt > 0
+            Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (active) {
+                                tr("Siguiendo el clima hasta las ", "Tracking weather until ") +
+                                    shortHour(java.time.Instant.ofEpochMilli(Outing.endsAt).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime())
+                            } else {
+                                tr("Dos horas de clima en vivo", "Two hours of live weather")
+                            },
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            tr("Temperatura, lluvia y viento de donde estás, actualizados cada 15 min. También desde ajustes rápidos o manteniendo apretado el ícono.", "Temperature, rain and wind where you are, updated every 15 min. Also from Quick Settings or by long-pressing the icon."),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    FilledTonalButton(
+                        enabled = canNotify || active,
+                        onClick = { if (active) Outing.stop(context) else Outing.start(context) },
+                    ) { Text(if (active) tr("Terminar", "Stop") else tr("Empezar", "Start")) }
+                }
+            }
+        }
+
+        item { SectionTitle(tr("Amanecer y atardecer", "Sunrise and sunset")) }
+        item {
+            Rows {
+                SettingRow(
+                    tr("Hora dorada", "Golden hour"),
+                    tr("Media hora antes de que salga o se ponga el sol, con cuenta regresiva", "Half an hour before sunrise or sunset, with a countdown"),
+                    trailing = {
+                        Switch(checked = notify.goldenHour && canNotify, onCheckedChange = { on ->
+                            toggle("sol", on) { enabled ->
+                                change { it.copy(goldenHour = enabled) }
+                                if (enabled) SunNotifier.check(context)
+                            }
+                        })
+                    },
+                )
+            }
+        }
+
+        if (LiveUpdate.supported) {
+            item { SectionTitle(tr("En vivo en la barra de estado", "Live in the status bar")) }
+            item {
+                Hint(
+                    tr(
+                        "Android 16 puede mostrar algunos avisos como un chip al lado de la hora y arriba en la pantalla de bloqueo (Live Updates). El sistema decide cuándo; se puede apagar en los ajustes de la app.",
+                        "Android 16 can show some alerts as a chip next to the clock and at the top of the lock screen (Live Updates). The system decides when; you can turn it off in the app's settings.",
+                    ),
+                )
+            }
+            item {
+                Rows {
+                    SettingRow(
+                        tr("Lluvia en camino", "Rain on the way"),
+                        tr("\"12 min\" hasta que empieza y \"Para 25 min\" mientras llueve", "\"12 min\" until it starts and \"Stops 25 min\" while raining"),
+                        trailing = { Switch(checked = notify.liveRain, onCheckedChange = { on -> change { it.copy(liveRain = on) } }) },
+                    )
+                    SettingRow(
+                        tr("Alertas naranjas y rojas", "Orange and red alerts"),
+                        tr("Mientras están vigentes, con cuánto falta para que terminen", "While active, with how long until they end"),
+                        trailing = { Switch(checked = notify.liveAlerts, onCheckedChange = { on -> change { it.copy(liveAlerts = on) } }) },
+                    )
+                    SettingRow(
+                        tr("Temperatura", "Temperature"),
+                        tr("Los grados como chip. Necesita la temperatura en la barra de estado prendida", "The temperature as a chip. Needs the status bar temperature on"),
+                        trailing = {
+                            Switch(checked = notify.liveTemperature, onCheckedChange = { on ->
+                                change { it.copy(liveTemperature = on) }
+                                TemperatureNotifier.update(context)
+                            })
+                        },
+                    )
+                    SettingRow(
+                        tr("Permiso de Live Updates", "Live Updates permission"),
+                        tr("Si no aparece el chip, revisá que esté permitido", "If the chip doesn't show, check that it's allowed"),
+                        onClick = { openAppNotificationSettings(context) },
+                        trailing = Chevron,
+                    )
+                }
+            }
+        }
+
         item { SectionTitle(tr("Horario de silencio", "Quiet hours")) }
         item {
             Rows {
@@ -745,6 +1025,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                             tr("Alerta", "Alert") to { AlertNotifier.test(context) },
                             tr("Resumen", "Summary") to { SummaryNotifier.notify(context, test = true) },
                             tr("Cambio brusco", "Big change") to { ChangeNotifier.test(context) },
+                            tr("Hora dorada", "Golden hour") to { SunNotifier.test(context) },
                         ).forEach { (label, send) ->
                             FilledTonalButton(
                                 enabled = canNotify,

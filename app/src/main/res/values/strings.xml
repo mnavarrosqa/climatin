@@ -27,4 +27,5 @@
     <string name="wallpaper_name">Climatin sky</string>
     <string name="wallpaper_description">The animated sky for the weather where you are</string>
     <string name="tile_name">Weather</string>
+    <string name="tile_outing_name">Heading out</string>
 </resources>

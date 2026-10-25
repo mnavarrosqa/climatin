@@ -132,7 +132,7 @@ class WidgetConfigActivity : ComponentActivity() {
                     config = config,
                     onChange = { config = it },
                     snapshots = remember { repository.allCached() },
-                    places = remember { repository.places().map { it.id to it.name } },
+                    places = remember { repository.places().map { it.id to it.shownName } },
                     others = others,
                     onCopy = { id ->
                         lifecycleScope.launch {

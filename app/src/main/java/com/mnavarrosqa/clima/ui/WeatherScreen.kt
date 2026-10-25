@@ -6,6 +6,10 @@ import android.app.Activity
 import androidx.compose.runtime.SideEffect
 import androidx.core.view.WindowCompat
 import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
+import com.mnavarrosqa.clima.ui.theme.Appearance
+import com.mnavarrosqa.clima.ui.theme.HeroLine
+import com.mnavarrosqa.clima.data.shortHour
+import com.mnavarrosqa.clima.data.windText
 import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
@@ -602,7 +606,7 @@ fun ForecastContent(
         top = insets.calculateTopPadding() + 56.dp,
         bottom = insets.calculateBottomPadding() + 24.dp,
     )
-    val spacing = Arrangement.spacedBy(12.dp)
+    val spacing = Arrangement.spacedBy(if (Appearance.compact) 8.dp else 12.dp)
 
     // Cada bloque es una función que agrega ítems a una lista; así se reparten entre uno o dos paneles.
     val summary: LazyListScope.() -> Unit = {
@@ -782,7 +786,11 @@ private fun ErrorBanner(message: String) {
 private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
     val current = snapshot.current
     val today = snapshot.today()
-    Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+    val compact = Appearance.compact
+    // Ajustes → Pantalla del clima: tamaño del número y qué datos van debajo.
+    val scale = Appearance.heroSize.scale * if (compact) 0.85f else 1f
+    val lines = Appearance.heroLines
+    Column(Modifier.padding(horizontal = 8.dp, vertical = if (compact) 0.dp else 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (isCurrentLocation) {
                 Icon(
@@ -817,11 +825,11 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                 val measurer = rememberTextMeasurer()
                 val measured = measurer.measure(
                     temperatureText,
-                    TextStyle(fontSize = 112.sp, fontWeight = FontWeight.Light, fontFamily = Flex),
+                    TextStyle(fontSize = 112.sp * scale, fontWeight = FontWeight.Light, fontFamily = Flex),
                     softWrap = false,
                 ).size.width
                 val fit = (constraints.maxWidth.toFloat() / measured.coerceAtLeast(1)).coerceAtMost(1f) * 0.97f
-                val temperatureSize = 112.sp * fit.coerceAtLeast(0.4f)
+                val temperatureSize = 112.sp * scale * fit.coerceAtLeast(0.4f)
             Column {
                 Text(
                     temperatureText,
@@ -841,23 +849,54 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                 ) { description ->
                     Text(description, style = MaterialTheme.typography.titleLarge.onSky(), color = OnSky)
                 }
-                if (today != null) {
+                if (today != null && HeroLine.HIGH_LOW in lines) {
                     Text(
                         tr("Máx", "High") + " ${today.max.degrees()} · " + tr("Mín", "Low") + " ${today.min.degrees()}",
                         style = MaterialTheme.typography.bodyLarge.onSky(),
                         color = OnSkyVariant,
                     )
                 }
-                Text(
-                    tr("Sensación térmica", "Feels like") + " ${current.feelsLike.degrees()}",
-                    style = MaterialTheme.typography.bodyMedium.onSky(),
-                    color = OnSkyVariant,
-                )
+                heroExtras(snapshot, lines).takeIf { it.isNotEmpty() }?.let { extras ->
+                    Text(
+                        extras.joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium.onSky(),
+                        color = OnSkyVariant,
+                    )
+                }
             }
             }
-            AnimatedWeatherIcon(current.code, current.isDay, size = 120.dp)
+            AnimatedWeatherIcon(current.code, current.isDay, size = 120.dp * scale.coerceAtMost(1.1f))
         }
     }
+}
+
+/** Los datos elegidos para debajo de la temperatura, salvo máxima y mínima (que van en su renglón). */
+private fun heroExtras(snapshot: WeatherSnapshot, lines: Set<HeroLine>): List<String> {
+    val current = snapshot.current
+    val today = snapshot.today()
+    return HeroLine.entries.filter { it in lines }.mapNotNull { line ->
+        when (line) {
+            HeroLine.HIGH_LOW -> null
+            HeroLine.FEELS_LIKE -> tr("Sensación térmica", "Feels like") + " ${current.feelsLike.degrees()}"
+            HeroLine.WIND -> tr("Viento", "Wind") + " ${windText(current.windSpeed)}"
+            HeroLine.HUMIDITY -> tr("Humedad", "Humidity") + " ${current.humidity}%"
+            HeroLine.RAIN -> today?.precipitationProbability?.let { tr("Lluvia $it% hoy", "Rain $it% today") }
+            HeroLine.SUN -> nextSunText(snapshot)
+        }
+    }
+}
+
+/** "Atardecer 19:34" o, si ya se puso, "Amanecer 6:12" del día siguiente. */
+private fun nextSunText(snapshot: WeatherSnapshot): String? {
+    val now = snapshot.nowAtPlace()
+    val events = snapshot.days.flatMap { day ->
+        listOfNotNull(
+            runCatching { java.time.LocalDateTime.parse(day.sunrise) }.getOrNull()?.let { true to it },
+            runCatching { java.time.LocalDateTime.parse(day.sunset) }.getOrNull()?.let { false to it },
+        )
+    }
+    val (sunrise, time) = events.filter { it.second.isAfter(now) }.minByOrNull { it.second } ?: return null
+    return (if (sunrise) tr("Amanecer", "Sunrise") else tr("Atardecer", "Sunset")) + " " + shortHour(time)
 }
 
 /** Alerta oficial: tocarla muestra u oculta la descripción completa. */
@@ -960,10 +999,11 @@ fun GlassCard(title: String?, content: @Composable () -> Unit) {
         shape = RoundedCornerShape(28.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(vertical = 16.dp)) {
+        val compact = Appearance.compact
+        Column(Modifier.padding(vertical = if (compact) 12.dp else 16.dp)) {
             if (title != null) {
                 CardLabel(title, Modifier.padding(horizontal = 20.dp))
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
             }
             content()
         }
@@ -983,7 +1023,9 @@ fun CardLabel(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
-    val days = snapshot.upcomingDays(14)
+    // Compacto: una semana en vez de dos.
+    val compact = Appearance.compact
+    val days = snapshot.upcomingDays(if (compact) 7 else 14)
     if (days.isEmpty()) return
     val weekMin = days.minOf { it.min }
     val weekMax = days.maxOf { it.max }
@@ -1003,7 +1045,7 @@ private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
                         // Hoy se destaca con un fondo suave, como en el clima del Pixel.
                         .background(if (isToday) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent)
                         .pressable { onDay(day) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = 12.dp, vertical = if (compact) 3.dp else 6.dp),
                 )
             }
         }

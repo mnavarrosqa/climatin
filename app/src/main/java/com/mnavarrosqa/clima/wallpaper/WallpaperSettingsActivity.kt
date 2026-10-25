@@ -208,7 +208,7 @@ fun WallpaperSettingsScreen(onBack: () -> Unit) {
                     FilterChip(
                         selected = settings.placeId == place.id,
                         onClick = { update(settings.copy(placeId = place.id)) },
-                        label = { Text(place.name) },
+                        label = { Text(place.shownName) },
                     )
                 }
             }

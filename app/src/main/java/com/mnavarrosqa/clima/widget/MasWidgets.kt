@@ -36,7 +36,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.compose.ui.graphics.toArgb
-import com.mnavarrosqa.clima.MainActivity
+import com.mnavarrosqa.clima.ClimaActivity
 import com.mnavarrosqa.clima.ui.skyColors
 import com.mnavarrosqa.clima.data.Moon
 import com.mnavarrosqa.clima.data.WeatherCodes

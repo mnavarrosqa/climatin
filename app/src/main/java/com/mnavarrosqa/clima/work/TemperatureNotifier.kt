@@ -18,7 +18,8 @@ import android.widget.RemoteViews
 import com.mnavarrosqa.clima.R
 import com.mnavarrosqa.clima.data.shortHour
 import com.mnavarrosqa.clima.work.Notify.refreshAction
-import com.mnavarrosqa.clima.MainActivity
+import com.mnavarrosqa.clima.work.LiveUpdate.requestLive
+import com.mnavarrosqa.clima.ClimaActivity
 import com.mnavarrosqa.clima.data.Insights
 import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.WeatherCodes
@@ -73,10 +74,21 @@ object TemperatureNotifier {
                 setTextViewText(HOUR_TEMP[i], hour.temperature.degrees())
             }
         }
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(IconCompat.createWithBitmap(temperatureIcon(current.temperature.degrees())))
-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomBigContentView(expanded)
+        // Android 16, si se eligió: chip con los grados (Live Update). Un Live Update no puede
+        // tener diseño propio, así que las próximas horas van como texto.
+        if (LiveUpdate.supported && NotifyPrefs.get(context).liveTemperature) {
+            val line = hours.mapIndexed { i, hour ->
+                (if (i == 0) tr("Ahora", "Now") else shortHour(hour.dateTime)) + " " + hour.temperature.degrees()
+            }.joinToString("   ")
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText((Insights.headline(snapshot) ?: details) + "\n" + line))
+                .requestLive(current.temperature.degrees())
+        } else {
+            builder.setStyle(NotificationCompat.DecoratedCustomViewStyle())
+                .setCustomBigContentView(expanded)
+        }
+        val notification = builder
             .refreshAction(context, NOTIFICATION_ID)
             .setContentTitle("${current.temperature.degrees()} ${WeatherCodes.description(current.code)}")
             .setContentText(Insights.headline(snapshot) ?: details)

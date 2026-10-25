@@ -9,7 +9,7 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import com.mnavarrosqa.clima.MainActivity
+import com.mnavarrosqa.clima.ClimaActivity
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.degrees
@@ -37,7 +37,7 @@ class ClimaTileService : TileService() {
     @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
-        val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = Intent(this, ClimaActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= 34) {
             startActivityAndCollapse(PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE))
         } else {

@@ -58,6 +58,22 @@ class WeatherRepository private constructor(private val context: Context) {
         savePlaces(current + place)
     }
 
+    /**
+     * Pone o saca el apodo de una ciudad. También cambia el nombre en el pronóstico guardado, así
+     * el pronóstico, los widgets y los avisos lo muestran sin esperar a la próxima actualización.
+     */
+    fun renamePlace(id: String, nickname: String?) {
+        val clean = nickname?.trim()?.takeIf { it.isNotEmpty() }
+        val list = places().map { if (it.id == id) it.copy(nickname = clean?.takeIf { name -> name != it.name }) else it }
+        val place = list.firstOrNull { it.id == id } ?: return
+        savePlaces(list)
+        cached(id)?.let { snapshot ->
+            prefs.edit()
+                .putString(snapshotKey(id), json.encodeToString(WeatherSnapshot.serializer(), snapshot.copy(place = place.shownName)))
+                .apply()
+        }
+    }
+
     fun removePlace(id: String) {
         savePlaces(places().filterNot { it.id == id })
         prefs.edit().remove(snapshotKey(id)).apply()
@@ -167,7 +183,7 @@ class WeatherRepository private constructor(private val context: Context) {
     }
 
     suspend fun refreshPlace(place: Place): Result<WeatherSnapshot> = runCatching {
-        fetch(place.id, place.name, place.latitude, place.longitude)
+        fetch(place.id, place.shownName, place.latitude, place.longitude)
     }
 
     private suspend fun fetch(placeId: String, name: String?, latitude: Double, longitude: Double): WeatherSnapshot {

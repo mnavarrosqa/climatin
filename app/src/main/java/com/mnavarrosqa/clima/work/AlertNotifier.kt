@@ -13,6 +13,9 @@ import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.WeatherAlert
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.work.Notify.muteAction
+import com.mnavarrosqa.clima.work.LiveUpdate.requestLive
+import android.app.Notification
+import java.time.OffsetDateTime
 
 /** Nivel de una alerta del SMN según su "severity" CAP. */
 enum class AlertLevel(private val es: String, private val en: String, val color: Int) {
@@ -65,6 +68,9 @@ object AlertNotifier {
         }.map { it.id }
         // Se guardan solo las vigentes para que la lista no crezca sin fin.
         repository.notifiedAlerts = (notified intersect currentIds) + shown
+        // Las que ya se avisaron y siguen en pantalla como Live Update: se actualiza la barra.
+        snapshot.alerts.filter { it.id in notified && isLive(context, it) && LiveUpdate.isShowing(context, it.id.hashCode()) }
+            .forEach { show(context, it, update = true) }
 
         // Las que estaban y ya no están, terminaron. Si ahora no se puede avisar, quedan pendientes.
         val active = snapshot.alerts.map { it.id + "|" + it.event }.toSet()
@@ -92,16 +98,24 @@ object AlertNotifier {
                     "Esto es una alerta de prueba: así se ven las alertas del SMN. Tocala para abrir el detalle en la app.",
                     "This is a test alert: this is how official alerts look. Tap it to open the details in the app.",
                 ),
-                onset = null,
-                expires = null,
+                onset = java.time.OffsetDateTime.now().minusHours(1).toString(),
+                expires = java.time.OffsetDateTime.now().plusHours(3).toString(),
             ),
         )
     }
 
+    private fun millis(iso: String?): Long? =
+        iso?.let { runCatching { OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
+
+    /** Naranjas y rojas con fin conocido van en vivo (Android 16) si está prendido en Ajustes. */
+    private fun isLive(context: Context, alert: WeatherAlert): Boolean =
+        LiveUpdate.supported && NotifyPrefs.get(context).liveAlerts && AlertLevel.of(alert) != AlertLevel.YELLOW &&
+            (millis(alert.expires) ?: 0L) > System.currentTimeMillis()
+
     @SuppressLint("MissingPermission")
-    private fun show(context: Context, alert: WeatherAlert) {
+    private fun show(context: Context, alert: WeatherAlert, update: Boolean = false) {
         val level = AlertLevel.of(alert)
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_alert)
             .setColor(level.color)
             .setContentTitle(tr("Alerta ${level.label}", "${level.label.replaceFirstChar { it.uppercase() }} alert") + ": ${alert.event}")
@@ -112,8 +126,31 @@ object AlertNotifier {
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setPriority(if (level == AlertLevel.RED) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
+            .setSilent(update)
             .muteAction(context, alert.id.hashCode())
-            .build()
+        val now = System.currentTimeMillis()
+        val expires = millis(alert.expires)
+        var notification = if (isLive(context, alert) && expires != null) {
+            // En vivo: cuánto falta para que termine, en el chip y en la cuenta regresiva.
+            builder.setWhen(expires)
+                .setShowWhen(true)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+                .setTimeoutAfter(expires - now + 10 * 60_000L)
+                .requestLive("⚠ " + alert.event.take(14))
+                .build()
+        } else {
+            builder.build()
+        }
+        if (isLive(context, alert) && expires != null && Build.VERSION.SDK_INT >= 36) {
+            val onset = (millis(alert.onset) ?: now).coerceAtMost(now)
+            val total = (expires - onset) / 60_000
+            val style = Notification.ProgressStyle()
+                .setStyledByProgress(false)
+                .addProgressSegment(LiveUpdate.segment(total, level.color))
+                .setProgress(((now - onset) / 60_000).toInt().coerceIn(0, total.toInt().coerceAtLeast(1)))
+            notification = LiveUpdate.withProgress(context, notification, style)
+        }
         NotificationManagerCompat.from(context).notify(alert.id.hashCode(), notification)
     }
 

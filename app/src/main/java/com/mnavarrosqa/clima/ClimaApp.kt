@@ -10,6 +10,13 @@ import com.mnavarrosqa.clima.work.SummaryNotifier
 import com.mnavarrosqa.clima.work.RainNotifier
 import com.mnavarrosqa.clima.work.TemperatureNotifier
 import com.mnavarrosqa.clima.work.WeatherWorker
+import com.mnavarrosqa.clima.work.SunNotifier
+import com.mnavarrosqa.clima.work.Outing
+import com.mnavarrosqa.clima.data.tr
+import android.content.Intent
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,8 +33,22 @@ class ClimaApp : Application() {
         AlertNotifier.createChannel(this)
         TemperatureNotifier.createChannel(this)
         Notify.createChannels(this)
+        SunNotifier.createChannel(this)
+        Outing.createChannel(this)
+        addOutingShortcut()
         WeatherWorker.schedule(this)
         SummaryNotifier.schedule(this, ExistingWorkPolicy.KEEP)
+    }
+
+    /** "Salgo ahora" al mantener apretado el ícono de la app. */
+    private fun addOutingShortcut() = runCatching {
+        val shortcut = ShortcutInfoCompat.Builder(this, "salgo")
+            .setShortLabel(getString(R.string.tile_outing_name))
+            .setLongLabel(tr("Salgo ahora: 2 horas de clima en vivo", "Heading out: 2 hours of live weather"))
+            .setIcon(IconCompat.createWithResource(this, R.drawable.ic_shortcut_outing))
+            .setIntent(Intent(this, ClimaActivity::class.java).setAction(Outing.ACTION_START))
+            .build()
+        ShortcutManagerCompat.pushDynamicShortcut(this, shortcut)
     }
 
     /**

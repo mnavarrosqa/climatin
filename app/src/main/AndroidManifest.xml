@@ -27,14 +27,63 @@
         android:theme="@style/Theme.Clima">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ClimaActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop" />
+
+        <!--
+          Íconos de la app (Ajustes → Apariencia → Ícono). Cada uno es un alias de ClimaActivity y
+          hay uno solo prendido. El de siempre conserva el nombre .MainActivity para que los accesos
+          de la pantalla de inicio de versiones anteriores sigan andando.
+        -->
+        <activity-alias
+            android:name=".MainActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher"
+            android:targetActivity=".ClimaActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconoNoche"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_noche"
+            android:roundIcon="@mipmap/ic_launcher_noche"
+            android:targetActivity=".ClimaActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconoAtardecer"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_atardecer"
+            android:roundIcon="@mipmap/ic_launcher_atardecer"
+            android:targetActivity=".ClimaActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconoClaro"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_claro"
+            android:roundIcon="@mipmap/ic_launcher_claro"
+            android:targetActivity=".ClimaActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <receiver
             android:name=".widget.ClimaWidgetReceiver"
@@ -200,6 +249,20 @@
             <meta-data
                 android:name="android.service.wallpaper"
                 android:resource="@xml/sky_wallpaper" />
+        </service>
+
+        <service
+            android:name=".tile.SalgoTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_outing"
+            android:label="@string/tile_outing_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
         </service>
 
         <service

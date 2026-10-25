@@ -28,6 +28,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         runCatching { AlertNotifier.check(applicationContext) }
         runCatching { ChangeNotifier.check(applicationContext) }
         runCatching { TemperatureNotifier.update(applicationContext) }
+        runCatching { SunNotifier.check(applicationContext) }
         return when {
             // Sin ubicación ni ciudades no tiene sentido reintentar.
             error == null || error is NoLocationException -> Result.success()

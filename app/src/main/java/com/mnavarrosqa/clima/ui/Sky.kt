@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import com.mnavarrosqa.clima.data.WeatherKind
+import com.mnavarrosqa.clima.ui.theme.Appearance
+import com.mnavarrosqa.clima.ui.theme.SkyMotion
 
 /** Colores del cielo (arriba, medio, horizonte) según el clima y si es de día. */
 fun skyColors(kind: WeatherKind, isDay: Boolean): List<Color> = when (kind) {
@@ -45,12 +47,22 @@ const val SKY_CYCLE_MS = 60_000
  */
 @Composable
 fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier) {
-    val clock by rememberInfiniteTransition(label = "cielo").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(SKY_CYCLE_MS, easing = LinearEasing), RepeatMode.Restart),
-        label = "reloj",
-    )
+    // Ajustes → Pantalla del clima: quieto no anima nada (se dibuja una vez); reducido va a un
+    // tercio de la velocidad, para quien se marea o prefiere algo más tranquilo.
+    val motion = Appearance.skyMotion
+    val clock: () -> Float = if (motion == SkyMotion.STILL) {
+        { 0.3f }
+    } else {
+        val cycle = if (motion == SkyMotion.REDUCED) SKY_CYCLE_MS * 3 else SKY_CYCLE_MS
+        val value = rememberInfiniteTransition(label = "cielo").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(cycle, easing = LinearEasing), RepeatMode.Restart),
+            label = "reloj",
+        )
+        val read: () -> Float = { value.value }
+        read
+    }
     Crossfade(targetState = kind to isDay, animationSpec = tween(1200), modifier = modifier, label = "clima") { (k, day) ->
         val colors = skyColors(k, day)
         val top by animateColorAsState(colors[0], tween(1200), label = "arriba")
@@ -64,7 +76,7 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
                     size.width,
                     size.height,
                     density,
-                    clock,
+                    clock(),
                     k,
                     day,
                     SkyGradient(top.toArgb(), middle.toArgb(), bottom.toArgb()),

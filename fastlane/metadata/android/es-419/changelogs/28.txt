@@ -1,0 +1,5 @@
+• En vivo (Android 16): lluvia con cuenta regresiva y "Para en 25 min", alertas naranjas y rojas hasta que terminan y temperatura como chip.
+• Salgo ahora: dos horas de clima en vivo.
+• Hora dorada antes del amanecer y del atardecer.
+• Color de acento, ícono de la app, tamaño de la temperatura y sus datos, pronóstico compacto y cielo quieto o reducido.
+• Apodos para las ciudades.

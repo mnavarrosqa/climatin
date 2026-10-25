@@ -168,6 +168,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             runCatching { RainNotifier.check(app) }
             runCatching { AlertNotifier.check(app) }
             runCatching { TemperatureNotifier.update(app) }
+            runCatching { com.mnavarrosqa.clima.work.SunNotifier.check(app) }
             _error.value = when (error) {
                 null -> null
                 is NoLocationException -> error.message
@@ -207,6 +208,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun movePlace(id: String, offset: Int) = repository.movePlace(id, offset)
+
+    fun renamePlace(id: String, nickname: String?) {
+        repository.renamePlace(id, nickname)
+        viewModelScope.launch { updateWeatherWidgets(getApplication<Application>()) }
+    }
 
     fun setUnits(units: UnitSettings) {
         repository.units = units

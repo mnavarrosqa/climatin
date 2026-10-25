@@ -13,4 +13,8 @@ data class Place(
     val detail: String?,
     val latitude: Double,
     val longitude: Double,
-)
+    /** Apodo que le puso la persona ("Casa", "Lo de mamá"); se muestra en vez del nombre. */
+    val nickname: String? = null,
+) {
+    val shownName: String get() = nickname ?: name
+}

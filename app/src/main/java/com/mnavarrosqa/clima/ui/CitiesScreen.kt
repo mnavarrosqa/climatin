@@ -102,6 +102,16 @@ import com.mnavarrosqa.clima.wallpaper.WallpaperSettingsActivity
 import com.mnavarrosqa.clima.widget.WidgetGalleryActivity
 import com.mnavarrosqa.clima.work.RainNotifier
 import kotlinx.coroutines.delay
+import com.mnavarrosqa.clima.data.Place
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -142,6 +152,18 @@ fun CitiesScreen(
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
+    // Ciudad a la que se le está poniendo apodo.
+    var renaming by remember { mutableStateOf<Place?>(null) }
+    renaming?.let { place ->
+        RenameDialog(
+            place,
+            onDismiss = { renaming = null },
+            onSave = { nickname ->
+                viewModel.renamePlace(place.id, nickname)
+                renaming = null
+            },
+        )
+    }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
@@ -247,7 +269,11 @@ fun CitiesScreen(
                 val elevation by animateDpAsState(if (isDragging) 12.dp else 0.dp, label = "levantar")
                 val dismiss = rememberSwipeToDismissBoxState(
                     confirmValueChange = { value ->
-                        if (value != SwipeToDismissBoxValue.Settled) {
+                        if (value == SwipeToDismissBoxValue.StartToEnd) {
+                            // Deslizar hacia la derecha pone un apodo; la tarjeta vuelve a su lugar.
+                            renaming = viewModel.places.value.firstOrNull { it.id == id }
+                            false
+                        } else if (value != SwipeToDismissBoxValue.Settled) {
                             // El estado se recuerda entre composiciones: se lee la lista actual.
                             val current = viewModel.places.value
                             val index = current.indexOfFirst { it.id == id }
@@ -255,7 +281,7 @@ fun CitiesScreen(
                             viewModel.removePlace(id)
                             scope.launch {
                                 val result = snackbar.showSnackbar(
-                                    tr("Quitaste ${place.name}", "Removed ${place.name}"),
+                                    tr("Quitaste ${place.shownName}", "Removed ${place.shownName}"),
                                     actionLabel = tr("Deshacer", "Undo"),
                                     duration = SnackbarDuration.Short,
                                 )
@@ -296,22 +322,26 @@ fun CitiesScreen(
                             Modifier
                                 .fillMaxSize()
                                 .clip(RoundedCornerShape(24.dp))
-                                .background(MaterialTheme.colorScheme.errorContainer)
+                                .background(if (toStart) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer)
                                 .padding(horizontal = 24.dp),
                             contentAlignment = if (toStart) Alignment.CenterEnd else Alignment.CenterStart,
                         ) {
                             Icon(
-                                Icons.Rounded.Delete,
+                                if (toStart) Icons.Rounded.Delete else Icons.Rounded.Edit,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                tint = if (toStart) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         }
                     },
                 ) {
                     CityCard(
-                        name = place.name,
+                        name = place.shownName,
                         // La hora del lugar, como en el Clima de Apple; si no hay datos, la provincia o país.
-                        subtitle = snapshot?.let { shortHour(it.nowAtPlace()) } ?: place.detail,
+                        // Con apodo, también el nombre de verdad.
+                        subtitle = listOfNotNull(
+                            place.name.takeIf { place.nickname != null },
+                            snapshot?.let { shortHour(it.nowAtPlace()) } ?: place.detail,
+                        ).joinToString(" · ").ifEmpty { null },
                         snapshot = snapshot,
                         onClick = { onOpenPlace(id) },
                         modifier = Modifier
@@ -335,6 +365,7 @@ fun CitiesScreen(
                                 customActions = listOf(
                                     CustomAccessibilityAction(tr("Subir", "Move up")) { viewModel.movePlace(id, -1); true },
                                     CustomAccessibilityAction(tr("Bajar", "Move down")) { viewModel.movePlace(id, 1); true },
+                                    CustomAccessibilityAction(tr("Cambiar nombre", "Rename")) { renaming = place; true },
                                     CustomAccessibilityAction(tr("Quitar", "Remove")) { viewModel.removePlace(id); true },
                                 )
                             },
@@ -345,8 +376,8 @@ fun CitiesScreen(
             item {
                 Hint(
                     tr(
-                        "Tocá una ciudad para ver su pronóstico. Deslizala para quitarla; mantenela apretada para moverla.",
-                        "Tap a city to see its forecast. Swipe it to remove it; press and hold to move it.",
+                        "Tocá una ciudad para ver su pronóstico. Deslizala a la izquierda para quitarla o a la derecha para ponerle un apodo; mantenela apretada para moverla.",
+                        "Tap a city to see its forecast. Swipe left to remove it or right to give it a nickname; press and hold to move it.",
                     ),
                 )
             }
@@ -389,3 +420,40 @@ private fun Group(modifier: Modifier = Modifier, content: @Composable () -> Unit
 
 @Composable
 private fun groupColors() = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+
+/** Apodo para una ciudad guardada: "Casa", "Trabajo", "Lo de mamá". */
+@Composable
+private fun RenameDialog(place: Place, onDismiss: () -> Unit, onSave: (String?) -> Unit) {
+    var text by rememberSaveable(place.id) { mutableStateOf(place.nickname.orEmpty()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr("Apodo para ${place.name}", "Nickname for ${place.name}")) },
+        text = {
+            Column {
+                Text(
+                    tr("Se ve en el pronóstico, los widgets y los avisos.", "Shown in the forecast, widgets and alerts."),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(24) },
+                    placeholder = { Text(tr("Casa, Trabajo…", "Home, Work…")) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onSave(text) }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text(tr("Guardar", "Save")) } },
+        dismissButton = {
+            Row {
+                if (place.nickname != null) {
+                    TextButton(onClick = { onSave(null) }) { Text(tr("Sacar apodo", "Remove nickname")) }
+                }
+                TextButton(onClick = onDismiss) { Text(tr("Cancelar", "Cancel")) }
+            }
+        },
+    )
+}

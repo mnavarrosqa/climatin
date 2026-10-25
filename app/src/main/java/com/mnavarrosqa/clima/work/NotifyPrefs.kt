@@ -28,6 +28,14 @@ data class NotifySettings(
     val quietEnd: Int = 7,
     /** Hasta cuándo están pausados los avisos ("No avisar más hoy"), en milisegundos. */
     val mutedUntil: Long = 0L,
+    /** Android 16: la lluvia que viene, como Live Update con cuenta regresiva en la barra. */
+    val liveRain: Boolean = true,
+    /** Android 16: alertas naranjas y rojas vigentes, en vivo hasta que terminan. */
+    val liveAlerts: Boolean = true,
+    /** Aviso media hora antes del amanecer y del atardecer, con la hora dorada. */
+    val goldenHour: Boolean = false,
+    /** Android 16: la temperatura de la barra de estado como chip (Live Update). */
+    val liveTemperature: Boolean = false,
 )
 
 /**
@@ -65,6 +73,10 @@ object NotifyPrefs {
             quietStart = p.getInt("silencio_desde", d.quietStart),
             quietEnd = p.getInt("silencio_hasta", d.quietEnd),
             mutedUntil = p.getLong("pausa_hasta", d.mutedUntil),
+            liveRain = p.getBoolean("vivo_lluvia", d.liveRain),
+            liveAlerts = p.getBoolean("vivo_alertas", d.liveAlerts),
+            goldenHour = p.getBoolean("hora_dorada", d.goldenHour),
+            liveTemperature = p.getBoolean("vivo_temperatura", d.liveTemperature),
         )
         loaded = true
     }
@@ -86,6 +98,10 @@ object NotifyPrefs {
             .putInt("silencio_desde", value.quietStart)
             .putInt("silencio_hasta", value.quietEnd)
             .putLong("pausa_hasta", value.mutedUntil)
+            .putBoolean("vivo_lluvia", value.liveRain)
+            .putBoolean("vivo_alertas", value.liveAlerts)
+            .putBoolean("hora_dorada", value.goldenHour)
+            .putBoolean("vivo_temperatura", value.liveTemperature)
             .apply()
     }
 
@@ -121,6 +137,14 @@ object NotifyPrefs {
     fun setUntil(context: Context, key: String, time: LocalDateTime) {
         val millis = time.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putLong("hasta_$key", millis).apply()
+    }
+
+    /** Momentos guardados de los avisos en vivo (cuándo empezó la barra, cuándo termina la salida). */
+    fun time(context: Context, key: String): Long =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong("momento_$key", 0L)
+
+    fun setTime(context: Context, key: String, millis: Long) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putLong("momento_$key", millis).apply()
     }
 
     /** Alertas del SMN vigentes la última vez, "id|evento", para avisar cuando terminan. */

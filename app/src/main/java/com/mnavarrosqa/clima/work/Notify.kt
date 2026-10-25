@@ -14,7 +14,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
-import com.mnavarrosqa.clima.MainActivity
+import com.mnavarrosqa.clima.ClimaActivity
 import com.mnavarrosqa.clima.R
 
 /** Lo que comparten todos los avisos: canales, horario de silencio, pausa y botones. */
@@ -56,7 +56,7 @@ object Notify {
 
     /** Abre la app en una ciudad; opcionalmente en el mapa de lluvia o en una alerta. */
     fun open(context: Context, requestCode: Int, placeId: String? = null, radar: Boolean = false, alert: String? = null): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java)
+        val intent = Intent(context, ClimaActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         placeId?.let { intent.putExtra("place", it) }
         if (radar) intent.putExtra("radar", true)
@@ -98,6 +98,7 @@ object Notify {
                 NotificationManagerCompat.from(context).cancel(id)
             }
             ACTION_REFRESH -> refreshNow(context)
+            Outing.ACTION_STOP -> Outing.stop(context)
         }
     }
 }

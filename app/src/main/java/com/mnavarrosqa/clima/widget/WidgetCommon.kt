@@ -38,7 +38,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import com.mnavarrosqa.clima.MainActivity
+import com.mnavarrosqa.clima.ClimaActivity
 import com.mnavarrosqa.clima.tile.ClimaTileService
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherKind
@@ -68,7 +68,7 @@ fun ClimaGlanceTheme(content: @Composable () -> Unit) {
 fun widgetTapAction(placeId: String = widgetPlaceId()): androidx.glance.action.Action =
     when (WidgetTap.from(currentState(WidgetOptionKeys.TAP))) {
         WidgetTap.APP -> openPlace(placeId)
-        WidgetTap.RADAR -> actionStartActivity<MainActivity>(actionParametersOf(DeepLink.PLACE to placeId, DeepLink.RADAR to true))
+        WidgetTap.RADAR -> actionStartActivity<ClimaActivity>(actionParametersOf(DeepLink.PLACE to placeId, DeepLink.RADAR to true))
         WidgetTap.NEXT -> actionRunCallback<NextCityAction>()
         WidgetTap.REFRESH -> actionRunCallback<RefreshAction>()
     }
@@ -234,11 +234,11 @@ object DeepLink {
 }
 
 /** Acción que abre la app en una ciudad. */
-fun openPlace(placeId: String) = actionStartActivity<MainActivity>(actionParametersOf(DeepLink.PLACE to placeId))
+fun openPlace(placeId: String) = actionStartActivity<ClimaActivity>(actionParametersOf(DeepLink.PLACE to placeId))
 
 /** Acción que abre el detalle de un día en la app. */
 fun openDay(placeId: String, date: String) =
-    actionStartActivity<MainActivity>(actionParametersOf(DeepLink.PLACE to placeId, DeepLink.DAY to date))
+    actionStartActivity<ClimaActivity>(actionParametersOf(DeepLink.PLACE to placeId, DeepLink.DAY to date))
 
 /** Ciudad de este widget (si se borró, vuelve a "donde estoy"). */
 @Composable
