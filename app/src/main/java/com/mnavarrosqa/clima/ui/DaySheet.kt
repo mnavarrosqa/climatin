@@ -17,6 +17,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -75,7 +76,7 @@ fun DaySheet(snapshot: WeatherSnapshot, day: Day, onDismiss: () -> Unit) {
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
                 Spacer(Modifier.height(8.dp))
-                HourlyChart(hours, Modifier.padding(horizontal = 8.dp))
+                HourlyChart(hours, Modifier.padding(horizontal = 8.dp), alerts = remember(snapshot) { alertSpans(snapshot) })
             }
 
             Spacer(Modifier.height(16.dp))

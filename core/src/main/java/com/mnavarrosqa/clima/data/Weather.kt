@@ -24,7 +24,15 @@ data class WeatherSnapshot(
     val alerts: List<WeatherAlert> = emptyList(),
     /** Zona horaria IANA del lugar; null en pronósticos guardados por versiones anteriores. */
     val timezone: String? = null,
+    /** Horas que ya pasaron desde ayer a las 0 (solo temperatura), para comparar con ayer. */
+    val pastHours: List<Hour> = emptyList(),
 ) {
+    /** Temperatura de ayer a la misma hora de cada una de [hours] (null si no se sabe). */
+    fun yesterdayAt(hours: List<Hour>): List<Double?> {
+        val known = (pastHours + this.hours).associate { it.time to it.temperature }
+        return hours.map { known[it.dateTime.minusDays(1).toString()] }
+    }
+
     /**
      * Hora actual en el lugar del pronóstico, no en el teléfono. Con la zona IANA sigue bien
      * aunque cambie el horario de verano después de bajar el pronóstico; si no, el desfase fijo.

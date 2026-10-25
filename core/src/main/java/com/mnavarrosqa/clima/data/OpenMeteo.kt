@@ -98,10 +98,12 @@ object OpenMeteo {
         val c = forecast.current
         val currentHour = LocalDateTime.parse(c.time).truncatedTo(ChronoUnit.HOURS)
         val h = forecast.hourly
-        val hours = h.time.indices.mapNotNull { i ->
+        // Las horas desde ayer a las 0: las que ya pasaron sirven para la línea de "ayer" del gráfico.
+        val since = currentHour.toLocalDate().minusDays(1).atStartOfDay()
+        val allHours = h.time.indices.mapNotNull { i ->
             val temp = h.temperature.getOrNull(i) ?: return@mapNotNull null
             val time = h.time[i]
-            if (LocalDateTime.parse(time).isBefore(currentHour)) return@mapNotNull null
+            if (LocalDateTime.parse(time).isBefore(since)) return@mapNotNull null
             Hour(
                 time = time,
                 temperature = temp,
@@ -113,6 +115,7 @@ object OpenMeteo {
                 precipitation = h.precipitation.getOrNull(i),
             )
         }
+        val (pastHours, hours) = allHours.partition { it.dateTime.isBefore(currentHour) }
         val d = forecast.daily
         val days = d.time.indices.mapNotNull { i ->
             Day(
@@ -156,6 +159,7 @@ object OpenMeteo {
                 windDirection = c.windDirection,
             ),
             hours = hours,
+            pastHours = pastHours.map { Hour(it.time, it.temperature, it.code, null, it.isDay) },
             days = days,
             minutely = minutely,
             airQuality = airQuality,

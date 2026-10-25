@@ -1,0 +1,1 @@
+Nuevo: tarjeta "Próxima hora" con la lluvia cada 15 minutos, barras de lluvia y línea de ayer en el gráfico por hora, franja de las alertas del SMN, sensación térmica y punto de rocío, y cada detalle explica qué significa al tocarlo.

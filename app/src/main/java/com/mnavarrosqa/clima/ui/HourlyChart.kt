@@ -54,6 +54,8 @@ import androidx.compose.ui.semantics.contentDescription
 import java.time.LocalDateTime
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -74,14 +76,24 @@ private val SLOT = 60.dp
 
 /** Curva de temperatura por hora con íconos y probabilidad de lluvia, desplazable de costado. */
 @Composable
-fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: List<SunEvent> = emptyList()) {
+fun HourlyChart(
+    hours: List<Hour>,
+    modifier: Modifier = Modifier,
+    sunEvents: List<SunEvent> = emptyList(),
+    /** Temperatura de ayer a la misma hora, alineada con [hours]: línea punteada para comparar. */
+    yesterday: List<Double?> = emptyList(),
+    /** Alertas vigentes en estas horas: una franja de su color arriba del gráfico. */
+    alerts: List<AlertSpan> = emptyList(),
+) {
     if (hours.isEmpty()) return
     val colors = MaterialTheme.colorScheme
     // Una entrada de caché por hora: si no, al dibujar la curva se vuelven a medir los 24 textos en cada cuadro.
     val measurer = rememberTextMeasurer(cacheSize = 32)
     val labelStyle = MaterialTheme.typography.labelLarge.copy(color = colors.onSurface)
-    val min = hours.minOf { it.temperature }
-    val max = hours.maxOf { it.temperature }
+    // La escala incluye la línea de ayer, para que no se salga del gráfico.
+    val ghost = yesterday.takeIf { list -> list.size == hours.size && list.count { it != null } >= 2 }
+    val min = minOf(hours.minOf { it.temperature }, ghost?.filterNotNull()?.minOrNull() ?: Double.MAX_VALUE)
+    val max = maxOf(hours.maxOf { it.temperature }, ghost?.filterNotNull()?.maxOrNull() ?: -Double.MAX_VALUE)
     val span = (max - min).coerceAtLeast(1.0)
     // La curva se dibuja de izquierda a derecha al aparecer y cuando llegan datos nuevos.
     val reveal = remember { Animatable(0f) }
@@ -111,6 +123,8 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
         hours.map { TempColors.forTheme(TempColors.of(it.temperature), dark) }.let { if (it.size < 2) it + it else it }
     }
     val highlight = colors.primary.copy(alpha = 0.12f)
+    val ghostColor = colors.onSurfaceVariant.copy(alpha = 0.55f)
+    val rainColor = Color(0xFF4A90E2).copy(alpha = 0.45f)
 
     Column(modifier) {
     Column(
@@ -155,6 +169,38 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
                     val lineBrush = Brush.horizontalGradient(lineColors, startX = points.first().x, endX = points.last().x)
                     val stroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                     val texts = hours.map { measurer.measure(it.temperature.degrees(), labelStyle) }
+                    // Ayer: la misma curva suave, punteada, solo donde se sabe.
+                    val ghostPath = ghost?.let { values ->
+                        Path().apply {
+                            var started = false
+                            var prev: Offset? = null
+                            values.forEachIndexed { i, t ->
+                                if (t == null) {
+                                    started = false
+                                    return@forEachIndexed
+                                }
+                                val p = Offset(slot * i + slot / 2, bottom - ((t - min) / span).toFloat() * (bottom - top))
+                                val last = prev
+                                if (!started || last == null) moveTo(p.x, p.y) else {
+                                    val midX = (last.x + p.x) / 2
+                                    cubicTo(midX, last.y, midX, p.y, p.x, p.y)
+                                }
+                                started = true
+                                prev = p
+                            }
+                        }
+                    }
+                    val ghostStroke = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 5.dp.toPx())))
+                    // Lluvia: barras desde abajo, más altas cuantos más milímetros (5 mm llena).
+                    val rainBars = hours.indices.map { i -> (rainAfter(hours, i).second ?: 0.0).coerceIn(0.0, 5.0).toFloat() / 5f }
+                    val rainMax = 22.dp.toPx()
+                    val barWidth = slot * 0.36f
+                    // Franjas de alerta: qué columnas cubre cada una.
+                    val alertCols = hours.map { h ->
+                        val start = h.dateTime
+                        alerts.firstOrNull { it.start.isBefore(start.plusHours(1)) && it.end.isAfter(start) }?.color
+                    }
+                    val band = 4.dp.toPx()
                     val corner = CornerRadius(16.dp.toPx())
                     val gap = 4.dp.toPx()
                     val labelGap = 6.dp.toPx()
@@ -174,8 +220,22 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
                                 highlight,
                             )
                         }
+                        alertCols.forEachIndexed { i, color ->
+                            if (color != null) drawRect(color, topLeft = Offset(slot * i, 0f), size = Size(slot, band))
+                        }
+                        rainBars.forEachIndexed { i, fraction ->
+                            if (fraction <= 0f) return@forEachIndexed
+                            val h = rainMax * fraction.coerceAtLeast(0.08f)
+                            drawRoundRect(
+                                rainColor,
+                                topLeft = Offset(slot * i + (slot - barWidth) / 2, size.height - h),
+                                size = Size(barWidth, h),
+                                cornerRadius = CornerRadius(barWidth / 2),
+                            )
+                        }
                         val visibleWidth = size.width * reveal.value
                         clipRect(right = visibleWidth) {
+                            ghostPath?.let { drawPath(it, ghostColor, style = ghostStroke) }
                             drawPath(fill, fillBrush)
                             // La curva cambia de color con la temperatura, como en Mercury Weather.
                             drawPath(line, lineBrush, style = stroke)
@@ -245,6 +305,14 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
             }
         }
     }
+    if (ghost != null) {
+        Text(
+            tr("Punteada: ayer a la misma hora", "Dotted: yesterday at the same time"),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, top = 2.dp),
+        )
+    }
     AnimatedVisibility(
         visible = selected != null,
         enter = fadeIn() + expandVertically(),
@@ -254,6 +322,9 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
     }
     }
 }
+
+/** Una alerta del SMN en la hora del lugar, con el color de su nivel. */
+data class AlertSpan(val start: java.time.LocalDateTime, val end: java.time.LocalDateTime, val color: Color)
 
 /** Probabilidad y milímetros de lluvia de la hora que empieza en [index] (vienen en la siguiente). */
 private fun rainAfter(hours: List<Hour>, index: Int): Pair<Int?, Double?> {

@@ -682,6 +682,9 @@ fun ForecastContent(
                 ) { Hero(snapshot, isCurrentLocation) }
             }
             items(snapshot.alerts.distinctBy { it.id }.filterNot { it.isExpired() }, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) } }
+            nextHourRain(snapshot)?.let { values ->
+                item(key = "proxima-hora") { Box(Modifier.reveal(1, shownAt)) { NextHourRainCard(snapshot, values) } }
+            }
             // Las alertas ya tienen su tarjeta: la frase busca lo siguiente más útil.
             Insights.headline(snapshot.copy(alerts = emptyList()))?.let { text ->
                 item { Box(Modifier.reveal(1, shownAt)) { InsightChip(text) } }
@@ -696,7 +699,10 @@ fun ForecastContent(
                     when (which) {
                         ForecastCard.HOURS -> GlassCard(tr("Próximas horas", "Next hours")) {
                             val sunEvents = remember(snapshot) { sunEventsOf(snapshot.days).filter { it.time.isAfter(snapshot.nowAtPlace()) } }
-                            HourlyChart(snapshot.upcomingHours(24), sunEvents = sunEvents)
+                            val hours = remember(snapshot) { snapshot.upcomingHours(24) }
+                            val yesterday = remember(snapshot) { snapshot.yesterdayAt(hours) }
+                            val alertSpans = remember(snapshot) { alertSpans(snapshot) }
+                            HourlyChart(hours, sunEvents = sunEvents, yesterday = yesterday, alerts = alertSpans)
                         }
                         ForecastCard.DAYS -> DailyCard(snapshot, onDay = onDay)
                         ForecastCard.RADAR -> RadarCard(onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })
@@ -990,6 +996,23 @@ private fun nextSunText(snapshot: WeatherSnapshot): String? {
     }
     val (sunrise, time) = events.filter { it.second.isAfter(now) }.minByOrNull { it.second } ?: return null
     return (if (sunrise) tr("Amanecer", "Sunrise") else tr("Atardecer", "Sunset")) + " " + shortHour(time)
+}
+
+/** Las alertas vigentes o por venir, en la hora del lugar y con el color de su nivel. */
+fun alertSpans(snapshot: WeatherSnapshot): List<AlertSpan> {
+    val zone = snapshot.timezone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
+        ?: java.time.ZoneOffset.ofTotalSeconds(snapshot.utcOffsetSeconds)
+    fun local(text: String?) = text?.let { runCatching { java.time.OffsetDateTime.parse(it).atZoneSameInstant(zone).toLocalDateTime() }.getOrNull() }
+    return snapshot.alerts.filterNot { it.isExpired() }.mapNotNull { alert ->
+        val end = local(alert.expires) ?: return@mapNotNull null
+        val start = local(alert.onset) ?: snapshot.nowAtPlace()
+        val color = when {
+            alert.severity.equals("Extreme", true) -> Color(0xFFD32F2F)
+            alert.severity.equals("Severe", true) -> Color(0xFFF57C00)
+            else -> Color(0xFFF2B705)
+        }
+        AlertSpan(start, end, color)
+    }
 }
 
 /** Alerta oficial: tocarla muestra u oculta la descripción completa. */

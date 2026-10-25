@@ -90,6 +90,16 @@ class WeatherSnapshotTest {
     }
 
     @Test
+    fun temperaturaDeAyerALaMismaHora() {
+        val hour = now.truncatedTo(ChronoUnit.HOURS)
+        val past = (1..24).map { i -> Hour(hour.minusHours(i.toLong()).toString(), 10.0 + i, 0, 0, true) }
+        val hours = (0..3).map { i -> Hour(hour.plusHours(i.toLong()).toString(), 20.0, 0, 0, true) }
+        val snapshot = snapshot(hours = hours).copy(pastHours = past)
+        // Ayer a esta hora fue hace 24 horas (10 + 24); una hora después, hace 23 (10 + 23).
+        assertEquals(listOf(34.0, 33.0, 32.0, 31.0), snapshot.yesterdayAt(hours))
+    }
+
+    @Test
     fun recortaLasHorasPasadas() {
         val hour = now.truncatedTo(ChronoUnit.HOURS)
         val hours = (-3..5).map { i -> Hour(hour.plusHours(i.toLong()).toString(), i.toDouble(), 0, 0, true) }

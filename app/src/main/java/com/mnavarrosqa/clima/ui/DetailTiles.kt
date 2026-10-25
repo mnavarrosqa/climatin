@@ -25,6 +25,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import com.mnavarrosqa.clima.data.degrees
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -62,7 +70,18 @@ private class Detail(
     val note: String? = null,
     val wide: Boolean = false,
     val visual: (@Composable () -> Unit)? = null,
-)
+) {
+    /** Qué significa el dato y qué hacer con él; tocar la tarjeta lo muestra. */
+    var info: String? = null
+}
+
+/** Punto de rocío (fórmula de Magnus): a partir de 16° el aire se siente pesado. */
+private fun dewPoint(temperature: Double, humidity: Int): Double {
+    val a = 17.62
+    val b = 243.12
+    val alpha = kotlin.math.ln(humidity.coerceIn(1, 100) / 100.0) + a * temperature / (b + temperature)
+    return b * alpha / (a - alpha)
+}
 
 /** Escala de colores del UV (0 a 11+), igual a la que usa la OMS. */
 private val UvColors = listOf(Color(0xFF4CAF50), Color(0xFFFFEB3B), Color(0xFFFF9800), Color(0xFFF44336), Color(0xFF9C27B0))
@@ -84,13 +103,25 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
                     timeOf(it.sunrise) + " – " + timeOf(it.sunset),
                     daylightText(it.sunrise, it.sunset),
                     wide = true,
-                ) { SunArc(it.sunrise, it.sunset, snapshot.nowAtPlace()) },
+                ) { SunArc(it.sunrise, it.sunset, snapshot.nowAtPlace()) }.apply {
+                    info = tr(
+                        "La luz más linda es la hora dorada: la primera hora después del amanecer y la última antes del atardecer. Si querés un aviso, prendé \"Hora dorada\" en Ajustes → Notificaciones.",
+                        "The nicest light is the golden hour: the first hour after sunrise and the last before sunset. Turn on \"Golden hour\" in Settings → Notifications for a heads-up.",
+                    )
+                },
             )
         }
         (current.uvIndex ?: today?.uvIndex)?.let {
             add(
                 Detail(tr("Índice UV", "UV index"), "${it.roundToInt()}", WeatherCodes.uvLabel(it).replaceFirstChar { c -> c.uppercase() }) {
                     ScaleBar((it / 11).toFloat(), UvColors)
+                }.apply {
+                    info = tr(
+                        "0–2 bajo: no hace falta cuidarse. 3–5 moderado: anteojos y protector. 6–7 alto: protector, sombrero y sombra al mediodía. 8–10 muy alto: evitá el sol de 11 a 16. 11 o más extremo." +
+                            (today?.uvIndex?.let { max -> " Hoy llega a ${max.roundToInt()}." } ?: ""),
+                        "0–2 low: no protection needed. 3–5 moderate: sunglasses and sunscreen. 6–7 high: sunscreen, hat and shade at midday. 8–10 very high: avoid the sun from 11 to 4. 11+ extreme." +
+                            (today?.uvIndex?.let { max -> " Today it reaches ${max.roundToInt()}." } ?: ""),
+                    )
                 },
             )
         }
@@ -100,25 +131,98 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
                 windText(current.windSpeed),
                 current.windDirection?.let { tr("Del", "From") + " " + windFrom(it) },
                 visual = current.windDirection?.let { direction -> @Composable { WindCompass(direction.toFloat()) } },
-            ),
+            ).apply {
+                info = tr(
+                    "Viento medio a 10 metros del suelo; las ráfagas pueden ser bastante más fuertes. La dirección es de dónde viene." +
+                        (today?.windMax?.let { max -> " Hoy, como mucho ${windText(max)}." } ?: ""),
+                    "Average wind 10 meters above ground; gusts can be much stronger. The direction is where it comes from." +
+                        (today?.windMax?.let { max -> " Today, up to ${windText(max)}." } ?: ""),
+                )
+            },
         )
-        add(Detail(tr("Humedad", "Humidity"), "${current.humidity}%") { RingGauge(current.humidity / 100f) })
+        // Sensación térmica: por qué no coincide con la temperatura.
+        add(
+            Detail(
+                tr("Sensación", "Feels like"),
+                current.feelsLike.degrees(),
+                when {
+                    current.feelsLike < current.temperature - 1.5 -> tr("Más fresco por el viento", "Cooler because of the wind")
+                    current.feelsLike > current.temperature + 1.5 -> tr("Más calor por la humedad", "Warmer because of humidity")
+                    else -> tr("Como la temperatura", "Same as the temperature")
+                },
+            ).apply {
+                info = tr(
+                    "Cómo se siente en el cuerpo: con viento y frío se siente más fresco (el viento se lleva el calor de la piel); con calor y humedad, más calor (cuesta transpirar).",
+                    "How it feels on your body: wind makes cold feel colder (it carries heat away from your skin); humidity makes heat feel hotter (sweat evaporates less).",
+                )
+            },
+        )
+        val dew = dewPoint(current.temperature, current.humidity)
+        add(
+            Detail(tr("Humedad", "Humidity"), "${current.humidity}%", tr("Punto de rocío", "Dew point") + " ${dew.degrees()}") {
+                RingGauge(current.humidity / 100f)
+            }.apply {
+                info = tr(
+                    "El punto de rocío dice mejor que la humedad cuánto se siente el aire: hasta 10° seco, de 10° a 16° agradable, de 16° a 20° pesado y desde 20° muy húmedo. Ahora: ${dew.degrees()}.",
+                    "Dew point tells better than humidity how the air feels: up to 10° dry, 10–16° comfortable, 16–20° muggy and above 20° oppressive. Now: ${dew.degrees()}.",
+                )
+            },
+        )
         snapshot.airQuality?.europeanAqi?.let {
             add(
                 Detail(tr("Calidad del aire", "Air quality"), WeatherCodes.airQualityLabel(it), tr("Índice", "Index") + " $it") {
                     ScaleBar(it / 100f, AqiColors)
+                }.apply {
+                    val pm = snapshot.airQuality?.pm25?.let { v -> " PM2,5: ${v.roundToInt()} µg/m³." } ?: ""
+                    info = tr(
+                        "Índice europeo: hasta 20 bueno, 20–40 aceptable, 40–60 moderado (las personas sensibles pueden notarlo), 60–80 malo (mejor evitar ejercicio fuerte afuera), 80–100 muy malo y más de 100 extremadamente malo.$pm",
+                        "European index: up to 20 good, 20–40 fair, 40–60 moderate (sensitive people may notice), 60–80 poor (avoid hard exercise outdoors), 80–100 very poor and above 100 extremely poor.$pm",
+                    )
                 },
             )
         }
         val rain = today?.precipitationProbability ?: 0
-        add(Detail(tr("Lluvia hoy", "Rain today"), "$rain%", today?.precipitationSum?.takeIf { it > 0 }?.let { "${"%.1f".format(it)} mm" }) {
-            RingGauge(rain / 100f, MaterialTheme.colorScheme.tertiary)
-        })
-        add(Detail(tr("Luna", "Moon"), Moon.phaseName(date)) { MoonPhase(Moon.age(date).toFloat(), southern = snapshot.latitude < 0) })
-        current.pressure?.let { add(Detail(tr("Presión", "Pressure"), pressureText(it))) }
+        add(
+            Detail(tr("Lluvia hoy", "Rain today"), "$rain%", today?.precipitationSum?.takeIf { it > 0 }?.let { "${"%.1f".format(it)} mm" }) {
+                RingGauge(rain / 100f, MaterialTheme.colorScheme.tertiary)
+            }.apply {
+                info = tr(
+                    "La probabilidad más alta de lluvia en el día y cuánto llovería en total. 1 mm es un litro por metro cuadrado: menos de 2 mm es poco, más de 10 mm es bastante y más de 30 mm, mucho.",
+                    "The highest chance of rain during the day and the total amount. 1 mm is one liter per square meter: under 2 mm is little, over 10 mm is a lot and over 30 mm is heavy.",
+                )
+            },
+        )
+        add(
+            Detail(tr("Luna", "Moon"), Moon.phaseName(date)) { MoonPhase(Moon.age(date).toFloat(), southern = snapshot.latitude < 0) }.apply {
+                val age = Moon.age(date)
+                val toFull = (((0.5 - age).let { if (it < 0) it + 1 else it }) * 29.53).roundToInt()
+                val toNew = (((1.0 - age) % 1.0) * 29.53).roundToInt()
+                info = tr(
+                    "Luna llena en $toFull días y luna nueva en $toNew. Desde el hemisferio sur se ve dada vuelta: la parte iluminada mientras crece queda a la izquierda.",
+                    "Full moon in $toFull days and new moon in $toNew. From the southern hemisphere it looks upside down: the lit part while waxing is on the left.",
+                )
+            },
+        )
+        current.pressure?.let {
+            add(
+                Detail(tr("Presión", "Pressure"), pressureText(it)).apply {
+                    info = tr(
+                        "Presión del aire en el lugar. Lo normal al nivel del mar ronda los 1013 hPa; si baja rápido suele venir mal tiempo, y si sube, se estabiliza. En lugares altos es siempre más baja.",
+                        "Air pressure at the location. Around 1013 hPa is normal at sea level; a quick drop often means bad weather and a rise means it's settling. It's always lower at altitude.",
+                    )
+                },
+            )
+        }
         current.visibility?.let {
             val km = it / 1000
-            add(Detail(tr("Visibilidad", "Visibility"), if (km >= 10) "+10 km" else "${km.roundToInt()} km"))
+            add(
+                Detail(tr("Visibilidad", "Visibility"), if (km >= 10) "+10 km" else "${km.roundToInt()} km").apply {
+                    info = tr(
+                        "Hasta dónde se ve. Con menos de 1 km hay niebla: manejá con luces bajas y más distancia.",
+                        "How far you can see. Under 1 km there's fog: drive with low beams and keep more distance.",
+                    )
+                },
+            )
         }
     }
     // Los anchos van solos; los demás de a dos, con la misma altura por fila.
@@ -153,13 +257,33 @@ private fun daylightText(sunrise: String, sunset: String): String {
 
 @Composable
 private fun DetailTile(detail: Detail, modifier: Modifier) {
+    var open by remember { mutableStateOf(false) }
+    val info = detail.info
+    if (open && info != null) {
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text(detail.label) },
+            text = { Text(info) },
+            confirmButton = { TextButton(onClick = { open = false }) { Text(tr("Entendido", "Got it")) } },
+        )
+    }
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(24.dp),
-        modifier = modifier.clearAndSetSemantics {
-            contentDescription = listOfNotNull(detail.label, detail.value, detail.note).joinToString(", ")
-        },
+        modifier = modifier
+            .clip(RoundedCornerShape(24.dp))
+            .then(if (info != null) Modifier.clickable(onClickLabel = tr("Qué significa", "What it means")) { open = true } else Modifier)
+            // Una sola lectura para TalkBack, con la acción de ver qué significa.
+            .clearAndSetSemantics {
+                contentDescription = listOfNotNull(detail.label, detail.value, detail.note).joinToString(", ")
+                if (info != null) {
+                    onClick(label = tr("Qué significa", "What it means")) {
+                        open = true
+                        true
+                    }
+                }
+            },
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
             CardLabel(detail.label)
