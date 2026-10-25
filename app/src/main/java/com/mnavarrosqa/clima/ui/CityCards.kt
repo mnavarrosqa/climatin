@@ -74,6 +74,7 @@ fun CityCard(
             kind = snapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
             isDay = snapshot?.current?.isDay ?: true,
             modifier = Modifier.matchParentSize(),
+            southern = (snapshot?.latitude ?: 0.0) < 0,
         )
         // Un velo suave abajo para que el estado y la mínima se lean sobre cualquier cielo.
         Box(

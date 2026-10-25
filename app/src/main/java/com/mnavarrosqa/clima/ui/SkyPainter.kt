@@ -25,6 +25,12 @@ import kotlin.random.Random
  * círculos con degradado radial que se desvanece, así los bordes quedan suaves.
  */
 class SkyPainter {
+    /**
+     * Desde el hemisferio sur la luna se ve dada vuelta: la parte iluminada mientras crece queda
+     * a la izquierda. Lo fija quien dibuja según la latitud del lugar.
+     */
+    var southern: Boolean = false
+
 
     private class Particle(val x: Float, val y: Float, val size: Float, val speed: Float, val phase: Float)
 
@@ -208,7 +214,7 @@ class SkyPainter {
     }
 
     // La luna se arma una vez por tamaño y día: en cada cuadro solo se dibuja.
-    private var moonKey: Triple<Float, Float, java.time.LocalDate>? = null
+    private var moonKey: List<Any>? = null
     private val moonLit = Path()
     private var moonShade: Shader? = null
     private var moonAge = 0.5
@@ -219,11 +225,13 @@ class SkyPainter {
      */
     private fun drawMoon(canvas: Canvas, cx: Float, cy: Float, r: Float) {
         val today = java.time.LocalDate.now()
-        if (moonKey != Triple(cx, cy, today) || moonShade == null) {
-            moonKey = Triple(cx, cy, today)
+        val key = listOf(cx, cy, today, southern)
+        if (moonKey != key || moonShade == null) {
+            moonKey = key
             moonAge = Moon.age(today)
             val terminator = r * kotlin.math.abs(kotlin.math.cos(2 * PI * moonAge)).toFloat()
-            val waxing = moonAge < 0.5
+            // En el sur, la luz va del lado contrario.
+            val waxing = (moonAge < 0.5) != southern
             val crescent = moonAge < 0.25 || moonAge > 0.75
             moonLit.reset()
             moonLit.moveTo(cx, cy - r)

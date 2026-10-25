@@ -1,0 +1,1 @@
+Aviso de versión nueva como notificación dentro de la app, abajo y a la vista aunque bajes en el pronóstico; ya no se pierde al volver a abrir la app. La luna se ve como desde tu hemisferio.

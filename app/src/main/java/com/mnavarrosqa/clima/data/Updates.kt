@@ -13,6 +13,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** Una versión publicada en el repo público de versiones. */
+@Serializable
 data class AppRelease(val versionName: String, val versionCode: Long, val apkUrl: String, val notes: String?)
 
 /**
@@ -21,7 +22,9 @@ data class AppRelease(val versionName: String, val versionCode: Long, val apkUrl
  */
 object Updates {
     private const val REPO = "mnavarrosqa/climatin-releases"
-    private const val CHECK_EVERY_MS = 12 * 60 * 60_000L
+    private const val CHECK_EVERY_MS = 3 * 60 * 60_000L
+    private const val KEY_LATEST = "updates_latest"
+    private const val KEY_DISMISSED = "updates_dismissed"
     private val json = Json { ignoreUnknownKeys = true }
     private val apkName = Regex("""climatin-(\d+)\.apk""")
 
@@ -41,18 +44,36 @@ object Updates {
     }.getOrDefault(false)
 
     /**
-     * Devuelve la versión nueva si hay una. Sin [force], consulta como mucho cada 12 horas;
-     * los errores de red se ignoran (no es algo urgente).
+     * Devuelve la versión nueva si hay una. Sin [force], consulta GitHub como mucho cada 3 horas y
+     * mientras tanto responde con la última que encontró (antes devolvía nada y el aviso se
+     * perdía al volver a abrir la app). Los errores de red se ignoran (no es algo urgente).
      */
     suspend fun check(context: Context, force: Boolean): AppRelease? {
         if (!BuildConfig.SELF_UPDATE || installedFromPlay(context)) return null
-        val prefs = context.getSharedPreferences("clima", Context.MODE_PRIVATE)
+        val prefs = prefs(context)
         val now = System.currentTimeMillis()
-        if (!force && now - prefs.getLong("updates_checked_at", 0L) < CHECK_EVERY_MS) return null
-        val latest = runCatching { latest() }.getOrNull() ?: return null
-        prefs.edit().putLong("updates_checked_at", now).apply()
-        return latest.takeIf { it.versionCode > installedVersion(context).second }
+        val installed = installedVersion(context).second
+        val known = prefs.getString(KEY_LATEST, null)?.let { runCatching { json.decodeFromString(AppRelease.serializer(), it) }.getOrNull() }
+        if (!force && now - prefs.getLong("updates_checked_at", 0L) < CHECK_EVERY_MS) {
+            return known?.takeIf { it.versionCode > installed }
+        }
+        val latest = runCatching { latest() }.getOrNull() ?: return known?.takeIf { it.versionCode > installed }
+        prefs.edit()
+            .putLong("updates_checked_at", now)
+            .putString(KEY_LATEST, json.encodeToString(AppRelease.serializer(), latest))
+            .apply()
+        return latest.takeIf { it.versionCode > installed }
     }
+
+    /** "Ahora no" en el aviso: no se vuelve a mostrar para esta versión (sigue en Ajustes → Acerca de). */
+    fun dismiss(context: Context, release: AppRelease) {
+        prefs(context).edit().putLong(KEY_DISMISSED, release.versionCode).apply()
+    }
+
+    fun isDismissed(context: Context, release: AppRelease): Boolean =
+        prefs(context).getLong(KEY_DISMISSED, 0L) >= release.versionCode
+
+    private fun prefs(context: Context) = context.getSharedPreferences("clima", Context.MODE_PRIVATE)
 
     private suspend fun latest(): AppRelease? = withContext(Dispatchers.IO) {
         val connection = URL("https://api.github.com/repos/$REPO/releases/latest").openConnection() as HttpURLConnection

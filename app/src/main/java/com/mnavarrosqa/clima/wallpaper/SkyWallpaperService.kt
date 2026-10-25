@@ -210,6 +210,7 @@ fun wallpaperScene(snapshot: WeatherSnapshot?, settings: WallpaperSettings, fall
         kind = kind,
         isDay = isDay,
         colors = colors,
+        southern = (snapshot?.latitude ?: 0.0) < 0,
         temperature = current?.temperature?.degrees()?.takeIf { showWeather },
         caption = if (showWeather) {
             listOfNotNull(snapshot?.place ?: tr("Tu ubicación", "Your location"), current?.code?.let(WeatherCodes::description))

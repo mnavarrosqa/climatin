@@ -25,6 +25,8 @@ data class WallpaperScene(
     val colors: SkyGradient,
     val temperature: String? = null,
     val caption: String? = null,
+    /** Hemisferio sur: la luna se dibuja dada vuelta. */
+    val southern: Boolean = false,
 )
 
 /**
@@ -60,6 +62,7 @@ class WallpaperPainter {
         style: WallpaperStyle,
         parallax: Float,
     ) {
+        sky.southern = scene.southern
         when (style) {
             WallpaperStyle.SKY -> drawSky(canvas, width, height, density, clock, scene, parallax)
             WallpaperStyle.LANDSCAPE -> drawLandscape(canvas, width, height, density, clock, scene, parallax)

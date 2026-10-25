@@ -14,6 +14,15 @@ import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import com.mnavarrosqa.clima.core.R as CoreR
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.animateDpAsState
@@ -173,6 +182,7 @@ fun WeatherRoute(
     LaunchedEffect(hasPermission, places.size) { viewModel.refreshIfStale() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         viewModel.resumePendingInstall()
+        viewModel.recheckUpdates()
         // El permiso se puede dar o quitar desde los ajustes del sistema.
         hasPermission = LocationProvider.hasPermission(context)
     }
@@ -347,7 +357,7 @@ private fun WeatherPager(
 ) {
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
-    val update by viewModel.update.collectAsStateWithLifecycle()
+    val update by viewModel.updatePrompt.collectAsStateWithLifecycle()
     // Día a abrir en la página de destino del acceso directo.
     var pendingDay by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Alerta a mostrar abierta (desde la notificación del SMN).
@@ -381,6 +391,7 @@ private fun WeatherPager(
             kind = skySnapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
             isDay = skySnapshot?.current?.isDay ?: true,
             modifier = Modifier.fillMaxSize(),
+            southern = (skySnapshot?.latitude ?: 0.0) < 0,
         )
         val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
@@ -422,20 +433,34 @@ private fun WeatherPager(
                         onDayOpened = { pendingDay = null },
                         onCollapsedChange = { collapsed[pages[page]] = it },
                         openAlert = openAlert,
-                        banner = update?.let { release ->
-                            @Composable {
-                                // El avance se lee adentro del aviso: así cada pedacito bajado
-                                // no recompone el pronóstico entero.
-                                UpdateBanner(
-                                    release,
-                                    progressFlow = viewModel.updateProgress,
-                                    onUpdate = { viewModel.downloadUpdate(release) },
-                                    onDismiss = viewModel::dismissUpdate,
-                                )
-                            }
-                        },
                     )
                 }
+            }
+        }
+        // Aviso de versión nueva flotando abajo, como una notificación dentro de la app: se ve
+        // aunque hayas bajado en el pronóstico. "Ahora no" lo esconde hasta la próxima versión.
+        // Se recuerda la última para que la salida animada tenga qué mostrar.
+        var shownRelease by remember { mutableStateOf(update) }
+        if (update != null) shownRelease = update
+        AnimatedVisibility(
+            visible = update != null,
+            enter = slideInVertically(Motion.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(Motion.gentle()) { it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 12.dp)
+                .widthIn(max = 560.dp)
+                .zIndex(2f),
+        ) {
+            shownRelease?.let { release ->
+                // El avance se lee adentro del aviso: así cada pedacito bajado no recompone el pronóstico.
+                UpdateBanner(
+                    release,
+                    progressFlow = viewModel.updateProgress,
+                    onUpdate = { viewModel.downloadUpdate(release) },
+                    onDismiss = viewModel::dismissUpdate,
+                )
             }
         }
         val isCollapsed = collapsed[skyId] == true
@@ -729,19 +754,53 @@ fun ForecastContent(
 @Composable
 private fun UpdateBanner(release: AppRelease, progressFlow: StateFlow<Float?>, onUpdate: () -> Unit, onDismiss: () -> Unit) {
     val progress by progressFlow.collectAsStateWithLifecycle()
+    // Como una notificación: ícono de la app, quién avisa y qué hay de nuevo.
     Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(28.dp),
+        shadowElevation = 8.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
-        Column(Modifier.padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 10.dp)) {
-            Text(
-                tr("Climatin ${release.versionName} está disponible", "Climatin ${release.versionName} is available"),
-                style = MaterialTheme.typography.titleMedium,
-            )
+        Column(Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(40.dp).clip(CircleShape)) {
+                    Image(painterResource(CoreR.drawable.ic_launcher_background), contentDescription = null, modifier = Modifier.fillMaxSize())
+                    Image(
+                        painterResource(CoreR.drawable.ic_launcher_foreground),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = 1.45f
+                                scaleY = 1.45f
+                            },
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        tr("Versión nueva", "New version"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        tr("Climatin ${release.versionName} está disponible", "Climatin ${release.versionName} is available"),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+            }
             release.notes?.lineSequence()?.firstOrNull { it.isNotBlank() }?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
+                Text(
+                    it.removePrefix("• "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 52.dp, top = 4.dp),
+                )
             }
             val downloading = progress
             if (downloading != null) {
@@ -751,12 +810,12 @@ private fun UpdateBanner(release: AppRelease, progressFlow: StateFlow<Float?>, o
                     progress = { progressFlow.value ?: 0f },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(end = 8.dp),
+                        .padding(start = 52.dp, end = 8.dp),
                 )
                 Text(
                     tr("Bajando… ${(downloading * 100).roundToInt()}%", "Downloading… ${(downloading * 100).roundToInt()}%"),
                     style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
+                    modifier = Modifier.padding(start = 52.dp, top = 6.dp, bottom = 6.dp),
                 )
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

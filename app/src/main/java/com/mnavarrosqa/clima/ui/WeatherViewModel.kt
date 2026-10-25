@@ -79,8 +79,22 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     val search: StateFlow<SearchState> = _search.asStateFlow()
     private var searchJob: Job? = null
 
+    private val _updatePrompt = MutableStateFlow<AppRelease?>(null)
+    /** La versión nueva para el aviso flotante: la misma, salvo que se haya dicho "Ahora no". */
+    val updatePrompt: StateFlow<AppRelease?> = _updatePrompt.asStateFlow()
+
     init {
-        viewModelScope.launch { _update.value = Updates.check(getApplication<Application>(), force = false) }
+        recheckUpdates()
+    }
+
+    /** Al abrir o volver a la app: consulta (cada 3 h como mucho) y muestra el aviso si corresponde. */
+    fun recheckUpdates() {
+        viewModelScope.launch { publishUpdate(Updates.check(getApplication<Application>(), force = false)) }
+    }
+
+    private fun publishUpdate(release: AppRelease?) {
+        _update.value = release
+        _updatePrompt.value = release?.takeUnless { Updates.isDismissed(getApplication<Application>(), it) }
     }
 
     fun checkForUpdates() {
@@ -139,7 +153,8 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun dismissUpdate() {
-        _update.value = null
+        _updatePrompt.value?.let { Updates.dismiss(getApplication<Application>(), it) }
+        _updatePrompt.value = null
     }
 
     fun snapshots(placeId: String): Flow<WeatherSnapshot?> = repository.snapshots(placeId)

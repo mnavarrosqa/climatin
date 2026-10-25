@@ -111,7 +111,7 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
         add(Detail(tr("Lluvia hoy", "Rain today"), "$rain%", today?.precipitationSum?.takeIf { it > 0 }?.let { "${"%.1f".format(it)} mm" }) {
             RingGauge(rain / 100f, MaterialTheme.colorScheme.tertiary)
         })
-        add(Detail(tr("Luna", "Moon"), Moon.phaseName(date)) { MoonPhase(Moon.age(date).toFloat()) })
+        add(Detail(tr("Luna", "Moon"), Moon.phaseName(date)) { MoonPhase(Moon.age(date).toFloat(), southern = snapshot.latitude < 0) })
         current.pressure?.let { add(Detail(tr("Presión", "Pressure"), pressureText(it))) }
         current.visibility?.let {
             val km = it / 1000
@@ -268,7 +268,7 @@ private fun WindCompass(fromDegrees: Float) {
 
 /** La luna con la parte iluminada que corresponde a su edad (0 nueva, 0.5 llena). */
 @Composable
-private fun MoonPhase(age: Float) {
+private fun MoonPhase(age: Float, southern: Boolean) {
     // La parte en sombra es gris pizarra en los dos temas: sobre una tarjeta clara se distingue.
     val dark = Color(0xFF3A4150)
     val light = Color(0xFFF3EBD2)
@@ -279,7 +279,8 @@ private fun MoonPhase(age: Float) {
         val circle = Rect(c, r)
         val terminator = r * abs(cos(2 * PI * age)).toFloat()
         val ellipse = Rect(c.x - terminator, c.y - r, c.x + terminator, c.y + r)
-        val waxing = age < 0.5f
+        // Desde el hemisferio sur la luna se ve dada vuelta.
+        val waxing = (age < 0.5f) != southern
         val crescent = age < 0.25f || age > 0.75f
         val lit = Path().apply {
             moveTo(c.x, c.y - r)
