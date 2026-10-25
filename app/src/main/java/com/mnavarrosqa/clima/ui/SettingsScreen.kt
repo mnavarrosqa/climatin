@@ -972,7 +972,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     )
                     SettingRow(
                         tr("Temperatura", "Temperature"),
-                        tr("Los grados como chip. Necesita la temperatura en la barra de estado prendida", "The temperature as a chip. Needs the status bar temperature on"),
+                        tr("Los grados de ahora y lo que viene (↓ 12°, ☔ 16:00). Necesita la temperatura en la barra de estado prendida", "The temperature now and what comes next (↓ 12°, ☔ 4 PM). Needs the status bar temperature on"),
                         trailing = {
                             Switch(checked = notify.liveTemperature, onCheckedChange = { on ->
                                 change { it.copy(liveTemperature = on) }

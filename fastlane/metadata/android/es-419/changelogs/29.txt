@@ -1,0 +1,1 @@
+Chip de temperatura sin los grados repetidos: ahora dice lo que viene (↓ 12°, ↑ 19° o ☔ 16:00). La luna del cielo y del fondo de pantalla muestra su fase de hoy, con sombreado y mares.

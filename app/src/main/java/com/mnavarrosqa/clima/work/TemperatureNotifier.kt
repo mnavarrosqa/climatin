@@ -24,6 +24,7 @@ import com.mnavarrosqa.clima.data.Insights
 import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherRepository
+import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.tr
 
@@ -83,7 +84,7 @@ object TemperatureNotifier {
                 (if (i == 0) tr("Ahora", "Now") else shortHour(hour.dateTime)) + " " + hour.temperature.degrees()
             }.joinToString("   ")
             builder.setStyle(NotificationCompat.BigTextStyle().bigText((Insights.headline(snapshot) ?: details) + "\n" + line))
-                .requestLive(current.temperature.degrees())
+                .requestLive(chipText(snapshot))
         } else {
             builder.setStyle(NotificationCompat.DecoratedCustomViewStyle())
                 .setCustomBigContentView(expanded)
@@ -102,6 +103,20 @@ object TemperatureNotifier {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
         manager.notify(NOTIFICATION_ID, notification)
+    }
+
+    /**
+     * El ícono chico ya muestra los grados de ahora: el texto del chip dice lo que viene. Lluvia
+     * en las próximas 3 horas ("☔ 16:00"), si no hacia dónde va la temperatura ("↓ 12°" o "↑ 19°").
+     */
+    private fun chipText(snapshot: WeatherSnapshot): String {
+        val next = snapshot.upcomingHours(12).drop(1)
+        next.take(3).firstOrNull { (it.precipitationProbability ?: 0) >= 50 }?.let { return "☔ " + shortHour(it.dateTime) }
+        val now = snapshot.current.temperature
+        val max = next.maxByOrNull { it.temperature } ?: return now.degrees()
+        val min = next.minByOrNull { it.temperature } ?: return now.degrees()
+        // Lo que esté más lejos de ahora: a la noche suele ser la mínima, a la mañana la máxima.
+        return if (max.temperature - now >= now - min.temperature) "↑ " + max.temperature.degrees() else "↓ " + min.temperature.degrees()
     }
 
     private val HOUR_TIME = intArrayOf(R.id.hour_time_0, R.id.hour_time_1, R.id.hour_time_2, R.id.hour_time_3, R.id.hour_time_4, R.id.hour_time_5)

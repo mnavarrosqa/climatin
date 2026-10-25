@@ -6,7 +6,9 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
+import com.mnavarrosqa.clima.data.Moon
 import com.mnavarrosqa.clima.data.WeatherKind
 import kotlin.math.PI
 import kotlin.math.exp
@@ -202,8 +204,52 @@ class SkyPainter {
         val my = height * 0.13f
         val mr = min(width, height) * 0.07f
         puff(canvas, mx, my, mr * 4, mr * 4, 0.18f, 0xC8D7FF)
-        paint.color = 0xFFF2F5FF.toInt()
-        canvas.drawCircle(mx, my, mr, paint)
+        drawMoon(canvas, mx, my, mr)
+    }
+
+    // La luna se arma una vez por tamaño y día: en cada cuadro solo se dibuja.
+    private var moonKey: Triple<Float, Float, java.time.LocalDate>? = null
+    private val moonLit = Path()
+    private var moonShade: Shader? = null
+    private var moonAge = 0.5
+
+    /**
+     * La luna con su fase de hoy: la parte en sombra apenas se ve (luz cenicienta), la iluminada
+     * tiene un sombreado suave hacia el borde y unos mares grises, como la de verdad.
+     */
+    private fun drawMoon(canvas: Canvas, cx: Float, cy: Float, r: Float) {
+        val today = java.time.LocalDate.now()
+        if (moonKey != Triple(cx, cy, today) || moonShade == null) {
+            moonKey = Triple(cx, cy, today)
+            moonAge = Moon.age(today)
+            val terminator = r * kotlin.math.abs(kotlin.math.cos(2 * PI * moonAge)).toFloat()
+            val waxing = moonAge < 0.5
+            val crescent = moonAge < 0.25 || moonAge > 0.75
+            moonLit.reset()
+            moonLit.moveTo(cx, cy - r)
+            // Mitad iluminada: la derecha mientras crece, la izquierda mientras mengua.
+            moonLit.arcTo(RectF(cx - r, cy - r, cx + r, cy + r), -90f, if (waxing) 180f else -180f, false)
+            val towardLit = if (waxing) -180f else 180f
+            moonLit.arcTo(RectF(cx - terminator, cy - r, cx + terminator, cy + r), 90f, if (crescent) towardLit else -towardLit, false)
+            moonLit.close()
+            moonShade = RadialGradient(cx - r * 0.3f, cy - r * 0.3f, r * 1.4f, 0xFFFFFBEF.toInt(), 0xFFD9D4C4.toInt(), Shader.TileMode.CLAMP)
+        }
+        // Luz cenicienta: el disco entero, muy tenue.
+        paint.color = Color.argb(46, 200, 214, 255)
+        canvas.drawCircle(cx, cy, r, paint)
+        // Casi luna nueva: no hay parte iluminada que dibujar.
+        if (moonAge < 0.02 || moonAge > 0.98) return
+        canvas.save()
+        canvas.clipPath(moonLit)
+        paint.shader = moonShade
+        canvas.drawCircle(cx, cy, r, paint)
+        paint.shader = null
+        // Mares: manchas grises tenues dentro de la parte iluminada.
+        paint.color = Color.argb(34, 90, 96, 110)
+        canvas.drawCircle(cx - r * 0.28f, cy - r * 0.22f, r * 0.26f, paint)
+        canvas.drawCircle(cx + r * 0.22f, cy + r * 0.05f, r * 0.2f, paint)
+        canvas.drawCircle(cx - r * 0.05f, cy + r * 0.38f, r * 0.15f, paint)
+        canvas.restore()
     }
 
     /** Dos capas de nubes: las de atrás más grandes, tenues y lentas. */
