@@ -12,6 +12,7 @@ import android.service.wallpaper.WallpaperService
 import android.view.Choreographer
 import android.view.SurfaceHolder
 import androidx.annotation.RequiresApi
+import com.mnavarrosqa.clima.CrashLog
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.WeatherRepository
@@ -146,8 +147,10 @@ class SkyWallpaperService : WallpaperService() {
         private fun loadWeather() {
             loadedAt = SystemClock.uptimeMillis()
             val repository = WeatherRepository.get(applicationContext)
-            val snapshot = repository.cached(settings.placeId) ?: repository.cached()
-            val updated = wallpaperScene(snapshot, settings)
+            val snapshot = runCatching { repository.cached(settings.placeId) ?: repository.cached() }.getOrNull()
+            val updated = runCatching { wallpaperScene(snapshot, settings) }
+                .onFailure { CrashLog.record(applicationContext, it, "fondo de pantalla") }
+                .getOrElse { wallpaperScene(null, settings) }
             val colorsChanged = updated.kind != scene.kind || updated.isDay != scene.isDay
             scene = updated
             if (colorsChanged && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) notifyColorsChanged()
@@ -191,6 +194,9 @@ class SkyWallpaperService : WallpaperService() {
                 ?: return
             try {
                 val clock = ((frameTimeNanos / 1_000_000L) % SKY_CYCLE_MS) / SKY_CYCLE_MS.toFloat()
+                // Un error al dibujar un cuadro no puede tirar abajo el fondo de pantalla: se anota
+                // y se sigue con el próximo.
+                runCatching {
                 painter.draw(
                     canvas,
                     canvas.width.toFloat(),
@@ -201,6 +207,7 @@ class SkyWallpaperService : WallpaperService() {
                     settings.style,
                     parallax,
                 )
+                }.onFailure { CrashLog.record(applicationContext, it, "fondo de pantalla") }
             } finally {
                 runCatching { holder.unlockCanvasAndPost(canvas) }
             }

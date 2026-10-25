@@ -204,6 +204,48 @@ fun WeatherRoute(
             if (place != null) onDeepLinkHandled()
         }
     }
+    // Si la app se cerró por un error, se ofrece compartirlo (queda solo en el teléfono hasta que se comparte).
+    var crash by remember { mutableStateOf(com.mnavarrosqa.clima.CrashLog.last(context)) }
+    crash?.let { text ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                com.mnavarrosqa.clima.CrashLog.clear(context)
+                crash = null
+            },
+            title = { Text(tr("Climatin se cerró", "Climatin closed unexpectedly")) },
+            text = {
+                Text(
+                    tr(
+                        "Hubo un error la última vez. Si lo compartís, se puede arreglar: tiene la versión, el modelo del teléfono y dónde falló, nada personal.",
+                        "Something went wrong last time. Sharing it helps fix it: it has the version, phone model and where it failed, nothing personal.",
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent.createChooser(
+                                android.content.Intent(android.content.Intent.ACTION_SEND)
+                                    .setType("text/plain")
+                                    .putExtra(android.content.Intent.EXTRA_SUBJECT, "Error de Climatin")
+                                    .putExtra(android.content.Intent.EXTRA_TEXT, text),
+                                tr("Compartir el error", "Share the error"),
+                            ),
+                        )
+                    }
+                    com.mnavarrosqa.clima.CrashLog.clear(context)
+                    crash = null
+                }) { Text(tr("Compartir", "Share")) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    com.mnavarrosqa.clima.CrashLog.clear(context)
+                    crash = null
+                }) { Text(tr("Descartar", "Dismiss")) }
+            },
+        )
+    }
     // Gesto "atrás" predictivo: mientras se desliza, la pantalla se achica y deja ver que vuelve.
     var backProgress by remember { mutableFloatStateOf(0f) }
     // La bienvenida abierta desde Ajustes vuelve a Ajustes con "atrás"; la primera vez, "atrás" sale de la app.

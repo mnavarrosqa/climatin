@@ -34,20 +34,26 @@ class ClimaActivity : ComponentActivity() {
         splash.setKeepOnScreenCondition { savedInstanceState == null && SystemClock.uptimeMillis() - shownAt < 850 }
         // Al salir, el ícono se agranda y todo se desvanece hacia el pronóstico.
         splash.setOnExitAnimationListener { provider ->
-            val icon = provider.iconView
-            val fade = ObjectAnimator.ofFloat(provider.view, View.ALPHA, 1f, 0f)
-            val grow = ObjectAnimator.ofPropertyValuesHolder(
-                icon,
-                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.35f),
-                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.35f),
-            )
-            AnimatorSet().apply {
-                playTogether(fade, grow)
-                duration = 320
-                interpolator = AccelerateInterpolator()
-                doOnEnd { provider.remove() }
-                start()
-            }
+            // Abierta desde un widget o una notificación, Android 13+ muestra la pantalla de inicio
+            // sin ícono: pedirlo cerraba la app. Sin ícono, solo se desvanece.
+            val icon = runCatching { provider.iconView }.getOrNull()
+            runCatching {
+                val fade = ObjectAnimator.ofFloat(provider.view, View.ALPHA, 1f, 0f)
+                val grow = icon?.let {
+                    ObjectAnimator.ofPropertyValuesHolder(
+                        it,
+                        PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.35f),
+                        PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.35f),
+                    )
+                }
+                AnimatorSet().apply {
+                    if (grow != null) playTogether(fade, grow) else play(fade)
+                    duration = 320
+                    interpolator = AccelerateInterpolator()
+                    doOnEnd { runCatching { provider.remove() } }
+                    start()
+                }
+            }.onFailure { runCatching { provider.remove() } }
         }
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

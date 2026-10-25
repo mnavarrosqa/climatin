@@ -1,0 +1,1 @@
+Arreglo: la app se cerraba al abrirla desde un widget o una notificación. El fondo de pantalla ya no se cierra por un error al dibujar. Si la app se cierra, la próxima vez ofrece compartir el error.

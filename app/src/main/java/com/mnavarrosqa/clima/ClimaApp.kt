@@ -29,6 +29,7 @@ class ClimaApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         RainNotifier.createChannel(this)
         AlertNotifier.createChannel(this)
