@@ -1,0 +1,1 @@
+"Actualizar" en el reloj le pide el clima al teléfono (gasta menos batería del reloj). El widget Pronóstico muestra el % de lluvia. Copia de seguridad: tus ciudades y ajustes pasan al teléfono nuevo, sin los pronósticos viejos.

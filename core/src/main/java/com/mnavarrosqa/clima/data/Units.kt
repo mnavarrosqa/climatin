@@ -37,6 +37,9 @@ fun decodeUnits(text: String?): UnitSettings? {
 /** Ruta del dato que el teléfono comparte con el reloj (Wear OS Data Layer). */
 const val WEAR_SYNC_PATH = "/clima"
 
+/** Mensaje del reloj al teléfono: "actualizá y mandame el clima". */
+const val WEAR_REFRESH_PATH = "/actualizar"
+
 /** Unidades vigentes para los formateadores; las carga y actualiza WeatherRepository. */
 object Units {
     @Volatile

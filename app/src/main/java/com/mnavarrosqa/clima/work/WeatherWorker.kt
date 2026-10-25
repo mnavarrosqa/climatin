@@ -29,7 +29,8 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         // Los avisos solo miran "donde estoy": eso va cada vez, y las ciudades guardadas una vez
         // por hora (o al forzar). Antes se bajaban todas cada 15 minutos.
         val error = repository.refreshAll(force = force, cities = force || repository.citiesStale())
-        afterRefresh(applicationContext)
+        // Si lo pidió el reloj, se le manda aunque no haya cambiado y con prioridad.
+        afterRefresh(applicationContext, urgentWear = inputData.getBoolean(FOR_WATCH, false))
         return when {
             // Sin ubicación ni ciudades no tiene sentido reintentar.
             error == null || error is NoLocationException -> Result.success()
@@ -47,6 +48,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
     companion object {
         private const val NAME = "clima-periodico"
         const val FORCE = "forzar"
+        const val FOR_WATCH = "para_reloj"
 
         fun schedule(context: Context) {
             val minutes = if (WeatherRepository.get(context).rainAlertsEnabled) 15L else 30L

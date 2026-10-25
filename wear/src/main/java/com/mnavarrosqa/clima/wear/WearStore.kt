@@ -1,5 +1,8 @@
 package com.mnavarrosqa.clima.wear
 
+import kotlinx.coroutines.delay
+import com.mnavarrosqa.clima.data.WEAR_REFRESH_PATH
+import com.google.android.gms.wearable.Wearable
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ComponentName
@@ -75,6 +78,31 @@ object WearStore {
         requestUpdates(context)
     }
 
+    /**
+     * Le pide al teléfono que actualice y espera hasta 20 s a que mande el clima nuevo. Null si no
+     * hay teléfono conectado o no llegó a tiempo.
+     */
+    private suspend fun askPhone(context: Context): WeatherSnapshot? {
+        val before = prefs(context).getLong(FROM_PHONE_AT, 0L)
+        val sent = try {
+            val nodes = Wearable.getNodeClient(context).connectedNodes.await()
+            val client = Wearable.getMessageClient(context)
+            nodes.count { node ->
+                runCatching { client.sendMessage(node.id, WEAR_REFRESH_PATH, ByteArray(0)).await() }.isSuccess
+            } > 0
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            false
+        }
+        if (!sent) return null
+        repeat(40) {
+            delay(500)
+            if (prefs(context).getLong(FROM_PHONE_AT, 0L) > before) return cached(context)
+        }
+        return null
+    }
+
     fun hasPermission(context: Context) =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
@@ -86,6 +114,9 @@ object WearStore {
     @SuppressLint("MissingPermission")
     suspend fun refresh(context: Context, force: Boolean = false): Result<WeatherSnapshot> {
         if (!force && phoneIsFresh(context)) cached(context)?.let { return Result.success(it) }
+        // A pedido: primero se le pide al teléfono, que ya tiene la ubicación y la red; el reloj
+        // baja por su cuenta solo si no hay teléfono cerca o no contesta.
+        if (force) askPhone(context)?.let { return Result.success(it) }
         return try {
             Result.success(download(context))
         } catch (cancel: CancellationException) {

@@ -41,6 +41,8 @@ object WearSync {
                 dataMap.putString("snapshot", json.encodeToString(WeatherSnapshot.serializer(), light))
                 dataMap.putString("units", units)
                 dataMap.putLong("at", snapshot.fetchedAt)
+                // A pedido, siempre distinto: si el dato fuera igual, el reloj no se enteraría.
+                if (urgent) dataMap.putLong("pedido", System.currentTimeMillis())
             }.asPutDataRequest().apply { if (urgent) setUrgent() }
             Wearable.getDataClient(context).putDataItem(request).await()
             prefs.edit().putString(KEY_SENT, stamp).apply()

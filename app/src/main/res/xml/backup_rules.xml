@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copia de seguridad (Android 11 o menos): las ciudades, apodos y ajustes viajan al teléfono
+    nuevo; los pronósticos guardados no (son viejos al restaurar y se bajan solos), ni el último
+    error.
+-->
+<full-backup-content>
+    <exclude domain="file" path="pronosticos/" />
+    <exclude domain="file" path="ultimo_error.txt" />
+</full-backup-content>

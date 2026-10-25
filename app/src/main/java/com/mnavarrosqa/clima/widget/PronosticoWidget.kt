@@ -111,8 +111,11 @@ private fun PronosticoContent(snapshot: WeatherSnapshot) {
 private fun DaysRow(snapshot: WeatherSnapshot, count: Int) {
     val colors = widgetColors(snapshot)
     val today = snapshot.nowAtPlace().toLocalDate()
+    val days = snapshot.upcomingDays(count)
+    // La lluvia va en una línea más, solo si algún día la tiene (así las columnas quedan parejas).
+    val showRain = days.any { (it.precipitationProbability ?: 0) >= 30 }
     Row(modifier = GlanceModifier.fillMaxWidth()) {
-        snapshot.upcomingDays(count).forEach { day ->
+        days.forEach { day ->
             Column(
                 modifier = GlanceModifier.defaultWeight().clickable(openDay(snapshot.placeId, day.date)),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -143,6 +146,13 @@ private fun DaysRow(snapshot: WeatherSnapshot, count: Int) {
                     day.min.degrees(),
                     style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
                 )
+                if (showRain) {
+                    Text(
+                        day.precipitationProbability?.takeIf { it >= 30 }?.let { "$it%" } ?: " ",
+                        maxLines = 1,
+                        style = TextStyle(color = colors.textVariant, fontSize = 11.sp),
+                    )
+                }
             }
         }
     }
