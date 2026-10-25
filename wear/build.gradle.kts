@@ -13,8 +13,8 @@ android {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 30
         targetSdk = 36
-        versionCode = 2_000_045
-        versionName = "1.21.0"
+        versionCode = 2_000_046
+        versionName = "1.22.0"
     }
 
     signingConfigs {

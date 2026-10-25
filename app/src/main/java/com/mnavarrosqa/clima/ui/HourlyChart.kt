@@ -330,7 +330,7 @@ fun HourlyChart(
 data class AlertSpan(val start: java.time.LocalDateTime, val end: java.time.LocalDateTime, val color: Color)
 
 /** Probabilidad y milímetros de lluvia de la hora que empieza en [index] (vienen en la siguiente). */
-private fun rainAfter(hours: List<Hour>, index: Int): Pair<Int?, Double?> {
+internal fun rainAfter(hours: List<Hour>, index: Int): Pair<Int?, Double?> {
     val source = hours.getOrNull(index + 1) ?: hours[index]
     return source.precipitationProbability to source.precipitation
 }

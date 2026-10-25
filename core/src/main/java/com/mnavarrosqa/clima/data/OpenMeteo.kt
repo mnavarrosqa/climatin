@@ -23,9 +23,10 @@ object OpenMeteo {
         "&current=temperature_2m,apparent_temperature,relative_humidity_2m,is_day," +
             "weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,pressure_msl,visibility,uv_index" +
             "&hourly=temperature_2m,weather_code,precipitation_probability,is_day," +
-            "apparent_temperature,wind_speed_10m,precipitation,pressure_msl" +
+            "apparent_temperature,wind_speed_10m,precipitation,pressure_msl," +
+            "uv_index,relative_humidity_2m,dew_point_2m,visibility,wind_gusts_10m" +
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset," +
-            "uv_index_max,precipitation_probability_max,precipitation_sum,wind_speed_10m_max" +
+            "uv_index_max,precipitation_probability_max,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max" +
             "&minutely_15=precipitation&forecast_minutely_15=8" +
             "&timezone=auto&past_days=1"
 
@@ -48,16 +49,49 @@ object OpenMeteo {
     /** Calidad del aire. Es opcional: si falla, se muestra el resto igual (pero una cancelación sigue de largo). */
     suspend fun airQualities(points: List<Pair<Double, Double>>): List<AirQuality?> {
         if (points.isEmpty()) return emptyList()
-        val list = try {
-            val url = "https://air-quality-api.open-meteo.com/v1/air-quality?" + coordinates(points) + "&current=european_aqi,pm2_5&timezone=auto"
+        suspend fun fetch(fields: String): List<AirQuality> {
+            val url = "https://air-quality-api.open-meteo.com/v1/air-quality?" + coordinates(points) + fields + "&timezone=auto"
             val responses = if (points.size == 1) listOf(get(url, AirQualityResponse.serializer())) else get(url, ListSerializer(AirQualityResponse.serializer()))
-            responses.map { AirQuality(europeanAqi = it.current.europeanAqi, pm25 = it.current.pm25) }
+            return responses.map { it.toAirQuality() }
+        }
+        val list = try {
+            // Con contaminantes, polen (solo hay en Europa) y el índice de las próximas horas; si
+            // esa consulta falla, la de siempre.
+            runCatchingAir { fetch(AIR_FULL) } ?: fetch("&current=european_aqi,pm2_5")
         } catch (cancel: kotlinx.coroutines.CancellationException) {
             throw cancel
         } catch (_: Exception) {
             null
         }
         return list?.takeIf { it.size == points.size } ?: List(points.size) { null }
+    }
+
+    private const val AIR_FULL = "&current=european_aqi,pm2_5,pm10,ozone,nitrogen_dioxide," +
+        "grass_pollen,birch_pollen,alder_pollen,olive_pollen,mugwort_pollen,ragweed_pollen" +
+        "&hourly=european_aqi&forecast_hours=12"
+
+    private suspend fun <T> runCatchingAir(block: suspend () -> T): T? = try {
+        block()
+    } catch (cancel: kotlinx.coroutines.CancellationException) {
+        throw cancel
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun AirQualityResponse.toAirQuality(): AirQuality {
+        val c = current
+        fun maxOf(vararg values: Double?) = values.filterNotNull().maxOrNull()
+        return AirQuality(
+            europeanAqi = c.europeanAqi,
+            pm25 = c.pm25,
+            pm10 = c.pm10,
+            ozone = c.ozone,
+            nitrogenDioxide = c.nitrogenDioxide,
+            grassPollen = c.grassPollen,
+            treePollen = maxOf(c.birchPollen, c.alderPollen, c.olivePollen),
+            weedPollen = maxOf(c.mugwortPollen, c.ragweedPollen),
+            upcomingAqi = hourly?.europeanAqi.orEmpty(),
+        )
     }
 
     suspend fun searchCities(query: String): List<Place> {
@@ -120,6 +154,11 @@ object OpenMeteo {
                 windSpeed = h.windSpeed.getOrNull(i),
                 precipitation = h.precipitation.getOrNull(i),
                 pressure = h.pressure.getOrNull(i),
+                uvIndex = h.uvIndex.getOrNull(i),
+                humidity = h.humidity.getOrNull(i),
+                dewPoint = h.dewPoint.getOrNull(i),
+                visibility = h.visibility.getOrNull(i),
+                windGusts = h.windGusts.getOrNull(i),
             )
         }
         val (pastHours, hours) = allHours.partition { it.dateTime.isBefore(currentHour) }
@@ -136,6 +175,7 @@ object OpenMeteo {
                 precipitationProbability = d.precipitationProbability.getOrNull(i),
                 precipitationSum = d.precipitationSum.getOrNull(i),
                 windMax = d.windMax.getOrNull(i),
+                windGustsMax = d.windGustsMax.getOrNull(i),
             )
         }
         val minutely = forecast.minutely?.let { m ->
@@ -216,6 +256,11 @@ data class HourlyDto(
     @SerialName("wind_speed_10m") val windSpeed: List<Double?> = emptyList(),
     val precipitation: List<Double?> = emptyList(),
     @SerialName("pressure_msl") val pressure: List<Double?> = emptyList(),
+    @SerialName("uv_index") val uvIndex: List<Double?> = emptyList(),
+    @SerialName("relative_humidity_2m") val humidity: List<Int?> = emptyList(),
+    @SerialName("dew_point_2m") val dewPoint: List<Double?> = emptyList(),
+    val visibility: List<Double?> = emptyList(),
+    @SerialName("wind_gusts_10m") val windGusts: List<Double?> = emptyList(),
 )
 
 @Serializable
@@ -230,6 +275,7 @@ data class DailyDto(
     @SerialName("precipitation_probability_max") val precipitationProbability: List<Int?> = emptyList(),
     @SerialName("precipitation_sum") val precipitationSum: List<Double?> = emptyList(),
     @SerialName("wind_speed_10m_max") val windMax: List<Double?> = emptyList(),
+    @SerialName("wind_gusts_10m_max") val windGustsMax: List<Double?> = emptyList(),
 )
 
 @Serializable
@@ -239,12 +285,24 @@ data class MinutelyDto(
 )
 
 @Serializable
-data class AirQualityResponse(val current: AirQualityCurrentDto)
+data class AirQualityResponse(val current: AirQualityCurrentDto, val hourly: AirQualityHourlyDto? = null)
+
+@Serializable
+data class AirQualityHourlyDto(@SerialName("european_aqi") val europeanAqi: List<Int?> = emptyList())
 
 @Serializable
 data class AirQualityCurrentDto(
     @SerialName("european_aqi") val europeanAqi: Int? = null,
     @SerialName("pm2_5") val pm25: Double? = null,
+    val pm10: Double? = null,
+    val ozone: Double? = null,
+    @SerialName("nitrogen_dioxide") val nitrogenDioxide: Double? = null,
+    @SerialName("grass_pollen") val grassPollen: Double? = null,
+    @SerialName("birch_pollen") val birchPollen: Double? = null,
+    @SerialName("alder_pollen") val alderPollen: Double? = null,
+    @SerialName("olive_pollen") val olivePollen: Double? = null,
+    @SerialName("mugwort_pollen") val mugwortPollen: Double? = null,
+    @SerialName("ragweed_pollen") val ragweedPollen: Double? = null,
 )
 
 @Serializable

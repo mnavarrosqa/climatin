@@ -55,6 +55,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import com.mnavarrosqa.clima.ui.theme.Flex
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
+import com.mnavarrosqa.clima.data.RainMap
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.StateFlow
@@ -782,7 +787,7 @@ fun ForecastContent(
                             HourlyChart(hours, sunEvents = sunEvents, yesterday = yesterday, alerts = alertSpans)
                         }
                         ForecastCard.DAYS -> DailyCard(snapshot, onDay = onDay)
-                        ForecastCard.RADAR -> RadarCard(onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })
+                        ForecastCard.RADAR -> RadarCard(snapshot.latitude, snapshot.longitude, onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })
                         ForecastCard.DETAILS -> DetailsGrid(snapshot)
                     }
                 }
@@ -1137,7 +1142,15 @@ private fun AlertCard(alert: WeatherAlert, startExpanded: Boolean = false) {
 }
 
 @Composable
-private fun RadarCard(onClick: () -> Unit) {
+private fun RadarCard(latitude: Double, longitude: Double, onClick: () -> Unit) {
+    val dark = LocalDarkTheme.current
+    // Vista previa: el mapa alrededor del lugar con la lluvia de esta hora (se guarda 15 minutos).
+    val preview by produceState<RainMap.Preview?>(null, latitude, longitude, dark) {
+        value = runCatching { RainMap.preview(latitude, longitude, dark) }
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+            .getOrNull()
+    }
+    val markerColor = MaterialTheme.colorScheme.primary
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -1148,19 +1161,47 @@ private fun RadarCard(onClick: () -> Unit) {
             .pressable(onClick),
     ) {
         Row(
-            Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(
-                painter = painterResource(WeatherCodes.icon(61)),
-                contentDescription = null,
-                modifier = Modifier.size(40.dp),
-            )
-            Spacer(Modifier.width(12.dp))
+            val shown = preview
+            if (shown == null) {
+                Image(
+                    painter = painterResource(WeatherCodes.icon(61)),
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                )
+            } else {
+                Canvas(
+                    Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(18.dp)),
+                ) {
+                    val side = size.width
+                    shown.tiles.forEach { (xy, image) ->
+                        drawImage(
+                            image,
+                            dstOffset = IntOffset(((xy[0] - shown.x0) * side).roundToInt(), ((xy[1] - shown.y0) * side).roundToInt()),
+                            dstSize = IntSize(side.roundToInt() + 1, side.roundToInt() + 1),
+                        )
+                    }
+                    shown.rain?.let {
+                        drawImage(it, dstSize = IntSize(side.roundToInt(), side.roundToInt()), filterQuality = FilterQuality.High)
+                    }
+                    val center = Offset(side / 2, size.height / 2)
+                    drawCircle(Color.White, 5.dp.toPx(), center)
+                    drawCircle(markerColor, 3.5.dp.toPx(), center)
+                }
+            }
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(tr("Mapa de lluvia", "Rain map"), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    tr("Dónde llueve ahora y en las próximas horas", "Where it rains now and in the next hours"),
+                    when {
+                        shown?.raining == true -> tr("Hay lluvia cerca ahora. Tocá para ver cómo se mueve", "There's rain nearby now. Tap to see where it's going")
+                        shown != null -> tr("Sin lluvia cerca ahora. Tocá para ver las próximas horas", "No rain nearby now. Tap for the next hours")
+                        else -> tr("Dónde llueve ahora y en las próximas horas", "Where it rains now and in the next hours")
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1257,6 +1298,8 @@ private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, no
         append(tr("máxima", "high") + " ${day.max.degrees()}, " + tr("mínima", "low") + " ${day.min.degrees()}")
         if (now != null) append(", " + tr("ahora", "now") + " ${now.degrees()}")
         if (probability >= 10) append(", " + tr("lluvia", "rain") + " $probability%")
+        if ((day.windGustsMax ?: 0.0) >= 50 || (day.windMax ?: 0.0) >= 35) append(", " + tr("con viento", "windy"))
+        if ((day.uvIndex ?: 0.0) >= 8) append(", " + tr("sol fuerte", "strong sun"))
     }
     Row(
         modifier.clearAndSetSemantics {
@@ -1271,8 +1314,16 @@ private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, no
             contentDescription = WeatherCodes.description(day.code),
             modifier = Modifier.size(28.dp),
         )
+        // Sin lluvia, el lugar avisa de viento fuerte o sol muy fuerte.
+        val windy = (day.windGustsMax ?: 0.0) >= 50 || (day.windMax ?: 0.0) >= 35
+        val strongSun = (day.uvIndex ?: 0.0) >= 8
         Text(
-            if (probability >= 10) "$probability%" else "",
+            when {
+                probability >= 10 -> "$probability%"
+                windy -> "💨"
+                strongSun -> "☀️"
+                else -> ""
+            },
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.tertiary,
             textAlign = TextAlign.Center,

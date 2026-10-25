@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mnavarrosqa.clima.data.Day
 import com.mnavarrosqa.clima.data.Moon
+import com.mnavarrosqa.clima.data.daySummary
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.dayLabel
@@ -62,6 +63,12 @@ fun DaySheet(snapshot: WeatherSnapshot, day: Day, onDismiss: () -> Unit) {
                         tr("Máx", "High") + " ${day.max.degrees()} · " + tr("Mín", "Low") + " ${day.min.degrees()}",
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                    // En una línea, cómo viene comparado con el día anterior.
+                    val previous = snapshot.days.firstOrNull { it.localDate == day.localDate.minusDays(1) }
+                    daySummary(day, previous).takeIf { it.isNotEmpty() }?.let {
+                        Spacer(Modifier.height(4.dp))
+                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 AnimatedWeatherIcon(day.code, isDay = true, size = 88.dp)
             }
@@ -84,6 +91,7 @@ fun DaySheet(snapshot: WeatherSnapshot, day: Day, onDismiss: () -> Unit) {
                 add(tr("Probabilidad de lluvia", "Chance of rain") to "${day.precipitationProbability ?: 0}%")
                 day.precipitationSum?.let { add(tr("Lluvia total", "Total rain") to String.format(Locale.US, "%.1f mm", it)) }
                 day.windMax?.let { add(tr("Viento máximo", "Max wind") to windText(it)) }
+                day.windGustsMax?.let { add(tr("Ráfagas", "Gusts") to windText(it)) }
                 day.uvIndex?.let { add(tr("Índice UV máximo", "Max UV index") to "${it.roundToInt()} · ${WeatherCodes.uvLabel(it)}") }
                 add(tr("Amanecer", "Sunrise") to timeOf(day.sunrise))
                 add(tr("Atardecer", "Sunset") to timeOf(day.sunset))

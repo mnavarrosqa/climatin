@@ -154,6 +154,11 @@ data class Hour(
     val windSpeed: Double? = null,
     val precipitation: Double? = null,
     val pressure: Double? = null,
+    val uvIndex: Double? = null,
+    val humidity: Int? = null,
+    val dewPoint: Double? = null,
+    val visibility: Double? = null,
+    val windGusts: Double? = null,
 ) {
     // Se lee una vez por hora: los gráficos, widgets y avisos la consultan una y otra vez.
     // Al ser delegada no se guarda en el archivo ni cuenta para equals.
@@ -172,6 +177,7 @@ data class Day(
     val precipitationProbability: Int?,
     val precipitationSum: Double? = null,
     val windMax: Double? = null,
+    val windGustsMax: Double? = null,
 ) {
     val localDate: LocalDate by lazy(LazyThreadSafetyMode.PUBLICATION) { LocalDate.parse(date) }
 }
@@ -182,7 +188,19 @@ data class Minutely(val time: String, val precipitation: Double) {
 }
 
 @Serializable
-data class AirQuality(val europeanAqi: Int?, val pm25: Double?)
+data class AirQuality(
+    val europeanAqi: Int?,
+    val pm25: Double?,
+    val pm10: Double? = null,
+    val ozone: Double? = null,
+    val nitrogenDioxide: Double? = null,
+    /** Polen en granos por m³ (Open-Meteo solo lo da en Europa). */
+    val grassPollen: Double? = null,
+    val treePollen: Double? = null,
+    val weedPollen: Double? = null,
+    /** Índice de las próximas 12 horas, desde la actual. */
+    val upcomingAqi: List<Int?> = emptyList(),
+)
 
 /** Si llueve, llovizna, hay tormenta o nieva: la misma idea de "mojado" en todos los avisos. */
 val WeatherKind.isWet: Boolean

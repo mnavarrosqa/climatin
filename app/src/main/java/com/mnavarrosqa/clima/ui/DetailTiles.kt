@@ -53,6 +53,25 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.mnavarrosqa.clima.data.Moon
+import com.mnavarrosqa.clima.data.Lang
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import com.mnavarrosqa.clima.data.versusYesterdayText
+import com.mnavarrosqa.clima.data.versusYesterday
+import com.mnavarrosqa.clima.data.uvWindow
+import com.mnavarrosqa.clima.data.trend
+import com.mnavarrosqa.clima.data.pressureSeries
+import com.mnavarrosqa.clima.data.pollenText
+import com.mnavarrosqa.clima.data.outfit
+import com.mnavarrosqa.clima.data.mainPollutant
+import com.mnavarrosqa.clima.data.humidityFeel
+import com.mnavarrosqa.clima.data.fog
+import com.mnavarrosqa.clima.data.feelsLikeRange
+import com.mnavarrosqa.clima.data.dewTonight
+import com.mnavarrosqa.clima.data.degreesDelta
+import com.mnavarrosqa.clima.data.beaufortLabel
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.geometry.CornerRadius
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.pressureText
@@ -109,9 +128,30 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
     val details = buildList {
         // De día el sol; de noche la luna, con su recorrido (y entonces no va la tarjeta chica de la luna).
         sky?.let { add(it.first) }
-        (current.uvIndex ?: today?.uvIndex)?.let {
+        // Qué ponerse en las próximas 12 horas.
+        snapshot.outfit().takeIf { it.isNotEmpty() }?.let { items ->
             add(
-                Detail(tr("Índice UV", "UV index"), "${it.roundToInt()}", WeatherCodes.uvLabel(it).replaceFirstChar { c -> c.uppercase() }) {
+                Detail(tr("¿Qué me pongo?", "What to wear"), items.first(), items.drop(1).joinToString("   ").ifEmpty { null }, wide = true).apply {
+                    info = tr(
+                        "Sale de la sensación térmica, la lluvia, el viento y el UV de las próximas 12 horas. Es una idea: cada uno siente el frío a su manera.",
+                        "Based on feels-like temperature, rain, wind and UV over the next 12 hours. Just a hint: everyone feels the cold differently.",
+                    )
+                },
+            )
+        }
+        val uvNow = current.uvIndex ?: if (current.isDay) today?.uvIndex else 0.0
+        uvNow?.let {
+            val window = snapshot.uvWindow()
+            val tomorrowUv = snapshot.upcomingDays(2).getOrNull(1)?.uvIndex
+            // De noche no tiene sentido el UV de ahora: se dice cuánto llega mañana.
+            val note = when {
+                !current.isDay && tomorrowUv != null -> tr("Mañana llega a ${tomorrowUv.roundToInt()}", "Tomorrow up to ${tomorrowUv.roundToInt()}")
+                window != null && window.ongoing -> tr("Protegete hasta las ${shortHour(window.until)}", "Protect yourself until ${shortHour(window.until)}")
+                window != null -> tr("Protegete de ${shortHour(window.from)} a ${shortHour(window.until)}", "Protect yourself ${shortHour(window.from)}–${shortHour(window.until)}")
+                else -> WeatherCodes.uvLabel(it).replaceFirstChar { c -> c.uppercase() }
+            }
+            add(
+                Detail(tr("Índice UV", "UV index"), "${it.roundToInt()}", note) {
                     ScaleBar((it / 11).toFloat(), UvColors)
                 }.apply {
                     info = tr(
@@ -123,76 +163,168 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
                 },
             )
         }
+        val gust = current.windGusts?.takeIf { it >= current.windSpeed + 10 }
         add(
             Detail(
                 tr("Viento", "Wind"),
                 windText(current.windSpeed),
-                // Las ráfagas solo si suman algo: con viento parejo, la dirección alcanza.
                 listOfNotNull(
-                    current.windDirection?.let { tr("Del", "From") + " " + windFrom(it) },
-                    current.windGusts?.takeIf { it >= current.windSpeed + 10 }?.let { tr("Ráfagas", "Gusts") + " " + windText(it) },
-                ).joinToString(" · ").ifEmpty { null },
-                visual = current.windDirection?.let { direction -> @Composable { WindCompass(direction.toFloat()) } },
+                    beaufortLabel(current.windSpeed),
+                    current.windDirection?.let { tr("del", "from") + " " + windFrom(it) },
+                ).joinToString(" "),
+                visual = @Composable {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        current.windDirection?.let { WindCompass(it.toFloat()) }
+                        // Las ráfagas al lado, como una barra contra el viento medio.
+                        if (gust != null) {
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(tr("Ráfagas", "Gusts"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(windText(gust), style = MaterialTheme.typography.labelLarge)
+                                GustBar((current.windSpeed / gust).toFloat())
+                            }
+                        }
+                    }
+                },
             ).apply {
                 info = tr(
-                    "Viento medio a 10 metros del suelo; las ráfagas pueden ser bastante más fuertes. La dirección es de dónde viene." +
-                        (current.windGusts?.let { gust -> " Ráfagas de hasta ${windText(gust)}." } ?: "") +
+                    "Viento medio a 10 metros del suelo, con su nombre en la escala de Beaufort; las ráfagas pueden ser bastante más fuertes. La dirección es de dónde viene." +
+                        (current.windGusts?.let { g -> " Ráfagas de hasta ${windText(g)}." } ?: "") +
                         (today?.windMax?.let { max -> " Hoy, como mucho ${windText(max)}." } ?: ""),
-                    "Average wind 10 meters above ground; gusts can be much stronger. The direction is where it comes from." +
-                        (current.windGusts?.let { gust -> " Gusts up to ${windText(gust)}." } ?: "") +
+                    "Average wind 10 meters above ground, named on the Beaufort scale; gusts can be much stronger. The direction is where it comes from." +
+                        (current.windGusts?.let { g -> " Gusts up to ${windText(g)}." } ?: "") +
                         (today?.windMax?.let { max -> " Today, up to ${windText(max)}." } ?: ""),
                 )
             },
         )
-        // Sensación térmica: por qué no coincide con la temperatura.
+        // Sensación térmica: por qué no coincide con la temperatura, y cómo sigue.
+        val feelsRange = snapshot.feelsLikeRange(12)
+        val feelsSeries = snapshot.upcomingHours(12).mapNotNull { it.feelsLike }
         add(
             Detail(
                 tr("Sensación", "Feels like"),
                 current.feelsLike.degrees(),
-                when {
+                feelsRange?.let { (low, _) ->
+                    tr("Mín ${low.feelsLike!!.degrees()} a las ${shortHour(low.dateTime)}", "Low ${low.feelsLike!!.degrees()} at ${shortHour(low.dateTime)}")
+                } ?: when {
                     current.feelsLike < current.temperature - 1.5 -> tr("Más fresco por el viento", "Cooler because of the wind")
                     current.feelsLike > current.temperature + 1.5 -> tr("Más calor por la humedad", "Warmer because of humidity")
                     else -> tr("Como la temperatura", "Same as the temperature")
                 },
+                visual = if (feelsSeries.size >= 3) ({ Sparkline(feelsSeries, nowIndex = 0) }) else null,
             ).apply {
+                val why = when {
+                    current.feelsLike < current.temperature - 1.5 -> tr(" Ahora se siente más fresco por el viento.", " Right now it feels cooler because of the wind.")
+                    current.feelsLike > current.temperature + 1.5 -> tr(" Ahora se siente más calor por la humedad.", " Right now it feels warmer because of humidity.")
+                    else -> ""
+                }
+                val range = feelsRange?.let { (low, high) ->
+                    tr(
+                        " En las próximas 12 horas va de ${low.feelsLike!!.degrees()} (${shortHour(low.dateTime)}) a ${high.feelsLike!!.degrees()} (${shortHour(high.dateTime)}).",
+                        " Over the next 12 hours it goes from ${low.feelsLike!!.degrees()} (${shortHour(low.dateTime)}) to ${high.feelsLike!!.degrees()} (${shortHour(high.dateTime)}).",
+                    )
+                } ?: ""
                 info = tr(
                     "Cómo se siente en el cuerpo: con viento y frío se siente más fresco (el viento se lleva el calor de la piel); con calor y humedad, más calor (cuesta transpirar).",
                     "How it feels on your body: wind makes cold feel colder (it carries heat away from your skin); humidity makes heat feel hotter (sweat evaporates less).",
-                )
+                ) + why + range
             },
         )
-        val dew = dewPoint(current.temperature, current.humidity)
-        add(
-            Detail(tr("Humedad", "Humidity"), "${current.humidity}%", tr("Punto de rocío", "Dew point") + " ${dew.degrees()}") {
-                RingGauge(current.humidity / 100f)
-            }.apply {
-                info = tr(
-                    "El punto de rocío dice mejor que la humedad cuánto se siente el aire: hasta 10° seco, de 10° a 16° agradable, de 16° a 20° pesado y desde 20° muy húmedo. Ahora: ${dew.degrees()}.",
-                    "Dew point tells better than humidity how the air feels: up to 10° dry, 10–16° comfortable, 16–20° muggy and above 20° oppressive. Now: ${dew.degrees()}.",
-                )
-            },
-        )
-        snapshot.airQuality?.europeanAqi?.let {
+        // Comparación con ayer a la misma hora.
+        snapshot.versusYesterday()?.let { difference ->
+            val sign = if (difference.roundToInt() > 0) "+" else if (difference.roundToInt() < 0) "−" else ""
             add(
-                Detail(tr("Calidad del aire", "Air quality"), WeatherCodes.airQualityLabel(it), tr("Índice", "Index") + " $it") {
-                    ScaleBar(it / 100f, AqiColors)
-                }.apply {
-                    val pm = snapshot.airQuality?.pm25?.let { v -> " PM2,5: ${v.roundToInt()} µg/m³." } ?: ""
+                Detail(tr("Comparado con ayer", "Versus yesterday"), sign + difference.degreesDelta(), versusYesterdayText(difference)).apply {
                     info = tr(
-                        "Índice europeo: hasta 20 bueno, 20–40 aceptable, 40–60 moderado (las personas sensibles pueden notarlo), 60–80 malo (mejor evitar ejercicio fuerte afuera), 80–100 muy malo y más de 100 extremadamente malo.$pm",
-                        "European index: up to 20 good, 20–40 fair, 40–60 moderate (sensitive people may notice), 60–80 poor (avoid hard exercise outdoors), 80–100 very poor and above 100 extremely poor.$pm",
+                        "La temperatura de ahora contra la de ayer a la misma hora. La línea punteada del gráfico por hora muestra ayer completo.",
+                        "The temperature now against yesterday at the same time. The dotted line in the hourly chart shows all of yesterday.",
                     )
                 },
             )
         }
+        val dew = dewPoint(current.temperature, current.humidity)
+        val dewTonight = snapshot.dewTonight()
+        add(
+            Detail(
+                tr("Humedad", "Humidity"),
+                "${current.humidity}%",
+                when {
+                    dewTonight?.frost == true -> tr("Escarcha a las ${shortHour(dewTonight.at)}", "Frost at ${shortHour(dewTonight.at)}")
+                    dewTonight != null -> tr("Rocío a las ${shortHour(dewTonight.at)}", "Dew at ${shortHour(dewTonight.at)}")
+                    else -> humidityFeel(dew) + " · " + tr("rocío", "dew") + " ${dew.degrees()}"
+                },
+            ) {
+                RingGauge(current.humidity / 100f)
+            }.apply {
+                val tonight = dewTonight?.let {
+                    if (it.frost) {
+                        tr(" Esta noche baja al punto de rocío bajo cero: escarcha cerca de las ${shortHour(it.at)}.", " Tonight it drops to a below-zero dew point: frost around ${shortHour(it.at)}.")
+                    } else {
+                        tr(" Esta noche baja al punto de rocío: pasto y autos mojados cerca de las ${shortHour(it.at)}.", " Tonight it reaches the dew point: wet grass and cars around ${shortHour(it.at)}.")
+                    }
+                } ?: ""
+                info = tr(
+                    "El punto de rocío dice mejor que la humedad cuánto se siente el aire: hasta 10° seco, de 10° a 16° agradable, de 16° a 20° pesado y desde 20° muy húmedo. Ahora: ${dew.degrees()} (${humidityFeel(dew).lowercase()}).",
+                    "Dew point tells better than humidity how the air feels: up to 10° dry, 10–16° comfortable, 16–20° muggy and above 20° oppressive. Now: ${dew.degrees()} (${humidityFeel(dew).lowercase()}).",
+                ) + tonight
+            },
+        )
+        snapshot.airQuality?.let { air ->
+            val aqi = air.europeanAqi ?: return@let
+            val trend = when (air.trend()) {
+                1 -> tr("empeora", "worsening")
+                -1 -> tr("mejora", "improving")
+                0 -> tr("estable", "steady")
+                else -> null
+            }
+            val pollen = air.pollenText()
+            add(
+                Detail(
+                    tr("Calidad del aire", "Air quality"),
+                    WeatherCodes.airQualityLabel(aqi),
+                    pollen?.let { tr("Polen: ", "Pollen: ") + it } ?: listOfNotNull(tr("Índice", "Index") + " $aqi", trend).joinToString(" · "),
+                ) {
+                    ScaleBar(aqi / 100f, AqiColors)
+                }.apply {
+                    val parts = listOfNotNull(
+                        air.mainPollutant()?.let { tr(" Lo que más pesa ahora: $it.", " Main pollutant now: $it.") },
+                        air.pm25?.let { v -> " PM2,5: ${v.roundToInt()} µg/m³." },
+                        trend?.let { tr(" En las próximas horas: $it.", " Next hours: $it.") },
+                        pollen?.let { tr(" Polen: $it.", " Pollen: $it.") },
+                    ).joinToString("")
+                    info = tr(
+                        "Índice europeo: hasta 20 bueno, 20–40 aceptable, 40–60 moderado (las personas sensibles pueden notarlo), 60–80 malo (mejor evitar ejercicio fuerte afuera), 80–100 muy malo y más de 100 extremadamente malo.",
+                        "European index: up to 20 good, 20–40 fair, 40–60 moderate (sensitive people may notice), 60–80 poor (avoid hard exercise outdoors), 80–100 very poor and above 100 extremely poor.",
+                    ) + parts
+                },
+            )
+        }
+        // Lluvia: cuándo, hora por hora, en las próximas 24.
+        val next = snapshot.upcomingHours(25)
+        val rainHours = next.indices.take(24).map { i -> rainAfter(next, i) }
+        val rainy = rainHours.indices.filter { (rainHours[it].first ?: 0) >= 50 }
         val rain = today?.precipitationProbability ?: 0
         add(
-            Detail(tr("Lluvia hoy", "Rain today"), "$rain%", today?.precipitationSum?.takeIf { it > 0 }?.let { "${"%.1f".format(it)} mm" }) {
-                RingGauge(rain / 100f, MaterialTheme.colorScheme.tertiary)
+            Detail(
+                tr("Lluvia", "Rain"),
+                if (rainy.isEmpty()) tr("Sin lluvia a la vista", "No rain in sight") else tr("Hoy $rain%", "Today $rain%"),
+                rainy.firstOrNull()?.let { first ->
+                    // El primer tramo seguido de lluvia probable.
+                    var last = first
+                    while (last + 1 in rainy) last++
+                    val from = next[first].dateTime
+                    val until = next[last].dateTime.plusHours(1)
+                    val total = rainHours.sumOf { it.second ?: 0.0 }
+                    tr("Probable de ${shortHour(from)} a ${shortHour(until)}", "Likely ${shortHour(from)}–${shortHour(until)}") +
+                        (if (total >= 0.1) " · " + String.format(java.util.Locale.US, "%.1f mm", total) else "")
+                } ?: tr("Próximas 24 horas", "Next 24 hours"),
+                wide = true,
+            ) {
+                if (next.size >= 2) RainBars(rainHours, next.take(24).map { shortHour(it.dateTime) })
             }.apply {
                 info = tr(
-                    "La probabilidad más alta de lluvia en el día y cuánto llovería en total. 1 mm es un litro por metro cuadrado: menos de 2 mm es poco, más de 10 mm es bastante y más de 30 mm, mucho.",
-                    "The highest chance of rain during the day and the total amount. 1 mm is one liter per square meter: under 2 mm is little, over 10 mm is a lot and over 30 mm is heavy.",
+                    "Cada barra es una hora de las próximas 24: la altura es la probabilidad de lluvia y el color más fuerte, más milímetros. 1 mm es un litro por metro cuadrado: menos de 2 mm es poco, más de 10 mm es bastante y más de 30 mm, mucho.",
+                    "Each bar is one of the next 24 hours: height is the chance of rain and a stronger color means more millimeters. 1 mm is one liter per square meter: under 2 mm is little, over 10 mm is a lot and over 30 mm is heavy.",
                 )
             },
         )
@@ -218,19 +350,37 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
                 change >= 1 -> tr("↑ Subiendo", "↑ Rising")
                 else -> tr("Estable", "Steady")
             }
+            val series = snapshot.pressureSeries()
             add(
-                Detail(tr("Presión", "Pressure"), pressureText(it), trend).apply {
+                Detail(
+                    tr("Presión", "Pressure"),
+                    pressureText(it),
+                    trend,
+                    visual = series?.let { (values, index) -> @Composable { Sparkline(values, nowIndex = index) } },
+                ).apply {
                     info = tr(
-                        "Presión del aire llevada al nivel del mar, para comparar entre lugares. Lo normal ronda los 1013 hPa; si baja rápido suele venir mal tiempo, y si sube, se estabiliza. La flecha compara con 3 horas atrás.",
-                        "Air pressure adjusted to sea level, so places can be compared. Around 1013 hPa is normal; a quick drop often means bad weather and a rise means it's settling. The arrow compares with 3 hours ago.",
+                        "Presión del aire llevada al nivel del mar, para comparar entre lugares. Lo normal ronda los 1013 hPa; si baja rápido suele venir mal tiempo, y si sube, se estabiliza. La flecha compara con 3 horas atrás y la línea va de 12 horas atrás a 12 adelante.",
+                        "Air pressure adjusted to sea level, so places can be compared. Around 1013 hPa is normal; a quick drop often means bad weather and a rise means it's settling. The arrow compares with 3 hours ago and the line goes from 12 hours ago to 12 ahead.",
                     )
                 },
             )
         }
         current.visibility?.let {
             val km = it / 1000
+            val fog = snapshot.fog()
+            val fogAt = fog?.at
             add(
-                Detail(tr("Visibilidad", "Visibility"), if (km >= 10) "+10 km" else "${km.roundToInt()} km").apply {
+                Detail(
+                    tr("Visibilidad", "Visibility"),
+                    if (km >= 10) "+10 km" else if (km < 1) "${it.roundToInt()} m" else "${km.roundToInt()} km",
+                    when {
+                        fog?.now == true && fogAt != null -> tr("La niebla se levanta a las ${shortHour(fogAt)}", "Fog lifts at ${shortHour(fogAt)}")
+                        fog?.now == true -> tr("Niebla por varias horas", "Fog for hours")
+                        fogAt != null -> tr("Niebla desde las ${shortHour(fogAt)}", "Fog from ${shortHour(fogAt)}")
+                        km >= 10 -> tr("Despejado", "Clear")
+                        else -> null
+                    },
+                ).apply {
                     info = tr(
                         "Hasta dónde se ve. Con menos de 1 km hay niebla: manejá con luces bajas y más distancia.",
                         "How far you can see. Under 1 km there's fog: drive with low beams and keep more distance.",
@@ -368,22 +518,34 @@ private fun RingGauge(fraction: Float, color: Color = MaterialTheme.colorScheme.
     }
 }
 
-/** Brújula con una flecha que apunta hacia donde sopla el viento. */
+/** Brújula con los puntos cardinales y una flecha que apunta hacia donde sopla el viento. */
 @Composable
 private fun WindCompass(fromDegrees: Float) {
     val colors = MaterialTheme.colorScheme
     val grow by growth()
-    Canvas(Modifier.size(56.dp)) {
+    val measurer = rememberTextMeasurer()
+    val letterStyle = MaterialTheme.typography.labelSmall.copy(color = colors.onSurfaceVariant)
+    val letters = remember(letterStyle) {
+        (if (Lang.isSpanish) listOf("N", "E", "S", "O") else listOf("N", "E", "S", "W")).map { measurer.measure(it, letterStyle) }
+    }
+    Canvas(Modifier.size(64.dp)) {
         val radius = size.minDimension / 2
         val center = Offset(size.width / 2, size.height / 2)
         drawCircle(colors.surfaceContainerHigh, radius = radius, center = center)
-        // Marcas de los puntos cardinales.
-        repeat(8) { i ->
-            val angle = i * PI / 4
+        // Letras en los cuatro puntos cardinales y marcas cortas en los intermedios.
+        val letterRadius = radius - 9.dp.toPx()
+        letters.forEachIndexed { i, layout ->
+            val angle = i * PI / 2
+            val x = center.x + letterRadius * sin(angle).toFloat() - layout.size.width / 2f
+            val y = center.y - letterRadius * cos(angle).toFloat() - layout.size.height / 2f
+            drawText(layout, topLeft = Offset(x, y))
+        }
+        repeat(4) { i ->
+            val angle = PI / 4 + i * PI / 2
             val outer = radius - 4.dp.toPx()
-            val inner = outer - if (i % 2 == 0) 5.dp.toPx() else 3.dp.toPx()
+            val inner = outer - 3.dp.toPx()
             drawLine(
-                colors.onSurfaceVariant.copy(alpha = 0.6f),
+                colors.onSurfaceVariant.copy(alpha = 0.5f),
                 Offset(center.x + inner * sin(angle).toFloat(), center.y - inner * cos(angle).toFloat()),
                 Offset(center.x + outer * sin(angle).toFloat(), center.y - outer * cos(angle).toFloat()),
                 1.5.dp.toPx(),
@@ -392,16 +554,21 @@ private fun WindCompass(fromDegrees: Float) {
         }
         // El viento "del norte" va hacia el sur: la flecha gira 180° y entra girando al aparecer.
         rotate(fromDegrees + 180f - (1f - grow) * 90f, center) {
-            val length = radius - 12.dp.toPx()
+            val length = radius - 18.dp.toPx()
+            val head = 7.dp.toPx()
             val arrow = Path().apply {
                 moveTo(center.x, center.y - length)
-                lineTo(center.x + 6.dp.toPx(), center.y - length + 10.dp.toPx())
-                lineTo(center.x - 6.dp.toPx(), center.y - length + 10.dp.toPx())
+                lineTo(center.x + head * 0.7f, center.y - length + head)
+                lineTo(center.x, center.y - length + head * 0.7f)
+                lineTo(center.x - head * 0.7f, center.y - length + head)
                 close()
             }
-            drawLine(colors.primary, Offset(center.x, center.y + length * 0.7f), Offset(center.x, center.y - length + 6.dp.toPx()), 3.dp.toPx(), StrokeCap.Round)
+            // La cola de donde viene, más finita; la punta hacia donde va.
+            drawLine(colors.primary.copy(alpha = 0.5f), Offset(center.x, center.y + length), center, 2.dp.toPx(), StrokeCap.Round)
+            drawLine(colors.primary, center, Offset(center.x, center.y - length + head * 0.7f), 3.dp.toPx(), StrokeCap.Round)
             drawPath(arrow, colors.primary)
         }
+        drawCircle(colors.primary, 3.dp.toPx(), center)
     }
 }
 
@@ -635,6 +802,99 @@ private fun SkyPath(
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(left.orEmpty(), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 Text(right.orEmpty(), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** Línea chica de una serie (sensación, presión), con un punto en [nowIndex]. */
+@Composable
+private fun Sparkline(values: List<Double>, nowIndex: Int) {
+    val colors = MaterialTheme.colorScheme
+    val grow by growth()
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(36.dp),
+    ) {
+        if (values.size < 2) return@Canvas
+        val min = values.min()
+        val span = (values.max() - min).takeIf { it > 0.001 } ?: 1.0
+        val pad = 4.dp.toPx()
+        fun point(i: Int) = Offset(
+            i * size.width / (values.size - 1),
+            (size.height - pad - ((values[i] - min) / span).toFloat() * (size.height - 2 * pad)),
+        )
+        val path = Path().apply {
+            values.indices.forEach { i -> point(i).let { if (i == 0) moveTo(it.x, it.y) else lineTo(it.x, it.y) } }
+        }
+        clipRect(right = size.width * grow) {
+            drawPath(path, colors.primary, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+        }
+        val now = point(nowIndex.coerceIn(0, values.lastIndex))
+        drawCircle(colors.surface, 5.dp.toPx(), now)
+        drawCircle(colors.primary, 3.5.dp.toPx(), now)
+    }
+}
+
+/** Barra de las ráfagas: la parte llena es el viento medio. */
+@Composable
+private fun GustBar(fraction: Float) {
+    val colors = MaterialTheme.colorScheme
+    val grow by growth()
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+            .height(8.dp),
+    ) {
+        val r = CornerRadius(size.height / 2)
+        drawRoundRect(colors.primary.copy(alpha = 0.25f), cornerRadius = r)
+        drawRoundRect(colors.primary, size = Size(size.width * fraction.coerceIn(0.05f, 1f) * grow, size.height), cornerRadius = r)
+    }
+}
+
+/**
+ * Lluvia de las próximas 24 horas: una barra por hora, alta según la probabilidad y más intensa
+ * cuantos más milímetros. Abajo, la hora cada 6.
+ */
+@Composable
+private fun RainBars(rain: List<Pair<Int?, Double?>>, labels: List<String>) {
+    val colors = MaterialTheme.colorScheme
+    val base = colors.tertiary
+    val grow by growth()
+    Column {
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(44.dp),
+        ) {
+            val slot = size.width / rain.size
+            val bar = slot * 0.6f
+            drawLine(colors.onSurfaceVariant.copy(alpha = 0.3f), Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
+            rain.forEachIndexed { i, (probability, mm) ->
+                val p = (probability ?: 0) / 100f
+                if (p <= 0.02f) return@forEachIndexed
+                val h = size.height * p * grow
+                val strength = ((mm ?: 0.0) / 4.0).coerceIn(0.0, 1.0).toFloat()
+                drawRoundRect(
+                    base.copy(alpha = 0.35f + 0.65f * strength),
+                    topLeft = Offset(slot * i + (slot - bar) / 2, size.height - h),
+                    size = Size(bar, h),
+                    cornerRadius = CornerRadius(bar / 2),
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            labels.forEachIndexed { i, label ->
+                if (i % 6 == 0) {
+                    Text(
+                        if (i == 0) tr("Ahora", "Now") else label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.weight(6f),
+                    )
+                }
             }
         }
     }
