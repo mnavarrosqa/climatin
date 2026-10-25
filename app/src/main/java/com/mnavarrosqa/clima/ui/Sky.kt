@@ -53,7 +53,7 @@ const val SKY_CYCLE_MS = 60_000
  * se funden en vez de saltar.
  */
 @Composable
-fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier, southern: Boolean = false) {
+fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier, southern: Boolean = false, sunMoon: Boolean = true) {
     // Ajustes → Pantalla del clima: quieto no anima nada (se dibuja una vez); reducido va a un
     // tercio de la velocidad, para quien se marea o prefiere algo más tranquilo.
     val motion = Appearance.skyMotion
@@ -93,6 +93,7 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
         Canvas(Modifier.fillMaxSize()) {
             drawIntoCanvas {
                 painter.southern = southern
+                painter.showSunMoon = sunMoon
                 painter.draw(
                     it.nativeCanvas,
                     size.width,

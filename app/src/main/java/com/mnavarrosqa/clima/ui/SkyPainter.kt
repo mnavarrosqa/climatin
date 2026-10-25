@@ -117,6 +117,12 @@ class SkyPainter {
         paint.alpha = 255
     }
 
+    /**
+     * Si se dibujan el sol y la luna. En el pronóstico van apagados: el ícono grande del estado
+     * ya los muestra y se veían dos soles. Las estrellas y las nubes quedan igual.
+     */
+    var showSunMoon = true
+
     fun draw(
         canvas: Canvas,
         width: Float,
@@ -144,7 +150,11 @@ class SkyPainter {
 
         val clearish = kind == WeatherKind.CLEAR || kind == WeatherKind.PARTLY
         if (clearish && celestial) {
-            if (isDay) drawSun(canvas, width, height, clock) else drawNight(canvas, width, height, density, clock)
+            if (isDay) {
+                if (showSunMoon) drawSun(canvas, width, height, clock)
+            } else {
+                drawNight(canvas, width, height, density, clock)
+            }
         }
         if (kind != WeatherKind.CLEAR && cloudAlpha > 0f) drawClouds(canvas, width, height, clock, kind, isDay, cloudAlpha)
         when (kind) {
@@ -211,6 +221,7 @@ class SkyPainter {
             linePaint.shader = null
         }
 
+        if (!showSunMoon) return
         val mx = width * 0.78f
         val my = height * 0.13f
         val mr = min(width, height) * 0.07f
