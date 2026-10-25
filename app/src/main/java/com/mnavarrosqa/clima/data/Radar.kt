@@ -102,8 +102,19 @@ object RainMap {
     }
 
     /** Vista previa de la tarjeta: el mapa alrededor de un lugar y la lluvia de esta hora. */
-    /** [nearby]: llueve a unos 40 km; [inArea]: en algún lugar del mapita (unos 300 km). */
-    class Preview(val tiles: List<Pair<IntArray, ImageBitmap>>, val x0: Double, val y0: Double, val rain: ImageBitmap?, val nearby: Boolean, val inArea: Boolean)
+    /**
+     * [nearby]: llueve a unos 40 km; [inArea]: en algún lugar del mapita (unos 300 km).
+     * [rainKnown] es falso si la lluvia no se pudo bajar: entonces no se dice que no llueve.
+     */
+    class Preview(
+        val tiles: List<Pair<IntArray, ImageBitmap>>,
+        val x0: Double,
+        val y0: Double,
+        val rain: ImageBitmap?,
+        val nearby: Boolean,
+        val inArea: Boolean,
+        val rainKnown: Boolean,
+    )
 
     const val PREVIEW_ZOOM = 7
     private const val PREVIEW_GRID = 8
@@ -135,7 +146,8 @@ object RainMap {
             .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
             .getOrNull()
         val now = System.currentTimeMillis() / 1000
-        val frame = frames?.lastOrNull { it.epochSeconds <= now } ?: frames?.firstOrNull()
+        // Cada valor es la lluvia de la hora anterior a su marca: la hora en curso es la próxima marca.
+        val frame = frames?.firstOrNull { it.epochSeconds > now } ?: frames?.lastOrNull()
         val preview = Preview(
             tiles,
             x0,
@@ -144,8 +156,12 @@ object RainMap {
             // Las 4 celdas del medio son unos 40 km alrededor del lugar.
             nearby = frame?.values?.withIndex()?.any { (i, v) -> v >= 0.1f && i / PREVIEW_GRID in 3..4 && i % PREVIEW_GRID in 3..4 } == true,
             inArea = frame?.values?.any { it >= 0.1f } == true,
+            rainKnown = frame != null,
         )
-        previews[key] = System.currentTimeMillis() to preview
+        // Si faltó la lluvia o alguna tesela, no se guarda: la próxima vez se vuelve a probar.
+        val expected = (kotlin.math.floor(x0 + 1).toInt() - kotlin.math.floor(x0).toInt() + 1) *
+            (kotlin.math.floor(y0 + 1).toInt() - kotlin.math.floor(y0).toInt() + 1)
+        if (frame != null && tiles.size >= expected) previews[key] = System.currentTimeMillis() to preview
         return preview
     }
 

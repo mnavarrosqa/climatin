@@ -127,6 +127,31 @@ data class WidgetColors(
 private val White = ColorProvider(Color.White)
 private val WhiteVariant = ColorProvider(Color.White.copy(alpha = 0.85f))
 private val WhiteChip = ColorProvider(Color.White.copy(alpha = 0.18f))
+private val Ink = ColorProvider(Color(0xFF1B1D21))
+private val InkVariant = ColorProvider(Color(0xFF1B1D21).copy(alpha = 0.75f))
+private val InkChip = ColorProvider(Color.Black.copy(alpha = 0.10f))
+
+/**
+ * Si el fondo de pantalla es claro (el sistema lo marca como apto para texto oscuro). Se consulta
+ * como mucho cada 5 minutos: es una llamada al sistema y los widgets se dibujan seguido.
+ */
+private object WallpaperTone {
+    @Volatile private var checkedAt = 0L
+    @Volatile private var dark = false
+
+    fun wantsDarkText(context: android.content.Context): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return false
+        val now = System.currentTimeMillis()
+        if (now - checkedAt > 5 * 60_000L) {
+            checkedAt = now
+            dark = runCatching {
+                val colors = android.app.WallpaperManager.getInstance(context).getWallpaperColors(android.app.WallpaperManager.FLAG_SYSTEM)
+                ((colors?.colorHints ?: 0) and android.app.WallpaperColors.HINT_SUPPORTS_DARK_TEXT) != 0
+            }.getOrDefault(false)
+        }
+        return dark
+    }
+}
 
 @Composable
 fun widgetColors(snapshot: WeatherSnapshot?, default: WidgetStyle = WidgetStyle.SYSTEM): WidgetColors {
@@ -147,6 +172,20 @@ fun widgetColors(snapshot: WeatherSnapshot?, default: WidgetStyle = WidgetStyle.
             return provider.getColor(context.createConfigurationContext(config)).copy(alpha = opacity / 100f)
         }
         return androidx.glance.color.ColorProvider(day = resolved(false), night = resolved(true))
+    }
+    // Sin fondo propio (transparente, o casi sin opacidad), el texto va sobre el fondo de pantalla:
+    // blanco sobre fondos oscuros y oscuro sobre fondos claros, para que siempre se lea.
+    val overWallpaper = style == WidgetStyle.TRANSPARENT ||
+        ((style == WidgetStyle.SYSTEM || style == WidgetStyle.COLOR) && opacity < 40)
+    if (overWallpaper) {
+        val darkText = WallpaperTone.wantsDarkText(context)
+        val background = if (style == WidgetStyle.TRANSPARENT) null else faded(if (style == WidgetStyle.COLOR) c.primaryContainer else c.widgetBackground)
+        return if (darkText) {
+            // "transparent" pide dibujos claros (para fondos oscuros): acá van los del tema.
+            WidgetColors(style, background, Ink, InkVariant, InkChip, Ink, transparent = false)
+        } else {
+            WidgetColors(style, background, White, WhiteVariant, WhiteChip, White, transparent = true)
+        }
     }
     return when (style) {
         WidgetStyle.SYSTEM -> WidgetColors(

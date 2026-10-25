@@ -222,6 +222,16 @@
             android:name=".work.NotificationActionReceiver"
             android:exported="false" />
 
+        <!-- Cambio de hora o de zona: los widgets se redibujan (son avisos protegidos del sistema). -->
+        <receiver
+            android:name=".work.TimeChangeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".widget.WidgetGalleryActivity"
             android:exported="false" />

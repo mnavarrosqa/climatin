@@ -129,6 +129,8 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
     // Sube para volver a intentar después de un error.
     var attempt by remember { mutableIntStateOf(0) }
+    // El último intento atendido: "Reintentar" carga aunque lo que se ve ya esté cubierto.
+    var lastAttempt by remember { mutableIntStateOf(0) }
     // Lo que dice el punto tocado: "Lluvia moderada · 2,1 mm".
     var probe by remember { mutableStateOf<Pair<Offset, String>?>(null) }
     // Las horas del mapa en la zona del lugar que se mira, no en la del teléfono.
@@ -213,7 +215,12 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             (loaded.y1 >= (1 shl loaded.zoom).toDouble() || (centerY + halfH) / factor <= loaded.y1)
         val wantKey = if (covered) null else Triple(zoom, (centerX * 2).roundToInt(), (centerY * 2).roundToInt())
         LaunchedEffect(wantKey, attempt) {
-            if (wantKey == null && loaded != null) return@LaunchedEffect
+            if (wantKey == null && loaded != null && attempt == lastAttempt) {
+                // Lo que se ve ya está cargado: un error de antes ya no corresponde.
+                error = null
+                return@LaunchedEffect
+            }
+            lastAttempt = attempt
             // Siempre con una pausa: cada carga son muchos puntos para Open-Meteo, que limita las
             // consultas por minuto, y mientras se arrastra no tiene sentido pedir.
             delay(if (loaded == null && attempt == 0) 150 else 400)

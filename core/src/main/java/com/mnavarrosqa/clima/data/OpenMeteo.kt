@@ -70,12 +70,14 @@ object OpenMeteo {
         "grass_pollen,birch_pollen,alder_pollen,olive_pollen,mugwort_pollen,ragweed_pollen" +
         "&hourly=european_aqi&forecast_hours=12"
 
+    /**
+     * Null solo si Open-Meteo rechazó la consulta (4xx: algún dato que no conoce). Si no hay red
+     * o tarda, el error sigue: reintentar con la consulta simple duplicaba la espera.
+     */
     private suspend fun <T> runCatchingAir(block: suspend () -> T): T? = try {
         block()
-    } catch (cancel: kotlinx.coroutines.CancellationException) {
-        throw cancel
-    } catch (_: Exception) {
-        null
+    } catch (rejected: OpenMeteoHttpException) {
+        if (rejected.code in 400..499) null else throw rejected
     }
 
     private fun AirQualityResponse.toAirQuality(): AirQuality {
@@ -118,7 +120,7 @@ object OpenMeteo {
                 connection.connectTimeout = 15_000
                 connection.readTimeout = 15_000
                 val code = connection.responseCode
-                if (code !in 200..299) error("Open-Meteo respondió $code")
+                if (code !in 200..299) throw OpenMeteoHttpException(code)
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
                 json.decodeFromString(deserializer, body)
             } finally {
@@ -317,3 +319,6 @@ data class GeocodingResult(
     val country: String? = null,
     val admin1: String? = null,
 )
+
+/** Open-Meteo respondió con un código de error. */
+class OpenMeteoHttpException(val code: Int) : Exception("Open-Meteo respondió $code")

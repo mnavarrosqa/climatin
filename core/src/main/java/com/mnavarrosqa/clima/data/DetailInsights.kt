@@ -15,11 +15,16 @@ data class UvWindow(val from: LocalDateTime, val until: LocalDateTime, val ongoi
 fun WeatherSnapshot.uvWindow(threshold: Double = 3.0): UvWindow? {
     val now = nowAtPlace()
     val today = now.toLocalDate()
-    val strong = hours.filter { it.dateTime.toLocalDate() == today && (it.uvIndex ?: 0.0) >= threshold }
+    val thisHour = now.truncatedTo(ChronoUnit.HOURS)
+    // Solo desde la hora actual: el pronóstico guardado puede traer horas que ya pasaron.
+    val strong = hours.filter {
+        val time = it.dateTime
+        time.toLocalDate() == today && !time.isBefore(thisHour) && (it.uvIndex ?: 0.0) >= threshold
+    }
     if (strong.isEmpty()) return null
     val first = strong.first().dateTime
     val last = strong.last().dateTime.plusHours(1)
-    return UvWindow(first, last, ongoing = !first.isAfter(now.truncatedTo(ChronoUnit.HOURS)))
+    return UvWindow(first, last, ongoing = !first.isAfter(thisHour))
 }
 
 /** Escala de Beaufort en palabras, a partir del viento en km/h. */
@@ -64,7 +69,7 @@ fun WeatherSnapshot.dewTonight(): DewForecast? {
     val hour = hours.firstOrNull { h ->
         val time = h.dateTime
         val dew = h.dewPoint ?: return@firstOrNull false
-        time.isBefore(limit) && !h.isDay && h.temperature - dew <= 1.0 && (h.windSpeed ?: 0.0) < 15
+        !time.isBefore(now.truncatedTo(ChronoUnit.HOURS)) && time.isBefore(limit) && !h.isDay && h.temperature - dew <= 1.0 && (h.windSpeed ?: 0.0) < 15
     } ?: return null
     return DewForecast(frost = hour.temperature <= 0.5, at = hour.dateTime)
 }

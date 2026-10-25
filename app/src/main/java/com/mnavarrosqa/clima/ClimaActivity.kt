@@ -33,7 +33,8 @@ class ClimaActivity : ComponentActivity() {
         // directo no hay ícono que mostrar: solo se espera el pronóstico, poco.
         val shownAt = SystemClock.uptimeMillis()
         val fromLauncher = intent?.action == Intent.ACTION_MAIN && intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true
-        val minimum = if (fromLauncher) 450L else 0L
+        // Sin mínimo: si el pronóstico ya está, se entra enseguida.
+        val minimum = 0L
         val maximum = if (fromLauncher) 850L else 300L
         val ready = java.util.concurrent.atomic.AtomicBoolean(savedInstanceState != null)
         if (!ready.get()) {

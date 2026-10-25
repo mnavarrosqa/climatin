@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Lo que muestra un widget hasta que Glance lo dibuja. Reemplaza al de Glance, que dice
+    "Loading…" en inglés: acá solo un ícono del clima, sin texto.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_loading_bg">
+
+    <ImageView
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="center"
+        android:alpha="0.7"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_weather_partly_cloudy_day" />
+</FrameLayout>

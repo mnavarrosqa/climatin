@@ -263,8 +263,14 @@ class WeatherRepository private constructor(private val context: Context) {
         missing.forEachIndexed { i, t ->
             fetched.getOrNull(i)?.let { airCache[t.id] = Triple(now, t.latitude to t.longitude, it) }
         }
-        // Si falló, mejor la de la última vez que nada.
-        return targets.map { t -> fresh(t) ?: airCache[t.id]?.third ?: cached(t.id)?.airQuality }
+        // Si falló, mejor la de la última vez que nada, pero solo si es del mismo lugar: si no, al
+        // moverse se mostraba el aire de donde se estaba antes.
+        fun near(lat: Double, lon: Double, t: Target) = abs(lat - t.latitude) < 0.02 && abs(lon - t.longitude) < 0.02
+        return targets.map { t ->
+            fresh(t)
+                ?: airCache[t.id]?.takeIf { (_, point) -> near(point.first, point.second, t) }?.third
+                ?: cached(t.id)?.takeIf { near(it.latitude, it.longitude, t) }?.airQuality
+        }
     }
 
     /** Un lugar para pedir: id, nombre a mostrar y coordenadas. */

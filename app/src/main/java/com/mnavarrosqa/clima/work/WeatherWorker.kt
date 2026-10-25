@@ -1,10 +1,8 @@
 package com.mnavarrosqa.clima.work
 
 import android.content.Context
-import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -22,6 +20,12 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         // "Actualizar" desde una notificación fuerza la descarga aunque se haya actualizado hace poco.
         val force = inputData.getBoolean(FORCE, false)
         val repository = WeatherRepository.get(applicationContext)
+        // Sin conexión no se baja nada, pero los widgets se redibujan igual: así muestran que los
+        // datos son viejos y la hora del pronóstico avanza (antes el trabajo ni corría).
+        if (!online(applicationContext)) {
+            afterRefresh(applicationContext)
+            return Result.success()
+        }
         // Los avisos solo miran "donde estoy": eso va cada vez, y las ciudades guardadas una vez
         // por hora (o al forzar). Antes se bajaban todas cada 15 minutos.
         val error = repository.refreshAll(force = force, cities = force || repository.citiesStale())
@@ -34,17 +38,20 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         }
     }
 
+    private fun online(context: Context): Boolean = runCatching {
+        val manager = context.getSystemService(android.net.ConnectivityManager::class.java)
+        val capabilities = manager.getNetworkCapabilities(manager.activeNetwork)
+        capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }.getOrDefault(true)
+
     companion object {
         private const val NAME = "clima-periodico"
         const val FORCE = "forzar"
 
         fun schedule(context: Context) {
             val minutes = if (WeatherRepository.get(context).rainAlertsEnabled) 15L else 30L
-            val request = PeriodicWorkRequestBuilder<WeatherWorker>(minutes, TimeUnit.MINUTES)
-                .setConstraints(
-                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
-                )
-                .build()
+            // Sin pedir conexión: sin red el trabajo igual redibuja los widgets.
+            val request = PeriodicWorkRequestBuilder<WeatherWorker>(minutes, TimeUnit.MINUTES).build()
             WorkManager.getInstance(context)
                 // UPDATE cambia el intervalo sin perder el turno que ya estaba agendado.
                 .enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.UPDATE, request)

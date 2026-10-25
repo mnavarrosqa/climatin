@@ -10,6 +10,8 @@ import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.LocalSize
 import androidx.glance.appwidget.provideContent
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
@@ -32,6 +34,9 @@ import java.time.LocalDate
 
 /** "De un vistazo": fecha y clima sin fondo, directo sobre el fondo de pantalla como en el Pixel. */
 class VistazoWidget : GlanceAppWidget(), PreviewableWidget {
+    // Con el tamaño exacto se sabe si entra la tercera línea (en 4×1 no entra).
+    override val sizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         provideContent { Body() }
     }
@@ -51,10 +56,12 @@ private fun VistazoContent(snapshot: WeatherSnapshot?) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val date = snapshot?.nowAtPlace()?.toLocalDate() ?: LocalDate.now()
+            // Bajo (una fila de la grilla, o letra grande): fecha más chica y sin la frase.
+            val tight = LocalSize.current.height < 96.dp * fontScale()
             Text(
                 longDate(date),
                 maxLines = 1,
-                style = TextStyle(color = colors.text, fontSize = 24.sp, fontWeight = FontWeight.Medium),
+                style = TextStyle(color = colors.text, fontSize = if (tight) 20.sp else 24.sp, fontWeight = FontWeight.Medium),
             )
             if (snapshot != null) {
                 val current = snapshot.current
@@ -72,7 +79,7 @@ private fun VistazoContent(snapshot: WeatherSnapshot?) {
                         style = TextStyle(color = colors.text, fontSize = 16.sp),
                     )
                 }
-                Insights.headline(snapshot)?.takeIf { widgetShows(WidgetPart.INSIGHT) }?.let { headline ->
+                Insights.headline(snapshot)?.takeIf { !tight && widgetShows(WidgetPart.INSIGHT) }?.let { headline ->
                     Text(
                         headline,
                         maxLines = 1,

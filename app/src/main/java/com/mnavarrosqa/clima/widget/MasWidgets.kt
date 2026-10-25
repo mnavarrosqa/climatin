@@ -1,5 +1,7 @@
 package com.mnavarrosqa.clima.widget
 
+import androidx.glance.semantics.semantics
+import androidx.glance.semantics.contentDescription
 import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import androidx.compose.runtime.Composable
@@ -207,13 +209,15 @@ class SemanaWidget : SimpleWeatherWidget() {
         val colors = widgetColors(snapshot)
         val size = LocalSize.current
         val current = snapshot.current
-        // Cada día ocupa unos 30 dp; el encabezado, unos 56.
-        val dayCount = ((size.height.value - 56f - 24f) / 30f).toInt().coerceIn(2, 7)
+        // Cada día ocupa unos 30 dp y el encabezado unos 56, más con letra grande: si no, con la
+        // letra agrandada los días quedaban cortados.
+        val scale = fontScale()
+        val dayCount = ((size.height.value - 56f * scale - 24f) / (30f * scale)).toInt().coerceIn(2, 7)
         val today = snapshot.nowAtPlace().toLocalDate()
         WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Column(modifier = GlanceModifier.fillMaxSize()) {
                 Row(
-                    modifier = GlanceModifier.fillMaxWidth().height(48.dp),
+                    modifier = GlanceModifier.fillMaxWidth().height(48.dp * scale),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = GlanceModifier.defaultWeight()) {
@@ -232,7 +236,7 @@ class SemanaWidget : SimpleWeatherWidget() {
                 Spacer(GlanceModifier.height(6.dp))
                 snapshot.upcomingDays(dayCount).forEach { day ->
                     Row(
-                        modifier = GlanceModifier.fillMaxWidth().height(30.dp).clickable(openDay(snapshot.placeId, day.date)),
+                        modifier = GlanceModifier.fillMaxWidth().height(30.dp * scale).clickable(openDay(snapshot.placeId, day.date)),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -241,6 +245,14 @@ class SemanaWidget : SimpleWeatherWidget() {
                             modifier = GlanceModifier.defaultWeight(),
                             style = TextStyle(color = colors.text, fontSize = 14.sp),
                         )
+                        // La probabilidad de lluvia, si vale la pena mirarla.
+                        Text(
+                            day.precipitationProbability?.takeIf { it >= 30 }?.let { "$it%" } ?: "",
+                            maxLines = 1,
+                            modifier = GlanceModifier.width(38.dp),
+                            style = TextStyle(color = colors.textVariant, fontSize = 12.sp, textAlign = TextAlign.End),
+                        )
+                        Spacer(GlanceModifier.width(4.dp))
                         Image(
                             provider = ImageProvider(WeatherCodes.icon(day.code)),
                             contentDescription = WeatherCodes.description(day.code),
@@ -322,13 +334,15 @@ class SolWidget : SimpleWeatherWidget() {
                 )
                 if (today != null) {
                     Row(modifier = GlanceModifier.fillMaxWidth()) {
+                        // Las flechas se ven; TalkBack lee "Sale" y "Se pone" en vez de "flecha arriba".
                         Text(
                             "↑ ${timeOf(today.sunrise)}",
-                            modifier = GlanceModifier.defaultWeight(),
+                            modifier = GlanceModifier.defaultWeight().semantics { contentDescription = tr("Sale a las ${timeOf(today.sunrise)}", "Rises at ${timeOf(today.sunrise)}") },
                             style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
                         )
                         Text(
                             "↓ ${timeOf(today.sunset)}",
+                            modifier = GlanceModifier.semantics { contentDescription = tr("Se pone a las ${timeOf(today.sunset)}", "Sets at ${timeOf(today.sunset)}") },
                             style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
                         )
                     }

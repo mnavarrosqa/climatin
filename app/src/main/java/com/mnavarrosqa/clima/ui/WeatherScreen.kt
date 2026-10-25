@@ -787,15 +787,17 @@ fun ForecastContent(
                 Box(Modifier.reveal(index, shownAt)) {
                     when (which) {
                         ForecastCard.HOURS -> GlassCard(tr("Próximas horas", "Next hours")) {
-                            val sunEvents = remember(snapshot) { sunEventsOf(snapshot.days).filter { it.time.isAfter(snapshot.nowAtPlace()) } }
-                            val hours = remember(snapshot) { snapshot.upcomingHours(24) }
+                            // Con la hora en la clave: si la pantalla queda abierta, el gráfico avanza solo.
+                            val hourKey = minute / 3_600_000
+                            val sunEvents = remember(snapshot, hourKey) { sunEventsOf(snapshot.days).filter { it.time.isAfter(snapshot.nowAtPlace()) } }
+                            val hours = remember(snapshot, hourKey) { snapshot.upcomingHours(24) }
                             val yesterday = remember(snapshot) { snapshot.yesterdayAt(hours) }
                             val alertSpans = remember(snapshot) { alertSpans(snapshot) }
                             HourlyChart(hours, sunEvents = sunEvents, yesterday = yesterday, alerts = alertSpans)
                         }
                         ForecastCard.DAYS -> DailyCard(snapshot, onDay = onDay)
                         ForecastCard.RADAR -> RadarCard(snapshot.latitude, snapshot.longitude, onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })
-                        ForecastCard.DETAILS -> DetailsGrid(snapshot, part = part)
+                        ForecastCard.DETAILS -> DetailsGrid(snapshot, part = part, minute = minute / 60_000)
                     }
                 }
             }
@@ -1269,6 +1271,7 @@ private fun RadarCard(latitude: Double, longitude: Double, onClick: () -> Unit) 
                 Text(tr("Mapa de lluvia", "Rain map"), style = MaterialTheme.typography.titleMedium)
                 Text(
                     when {
+                        shown != null && !shown.rainKnown -> tr("Dónde llueve ahora y en las próximas horas", "Where it rains now and in the next hours")
                         shown?.nearby == true -> tr("Llueve cerca ahora. Tocá para ver cómo se mueve", "It's raining nearby. Tap to see where it's going")
                         shown?.inArea == true -> tr("Hay lluvia en la región, no acá. Tocá para ver hacia dónde va", "Rain in the region, not here. Tap to see where it's going")
                         shown != null -> tr("Sin lluvia en la región. Tocá para ver las próximas horas", "No rain in the region. Tap for the next hours")

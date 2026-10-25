@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 data class SearchState(
     val loading: Boolean = false,
@@ -183,11 +185,17 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
      */
     fun refreshIfStale() {
         val ids = listOf(CURRENT_PLACE_ID) + places.value.map { it.id }.filterNot { it in fetching }
-        val stale = ids.any { id ->
-            val snapshot = repository.cached(id)
-            snapshot == null || System.currentTimeMillis() - snapshot.fetchedAt > 15 * 60_000
+        // Leer los pronósticos guardados es leer archivos: fuera del hilo principal (al abrir la
+        // app con varias ciudades trababa la pantalla).
+        viewModelScope.launch {
+            val stale = withContext(Dispatchers.IO) {
+                ids.any { id ->
+                    val snapshot = repository.cached(id)
+                    snapshot == null || System.currentTimeMillis() - snapshot.fetchedAt > 15 * 60_000
+                }
+            }
+            if (stale) refresh()
         }
-        if (stale) refresh()
     }
 
     /** Ciudades recién agregadas que se están bajando. */

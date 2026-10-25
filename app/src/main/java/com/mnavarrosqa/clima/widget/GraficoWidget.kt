@@ -64,7 +64,8 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
     val size = LocalSize.current
     val current = snapshot.current
     val padding = 16.dp
-    val header = 44.dp
+    // Con letra grande el encabezado crece: si no, tapaba el gráfico.
+    val header = 44.dp * fontScale()
     val chartWidth = size.width - padding * 2
     val chartHeight = (size.height - padding * 2 - header - 8.dp).coerceAtLeast(56.dp)
     val hourCount = (chartWidth.value / 44f).roundToInt().coerceIn(4, 12)

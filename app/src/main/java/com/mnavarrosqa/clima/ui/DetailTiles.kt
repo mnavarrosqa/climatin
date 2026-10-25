@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import com.mnavarrosqa.clima.data.degrees
@@ -115,18 +116,20 @@ private val AqiColors = listOf(Color(0xFF50F0E6), Color(0xFF50CCAA), Color(0xFFF
 enum class DetailsPart { ALL, FIRST, SECOND }
 
 @Composable
-fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: DetailsPart = DetailsPart.ALL) {
+fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: DetailsPart = DetailsPart.ALL, minute: Long? = null) {
     val current = snapshot.current
     val today = snapshot.today()
     val date = snapshot.nowAtPlace().toLocalDate()
     // El sol y la luna se mueven: la tarjeta se rearma cada minuto, no solo con datos nuevos.
-    val minute by produceState(System.currentTimeMillis() / 60_000) {
+    // Si viene de afuera, el mismo minuto para las dos mitades (en dos paneles no se desfasan).
+    val ownMinute by produceState(System.currentTimeMillis() / 60_000) {
         while (true) {
             kotlinx.coroutines.delay(60_000)
             value = System.currentTimeMillis() / 60_000
         }
     }
-    val sky = remember(snapshot, minute) { skyDetail(snapshot) }
+    val tick = minute ?: ownMinute
+    val sky = remember(snapshot, tick) { skyDetail(snapshot) }
     val night = sky?.second == true
     val details = buildList {
         // De día el sol; de noche la luna, con su recorrido (y entonces no va la tarjeta chica de la luna).
@@ -146,8 +149,11 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
         uvNow?.let {
             val window = snapshot.uvWindow()
             val tomorrowUv = snapshot.upcomingDays(2).getOrNull(1)?.uvIndex
+            val todayUv = today?.uvIndex
             // De noche no tiene sentido el UV de ahora: se dice cuánto llega mañana.
             val note = when {
+                // De madrugada, "mañana" es hoy: el día que está por empezar.
+                !current.isDay && snapshot.nowAtPlace().hour < 12 && todayUv != null -> tr("Hoy llega a ${todayUv.roundToInt()}", "Today up to ${todayUv.roundToInt()}")
                 !current.isDay && tomorrowUv != null -> tr("Mañana llega a ${tomorrowUv.roundToInt()}", "Tomorrow up to ${tomorrowUv.roundToInt()}")
                 window != null && window.ongoing -> tr("Protegete hasta las ${shortHour(window.until)}", "Protect yourself until ${shortHour(window.until)}")
                 window != null -> tr("Protegete de ${shortHour(window.from)} a ${shortHour(window.until)}", "Protect yourself ${shortHour(window.from)}–${shortHour(window.until)}")
@@ -235,9 +241,11 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
         )
         // Comparación con ayer a la misma hora.
         snapshot.versusYesterday()?.let { difference ->
-            val sign = if (difference.roundToInt() > 0) "+" else if (difference.roundToInt() < 0) "−" else ""
+            // El signo sale del número ya convertido y redondeado (en °F puede no coincidir con °C).
+            val shownDelta = difference.degreesDelta()
+            val sign = if (shownDelta == "0°") "" else if (difference > 0) "+" else "−"
             add(
-                Detail(tr("Comparado con ayer", "Versus yesterday"), sign + difference.degreesDelta(), versusYesterdayText(difference)).apply {
+                Detail(tr("Comparado con ayer", "Versus yesterday"), sign + shownDelta, versusYesterdayText(difference)).apply {
                     info = tr(
                         "La temperatura de ahora contra la de ayer a la misma hora. La línea punteada del gráfico por hora muestra ayer completo.",
                         "The temperature now against yesterday at the same time. The dotted line in the hourly chart shows all of yesterday.",
@@ -306,18 +314,19 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
         val next = snapshot.upcomingHours(25)
         val rainHours = next.indices.take(24).map { i -> rainAfter(next, i) }
         val rainy = rainHours.indices.filter { (rainHours[it].first ?: 0) >= 50 }
-        val rain = today?.precipitationProbability ?: 0
+        // La probabilidad más alta de estas 24 horas (no la de hoy: la franja puede ser de mañana).
+        val rain = rainHours.maxOfOrNull { it.first ?: 0 } ?: 0
         add(
             Detail(
                 tr("Lluvia", "Rain"),
-                if (rainy.isEmpty()) tr("Sin lluvia a la vista", "No rain in sight") else tr("Hoy $rain%", "Today $rain%"),
+                if (rainy.isEmpty()) tr("Sin lluvia a la vista", "No rain in sight") else tr("Hasta $rain%", "Up to $rain%"),
                 rainy.firstOrNull()?.let { first ->
                     // El primer tramo seguido de lluvia probable.
                     var last = first
                     while (last + 1 in rainy) last++
                     val from = next[first].dateTime
                     val until = next[last].dateTime.plusHours(1)
-                    val total = rainHours.sumOf { it.second ?: 0.0 }
+                    val total = (first..last).sumOf { rainHours[it].second ?: 0.0 }
                     tr("Probable de ${shortHour(from)} a ${shortHour(until)}", "Likely ${shortHour(from)}–${shortHour(until)}") +
                         (if (total >= 0.1) " · " + String.format(java.util.Locale.US, "%.1f mm", total) else "")
                 } ?: tr("Próximas 24 horas", "Next 24 hours"),
@@ -416,10 +425,14 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
     }
     if (shown.isEmpty()) return
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Con clave por tarjeta: si aparece o se va una (de día a noche, el aire), el estado de cada
+        // una (la explicación abierta, la animación) no pasa a la de al lado.
         shown.forEach { row ->
+            key(row.joinToString("|") { it.label }) {
             Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { detail -> DetailTile(detail, Modifier.weight(1f).fillMaxHeight()) }
+                row.forEach { detail -> key(detail.label) { DetailTile(detail, Modifier.weight(1f).fillMaxHeight()) } }
                 if (row.size == 1 && !row[0].wide) Spacer(Modifier.weight(1f))
+            }
             }
         }
     }

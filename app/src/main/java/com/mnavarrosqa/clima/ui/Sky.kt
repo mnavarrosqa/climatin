@@ -61,7 +61,9 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
     val context = LocalContext.current
     var powerSave by remember { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        powerSave = context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true
+        // También quieto con "Quitar animaciones" de accesibilidad.
+        powerSave = context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true ||
+            android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
     val clock: () -> Float = if (motion == SkyMotion.STILL || powerSave) {
         { STILL_CLOCK }
@@ -71,14 +73,11 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
         // pantallas de 120 Hz eran cuatro veces más dibujos de toda la pantalla.
         val value = remember { mutableFloatStateOf(0f) }
         LaunchedEffect(cycle) {
-            var last = 0L
             while (true) {
-                withFrameMillis { now ->
-                    if (now - last >= 32) {
-                        last = now
-                        value.floatValue = (now % cycle) / cycle.toFloat()
-                    }
-                }
+                // Se espera antes de pedir el cuadro: pedirlo en cada refresco (120 Hz) y descartar
+                // la mayoría mantenía despierta la pantalla igual.
+                kotlinx.coroutines.delay(32)
+                withFrameMillis { now -> value.floatValue = (now % cycle) / cycle.toFloat() }
             }
         }
         val read: () -> Float = { value.floatValue }

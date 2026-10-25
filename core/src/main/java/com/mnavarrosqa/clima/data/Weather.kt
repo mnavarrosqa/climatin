@@ -70,6 +70,10 @@ data class WeatherSnapshot(
                 windSpeed = hour.windSpeed ?: current.windSpeed,
                 precipitation = hour.precipitation ?: current.precipitation,
                 pressure = hour.pressure ?: current.pressure,
+                uvIndex = hour.uvIndex ?: current.uvIndex,
+                humidity = hour.humidity ?: current.humidity,
+                visibility = hour.visibility ?: current.visibility,
+                windGusts = hour.windGusts ?: current.windGusts,
             ),
         )
     }

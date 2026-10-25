@@ -1,0 +1,1 @@
+Arreglos en las tarjetas (UV, rocío, lluvia, comparación con ayer) y en el mapa de lluvia. Los widgets se actualizan sin conexión y a la medianoche, se leen sobre fondos claros, no se cortan con letra grande y el Indicador suma sensación, lluvia, presión y rocío. El cielo respeta "Quitar animaciones" y la app abre más rápido.

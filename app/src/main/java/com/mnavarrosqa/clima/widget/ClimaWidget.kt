@@ -217,7 +217,7 @@ fun HoursRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {
                 )
                 Image(
                     provider = ImageProvider(WeatherCodes.icon(hour.code, hour.isDay)),
-                    contentDescription = null,
+                    contentDescription = WeatherCodes.description(hour.code),
                     modifier = GlanceModifier.size(22.dp).padding(vertical = 1.dp),
                 )
                 Text(

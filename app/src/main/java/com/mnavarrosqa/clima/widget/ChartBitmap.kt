@@ -269,7 +269,10 @@ object ChartBitmap {
     }
 
     /** Medidor circular (arco de 270°) para el widget Indicador. */
-    fun renderGauge(context: Context, fraction: Float, accent: Int, sizePx: Int, onTransparent: Boolean): Bitmap {
+    fun renderGauge(context: Context, fraction: Float, accent: Int, sizePx: Int, onTransparent: Boolean): Bitmap =
+        cached(context, "medidor|${(fraction * 200).toInt()}|$accent|$sizePx|$onTransparent") { drawGauge(context, fraction, accent, sizePx, onTransparent) }
+
+    private fun drawGauge(context: Context, fraction: Float, accent: Int, sizePx: Int, onTransparent: Boolean): Bitmap {
         val size = sizePx.coerceAtLeast(8)
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -290,7 +293,10 @@ object ChartBitmap {
     }
 
     /** Brújula con una flecha que apunta hacia donde va el viento. */
-    fun renderCompass(context: Context, fromDegrees: Float, accent: Int, sizePx: Int, onTransparent: Boolean): Bitmap {
+    fun renderCompass(context: Context, fromDegrees: Float, accent: Int, sizePx: Int, onTransparent: Boolean): Bitmap =
+        cached(context, "brujula|${fromDegrees.toInt()}|$accent|$sizePx|$onTransparent") { drawCompass(context, fromDegrees, accent, sizePx, onTransparent) }
+
+    private fun drawCompass(context: Context, fromDegrees: Float, accent: Int, sizePx: Int, onTransparent: Boolean): Bitmap {
         val size = sizePx.coerceAtLeast(8)
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)

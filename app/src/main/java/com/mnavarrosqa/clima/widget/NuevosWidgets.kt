@@ -1,5 +1,7 @@
 package com.mnavarrosqa.clima.widget
 
+import com.mnavarrosqa.clima.data.humidityFeel
+import com.mnavarrosqa.clima.data.pressureText
 import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import androidx.compose.runtime.Composable
@@ -146,8 +148,18 @@ private fun CiudadesContent(all: List<WeatherSnapshot>) {
                     modifier = GlanceModifier.fillMaxWidth().height(rowHeight).clickable(openPlace(snapshot.placeId)),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Donde estás, con el ícono de ubicación (el emoji se leía en voz alta con TalkBack).
+                    if (snapshot.placeId == CURRENT_PLACE_ID) {
+                        Image(
+                            provider = ImageProvider(com.mnavarrosqa.clima.R.drawable.ic_widget_location),
+                            contentDescription = tr("Mi ubicación", "My location"),
+                            colorFilter = androidx.glance.ColorFilter.tint(colors.textVariant),
+                            modifier = GlanceModifier.size(14.dp),
+                        )
+                        Spacer(GlanceModifier.width(4.dp))
+                    }
                     Text(
-                        if (snapshot.placeId == CURRENT_PLACE_ID) "📍 ${snapshot.place ?: tr("Mi ubicación", "My location")}" else snapshot.place ?: "",
+                        if (snapshot.placeId == CURRENT_PLACE_ID) snapshot.place ?: tr("Mi ubicación", "My location") else snapshot.place ?: "",
                         maxLines = 1,
                         modifier = GlanceModifier.defaultWeight(),
                         style = TextStyle(color = colors.text, fontSize = 14.sp),
@@ -191,6 +203,10 @@ enum class Metric(private val es: String, private val en: String) {
     AIR("Calidad del aire", "Air quality"),
     HUMIDITY("Humedad", "Humidity"),
     WIND("Viento", "Wind"),
+    FEELS("Sensación", "Feels like"),
+    RAIN("Lluvia hoy", "Rain today"),
+    PRESSURE("Presión", "Pressure"),
+    DEW("Punto de rocío", "Dew point"),
     ;
 
     val label: String get() = tr(es, en)
@@ -235,6 +251,59 @@ class IndicadorWidget : SimpleWeatherWidget() {
                     ?: windText(current.windSpeed).substringAfter(' '),
                 ChartBitmap.renderCompass(context, (current.windDirection ?: 0.0).toFloat(), 0xFF26A69A.toInt(), px, colors.transparent),
             )
+            // De -10° a 40° en el medidor, con color de frío a calor.
+            Metric.FEELS -> Triple(
+                current.feelsLike.degrees(),
+                tr("Sensación", "Feels like"),
+                ChartBitmap.renderGauge(
+                    context,
+                    ((current.feelsLike + 10) / 50).toFloat(),
+                    when {
+                        current.feelsLike < 10 -> 0xFF42A5F5.toInt()
+                        current.feelsLike < 25 -> 0xFF66BB6A.toInt()
+                        else -> 0xFFFF7043.toInt()
+                    },
+                    px,
+                    colors.transparent,
+                ),
+            )
+            Metric.RAIN -> {
+                val today = snapshot.today()
+                val chance = today?.precipitationProbability ?: 0
+                Triple(
+                    "$chance%",
+                    today?.precipitationSum?.takeIf { it >= 0.1 }?.let { String.format(java.util.Locale.US, "%.1f mm", it) } ?: tr("Lluvia hoy", "Rain today"),
+                    ChartBitmap.renderGauge(context, chance / 100f, 0xFF4A90E2.toInt(), px, colors.transparent),
+                )
+            }
+            // De 980 a 1040 hPa; abajo, si sube o baja respecto de 3 horas atrás.
+            Metric.PRESSURE -> {
+                val pressure = current.pressure
+                val change = pressure?.let { p -> snapshot.pressureHoursAgo(3)?.let { p - it } }
+                val text = pressure?.let(::pressureText) ?: "—"
+                Triple(
+                    text.substringBefore(' '),
+                    text.substringAfter(' ', "") + when {
+                        change == null -> ""
+                        change <= -1 -> tr(" · bajando", " · falling")
+                        change >= 1 -> tr(" · subiendo", " · rising")
+                        else -> tr(" · estable", " · steady")
+                    },
+                    ChartBitmap.renderGauge(context, (((pressure ?: 1013.0) - 980) / 60).toFloat(), 0xFF7E57C2.toInt(), px, colors.transparent),
+                )
+            }
+            Metric.DEW -> {
+                val dew = snapshot.upcomingHours(1).firstOrNull()?.dewPoint ?: run {
+                    // Fórmula de Magnus, si el pronóstico guardado es de una versión sin el dato.
+                    val alpha = kotlin.math.ln(current.humidity.coerceIn(1, 100) / 100.0) + 17.62 * current.temperature / (243.12 + current.temperature)
+                    243.12 * alpha / (17.62 - alpha)
+                }
+                Triple(
+                    dew.degrees(),
+                    humidityFeel(dew),
+                    ChartBitmap.renderGauge(context, ((dew + 5) / 30).toFloat(), 0xFF26C6DA.toInt(), px, colors.transparent),
+                )
+            }
         }
         val small = diameter < 90.dp
         WidgetSurface(colors, modifier = GlanceModifier.padding(10.dp)) {
