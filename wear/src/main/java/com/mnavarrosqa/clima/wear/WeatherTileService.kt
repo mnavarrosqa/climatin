@@ -19,6 +19,8 @@ import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.dayLabel
 import com.mnavarrosqa.clima.data.degrees
+import com.mnavarrosqa.clima.data.Insights
+import com.mnavarrosqa.clima.data.ageText
 
 /** Tarjeta del reloj: temperatura, estado, máx/mín y los próximos días. */
 class WeatherTileService : TileService() {
@@ -63,10 +65,16 @@ class WeatherTileService : TileService() {
         } else {
             val current = snapshot.current
             val today = snapshot.today()
+            snapshot.place?.let { column.addContent(text(it, 12f, GREY)) }
             column.addContent(text(current.temperature.degrees(), 40f, WHITE))
             column.addContent(text(WeatherCodes.description(current.code), 14f, ACCENT, bold = true))
             if (today != null) {
                 column.addContent(text(tr("Máx", "High") + " ${today.max.degrees()} · " + tr("Mín", "Low") + " ${today.min.degrees()}", 13f, GREY))
+            }
+            // La frase del momento (lluvia que viene, alerta, UV…), como en el teléfono.
+            Insights.headline(snapshot)?.let {
+                column.addContent(spacer(4f))
+                column.addContent(text(it, 12f, ACCENT))
             }
             column.addContent(spacer(8f))
             val now = snapshot.nowAtPlace().toLocalDate()
@@ -74,6 +82,10 @@ class WeatherTileService : TileService() {
                 column.addContent(
                     text("${dayLabel(day.localDate, now)}  ${day.max.degrees()} / ${day.min.degrees()}", 12f, GREY),
                 )
+            }
+            // Datos viejos a la vista: una temperatura de hace horas no se confunde con la de ahora.
+            if (System.currentTimeMillis() - snapshot.fetchedAt > 2 * 60 * 60_000L) {
+                column.addContent(text(tr("Actualizado ", "Updated ") + ageText(snapshot.fetchedAt), 11f, GREY))
             }
         }
         val open = ModifiersBuilders.Clickable.Builder()

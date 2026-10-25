@@ -20,6 +20,23 @@ data class UnitSettings(
     val use24h: Boolean = true,
 )
 
+/** Texto corto para mandar las unidades del teléfono al reloj: "CELSIUS,KMH,HPA,true". */
+fun UnitSettings.encode(): String = "${temperature.name},${wind.name},${pressure.name},$use24h"
+
+fun decodeUnits(text: String?): UnitSettings? {
+    val parts = text?.split(',') ?: return null
+    if (parts.size != 4) return null
+    return UnitSettings(
+        temperature = TemperatureUnit.entries.firstOrNull { it.name == parts[0] } ?: return null,
+        wind = WindUnit.entries.firstOrNull { it.name == parts[1] } ?: return null,
+        pressure = PressureUnit.entries.firstOrNull { it.name == parts[2] } ?: return null,
+        use24h = parts[3].toBooleanStrictOrNull() ?: return null,
+    )
+}
+
+/** Ruta del dato que el teléfono comparte con el reloj (Wear OS Data Layer). */
+const val WEAR_SYNC_PATH = "/clima"
+
 /** Unidades vigentes para los formateadores; las carga y actualiza WeatherRepository. */
 object Units {
     @Volatile

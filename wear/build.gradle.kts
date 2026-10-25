@@ -12,9 +12,9 @@ android {
         // Mismo id que la app del teléfono, como pide Play para publicarlas juntas.
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 30
-        targetSdk = 34
-        versionCode = 2_000_035
-        versionName = "1.18.7"
+        targetSdk = 36
+        versionCode = 2_000_036
+        versionName = "1.18.8"
     }
 
     signingConfigs {
@@ -40,7 +40,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8: el APK del reloj traía Guava y los servicios de Google enteros.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Sin clave propia se firma con la de debug, para poder instalarlo a mano.
             signingConfig = signingConfigs.getByName(
                 if (System.getenv("CLIMATIN_KEYSTORE") != null) "release" else "debug",
@@ -73,5 +76,7 @@ dependencies {
     implementation("com.google.guava:guava:33.3.1-android")
 
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // Recibe del teléfono el pronóstico, las unidades y el nombre del lugar.
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 }

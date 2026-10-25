@@ -1,0 +1,1 @@
+Reloj: recibe el pronóstico, las unidades y el lugar desde el teléfono, gasta mucho menos batería y datos, muestra la frase del momento y de cuándo son los datos, y la complicación tiene ícono y abre la app.

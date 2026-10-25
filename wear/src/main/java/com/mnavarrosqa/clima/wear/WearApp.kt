@@ -14,15 +14,20 @@ import java.util.concurrent.TimeUnit
 class WearApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        val request = PeriodicWorkRequestBuilder<WearWorker>(30, TimeUnit.MINUTES)
+        WearStore.loadUnits(this)
+        // Cada hora alcanza: casi siempre el teléfono manda los datos y el trabajo no baja nada.
+        val request = PeriodicWorkRequestBuilder<WearWorker>(60, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .build()
         WorkManager.getInstance(this)
-            .enqueueUniquePeriodicWork("clima-reloj", ExistingPeriodicWorkPolicy.KEEP, request)
+            .enqueueUniquePeriodicWork("clima-reloj", ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 }
 
 class WearWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result =
-        if (WearStore.refresh(applicationContext).isSuccess || runAttemptCount >= 3) Result.success() else Result.retry()
+    override suspend fun doWork(): Result {
+        // Sin permiso de ubicación ni datos guardados no hay nada que reintentar.
+        if (!WearStore.hasPermission(applicationContext) && WearStore.cached(applicationContext) == null) return Result.success()
+        return if (WearStore.refresh(applicationContext).isSuccess || runAttemptCount >= 3) Result.success() else Result.retry()
+    }
 }

@@ -27,6 +27,19 @@
             </intent-filter>
         </activity>
 
+        <!-- Recibe del teléfono el pronóstico, las unidades y el nombre del lugar. -->
+        <service
+            android:name=".PhoneSyncService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:host="*"
+                    android:path="/clima"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".WeatherTileService"
             android:exported="true"

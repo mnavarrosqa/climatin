@@ -184,6 +184,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             runCatching { AlertNotifier.check(app) }
             runCatching { TemperatureNotifier.update(app) }
             runCatching { com.mnavarrosqa.clima.work.SunNotifier.check(app) }
+            runCatching { com.mnavarrosqa.clima.work.WearSync.send(app) }
             _error.value = when (error) {
                 null -> null
                 is NoLocationException -> error.message
@@ -235,7 +236,11 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
     fun setUnits(units: UnitSettings) {
         repository.units = units
-        viewModelScope.launch { updateWeatherWidgets(getApplication<Application>()) }
+        viewModelScope.launch {
+            updateWeatherWidgets(getApplication<Application>())
+            // El reloj usa las mismas unidades.
+            runCatching { com.mnavarrosqa.clima.work.WearSync.send(getApplication<Application>()) }
+        }
     }
 
     fun setStatusTemperature(enabled: Boolean) {
