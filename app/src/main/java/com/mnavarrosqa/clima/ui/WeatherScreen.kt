@@ -1269,8 +1269,9 @@ private fun RadarCard(latitude: Double, longitude: Double, onClick: () -> Unit) 
                 Text(tr("Mapa de lluvia", "Rain map"), style = MaterialTheme.typography.titleMedium)
                 Text(
                     when {
-                        shown?.raining == true -> tr("Hay lluvia cerca ahora. Tocá para ver cómo se mueve", "There's rain nearby now. Tap to see where it's going")
-                        shown != null -> tr("Sin lluvia cerca ahora. Tocá para ver las próximas horas", "No rain nearby now. Tap for the next hours")
+                        shown?.nearby == true -> tr("Llueve cerca ahora. Tocá para ver cómo se mueve", "It's raining nearby. Tap to see where it's going")
+                        shown?.inArea == true -> tr("Hay lluvia en la región, no acá. Tocá para ver hacia dónde va", "Rain in the region, not here. Tap to see where it's going")
+                        shown != null -> tr("Sin lluvia en la región. Tocá para ver las próximas horas", "No rain in the region. Tap for the next hours")
                         else -> tr("Dónde llueve ahora y en las próximas horas", "Where it rains now and in the next hours")
                     },
                     style = MaterialTheme.typography.bodyMedium,

@@ -102,7 +102,8 @@ object RainMap {
     }
 
     /** Vista previa de la tarjeta: el mapa alrededor de un lugar y la lluvia de esta hora. */
-    class Preview(val tiles: List<Pair<IntArray, ImageBitmap>>, val x0: Double, val y0: Double, val rain: ImageBitmap?, val raining: Boolean)
+    /** [nearby]: llueve a unos 40 km; [inArea]: en algún lugar del mapita (unos 300 km). */
+    class Preview(val tiles: List<Pair<IntArray, ImageBitmap>>, val x0: Double, val y0: Double, val rain: ImageBitmap?, val nearby: Boolean, val inArea: Boolean)
 
     const val PREVIEW_ZOOM = 7
     private const val PREVIEW_GRID = 8
@@ -140,7 +141,9 @@ object RainMap {
             x0,
             y0,
             frame?.let { overlay(it, PREVIEW_GRID, PREVIEW_GRID) },
-            raining = frame?.values?.any { it >= 0.1f } == true,
+            // Las 4 celdas del medio son unos 40 km alrededor del lugar.
+            nearby = frame?.values?.withIndex()?.any { (i, v) -> v >= 0.1f && i / PREVIEW_GRID in 3..4 && i % PREVIEW_GRID in 3..4 } == true,
+            inArea = frame?.values?.any { it >= 0.1f } == true,
         )
         previews[key] = System.currentTimeMillis() to preview
         return preview

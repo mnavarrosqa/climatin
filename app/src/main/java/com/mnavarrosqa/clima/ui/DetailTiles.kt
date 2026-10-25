@@ -321,10 +321,10 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
                     tr("Probable de ${shortHour(from)} a ${shortHour(until)}", "Likely ${shortHour(from)}–${shortHour(until)}") +
                         (if (total >= 0.1) " · " + String.format(java.util.Locale.US, "%.1f mm", total) else "")
                 } ?: tr("Próximas 24 horas", "Next 24 hours"),
-                wide = true,
-            ) {
-                if (next.size >= 2) RainBars(rainHours, next.take(24).map { shortHour(it.dateTime) })
-            }.apply {
+                // Sin lluvia, una tarjeta chica: las barras vacías dejaban una tarjeta ancha en blanco.
+                wide = rainHours.any { (it.first ?: 0) >= 10 },
+                visual = if (next.size >= 2 && rainHours.any { (it.first ?: 0) >= 10 }) ({ RainBars(rainHours, next.take(24).map { shortHour(it.dateTime) }) }) else null,
+            ).apply {
                 info = tr(
                     "Cada barra es una hora de las próximas 24: la altura es la probabilidad de lluvia y el color más fuerte, más milímetros. 1 mm es un litro por metro cuadrado: menos de 2 mm es poco, más de 10 mm es bastante y más de 30 mm, mucho.",
                     "Each bar is one of the next 24 hours: height is the chance of rain and a stronger color means more millimeters. 1 mm is one liter per square meter: under 2 mm is little, over 10 mm is a lot and over 30 mm is heavy.",

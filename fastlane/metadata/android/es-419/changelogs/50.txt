@@ -1,0 +1,1 @@
+Sin lluvia, la tarjeta de lluvia queda chica. El mapa de lluvia distingue si llueve cerca o en la región.
