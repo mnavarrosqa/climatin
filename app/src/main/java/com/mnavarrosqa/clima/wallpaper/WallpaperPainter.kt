@@ -27,11 +27,6 @@ data class WallpaperScene(
     val caption: String? = null,
 )
 
-/** Un toque en el fondo: una onda que se abre y se apaga. */
-class Ripple(val x: Float, val y: Float, val startMs: Long)
-
-const val RIPPLE_MS = 1_400L
-
 /**
  * Dibuja los cuatro diseños del fondo de pantalla. Lo usan el servicio y la vista previa de
  * ajustes, así lo que se ve al elegir es exactamente lo que queda puesto.
@@ -41,7 +36,6 @@ const val RIPPLE_MS = 1_400L
 class WallpaperPainter {
     private val sky = SkyPainter()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val path = Path()
     private val tau = 2 * PI.toFloat()
     private val blobShaders = HashMap<Int, Shader>()
@@ -65,8 +59,6 @@ class WallpaperPainter {
         scene: WallpaperScene,
         style: WallpaperStyle,
         parallax: Float,
-        ripples: List<Ripple> = emptyList(),
-        nowMs: Long = 0L,
     ) {
         when (style) {
             WallpaperStyle.SKY -> drawSky(canvas, width, height, density, clock, scene, parallax)
@@ -74,7 +66,6 @@ class WallpaperPainter {
             WallpaperStyle.SHAPES -> drawShapes(canvas, width, height, density, clock, scene, parallax)
             WallpaperStyle.DARK -> drawDark(canvas, width, height, density, clock, scene, parallax)
         }
-        ripples.forEach { drawRipple(canvas, density, it, nowMs, scene.kind) }
         drawWeather(canvas, width, height, density, scene)
     }
 
@@ -222,23 +213,6 @@ class WallpaperPainter {
         blob(canvas, cx, cy, radius * 2.2f, color, 0.35f)
         paint.color = color
         canvas.drawPath(path, paint)
-    }
-
-    private fun drawRipple(canvas: Canvas, density: Float, ripple: Ripple, nowMs: Long, kind: WeatherKind) {
-        val t = (nowMs - ripple.startMs) / RIPPLE_MS.toFloat()
-        if (t !in 0f..1f) return
-        val fade = 1f - t
-        val radius = (20f + 150f * t) * density
-        blob(canvas, ripple.x, ripple.y, radius, 0xFFFFFF, 0.22f * fade)
-        // Con lluvia, ondas como en un charco; si no, un solo anillo.
-        val rings = if (kind == WeatherKind.RAIN || kind == WeatherKind.DRIZZLE || kind == WeatherKind.STORM) 3 else 1
-        strokePaint.strokeWidth = 2f * density
-        repeat(rings) { k ->
-            val r = radius * (1f - 0.22f * k)
-            if (r <= 0f) return@repeat
-            strokePaint.color = Color.argb((150 * fade * (1f - 0.3f * k)).toInt(), 255, 255, 255)
-            canvas.drawCircle(ripple.x, ripple.y, r, strokePaint)
-        }
     }
 
     /** Temperatura y lugar abajo a la izquierda, con sombra para leerse sobre cualquier cielo. */

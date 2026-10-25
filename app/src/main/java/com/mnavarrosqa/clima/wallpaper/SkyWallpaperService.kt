@@ -10,7 +10,6 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
 import android.view.Choreographer
-import android.view.MotionEvent
 import android.view.SurfaceHolder
 import androidx.annotation.RequiresApi
 import com.mnavarrosqa.clima.data.WeatherCodes
@@ -27,7 +26,7 @@ import com.mnavarrosqa.clima.ui.toGradient
 /**
  * Fondo de pantalla animado con el cielo del clima. Dibuja con la GPU solo mientras se ve, a 60
  * cuadros (30 en modo ahorro o con el ahorro de batería del sistema), o un cuadro por minuto en
- * modo quieto. Se corre al pasar de pantalla de inicio y responde al tacto.
+ * modo quieto. Se corre al pasar de pantalla de inicio.
  */
 class SkyWallpaperService : WallpaperService() {
 
@@ -45,7 +44,6 @@ class SkyWallpaperService : WallpaperService() {
         private var loadedAt = 0L
         private var lastFrameNanos = 0L
         private var parallax = 0.5f
-        private val ripples = ArrayList<Ripple>()
         private var powerSave = false
         private var powerCheckedAt = 0L
 
@@ -62,13 +60,13 @@ class SkyWallpaperService : WallpaperService() {
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
             WallpaperPrefs.prefs(applicationContext).registerOnSharedPreferenceChangeListener(this)
-            setTouchEventsEnabled(settings.touch)
+            // El fondo no reacciona a los toques.
+            setTouchEventsEnabled(false)
             loadWeather()
         }
 
         override fun onSharedPreferenceChanged(prefs: SharedPreferences?, key: String?) {
             settings = WallpaperPrefs.load(applicationContext)
-            setTouchEventsEnabled(settings.touch)
             loadWeather()
             restart()
         }
@@ -87,14 +85,6 @@ class SkyWallpaperService : WallpaperService() {
             // Algunos launchers mandan siempre 0.5 o nada: entonces el fondo queda centrado.
             parallax = xOffset.coerceIn(0f, 1f)
             if (settings.motion == WallpaperMotion.STILL) schedule()
-        }
-
-        override fun onTouchEvent(event: MotionEvent) {
-            if (event.actionMasked == MotionEvent.ACTION_DOWN && settings.touch) {
-                ripples.add(Ripple(event.x, event.y, SystemClock.uptimeMillis()))
-                if (ripples.size > 6) ripples.removeAt(0)
-                schedule()
-            }
         }
 
         override fun onSurfaceRedrawNeeded(holder: SurfaceHolder) {
@@ -170,8 +160,7 @@ class SkyWallpaperService : WallpaperService() {
             scheduled = false
             if (!visible) return
             val now = SystemClock.uptimeMillis()
-            ripples.removeAll { now - it.startMs > RIPPLE_MS }
-            val animating = settings.motion != WallpaperMotion.STILL || ripples.isNotEmpty()
+            val animating = settings.motion != WallpaperMotion.STILL
             if (animating && frameTimeNanos - lastFrameNanos < frameGapNanos()) {
                 schedule()
                 return
@@ -198,8 +187,6 @@ class SkyWallpaperService : WallpaperService() {
                     scene,
                     settings.style,
                     parallax,
-                    ripples,
-                    SystemClock.uptimeMillis(),
                 )
             } finally {
                 runCatching { holder.unlockCanvasAndPost(canvas) }

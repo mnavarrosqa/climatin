@@ -1,7 +1,6 @@
 package com.mnavarrosqa.clima.wallpaper
 
 import android.os.Bundle
-import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -52,7 +51,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -79,7 +77,7 @@ import com.mnavarrosqa.clima.ui.SKY_CYCLE_MS
 import com.mnavarrosqa.clima.ui.theme.ClimaTheme
 
 /**
- * Ajustes del fondo de pantalla: diseño, ciudad, colores según la hora, temperatura, tacto y
+ * Ajustes del fondo de pantalla: diseño, ciudad, colores según la hora, temperatura y
  * movimiento, con una vista previa en vivo. La abre la app y también el selector de fondos del
  * sistema (botón de ajustes del fondo).
  */
@@ -149,14 +147,13 @@ fun WallpaperSettingsScreen(onBack: () -> Unit) {
             WallpaperPreview(
                 scene = scene,
                 style = settings.style,
-                touch = settings.touch,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .width(220.dp)
                     .aspectRatio(9f / 19.5f),
             )
             Text(
-                tr("Deslizá de costado y tocá la vista previa", "Swipe sideways and tap the preview"),
+                tr("Deslizá de costado la vista previa", "Swipe the preview sideways"),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -247,11 +244,6 @@ fun WallpaperSettingsScreen(onBack: () -> Unit) {
                         tr("La temperatura y el lugar sobre el fondo", "Temperature and place on the wallpaper"),
                         settings.showWeather,
                     ) { update(settings.copy(showWeather = it)) }
-                    SwitchRow(
-                        tr("Responder al tacto", "Respond to touch"),
-                        tr("Una onda donde tocás la pantalla de inicio", "A ripple where you tap the home screen"),
-                        settings.touch,
-                    ) { update(settings.copy(touch = it)) }
                 }
             }
 
@@ -302,7 +294,6 @@ private fun StyleOption(style: WallpaperStyle, scene: WallpaperScene, selected: 
         WallpaperPreview(
             scene = scene.copy(temperature = null, caption = null),
             style = style,
-            touch = false,
             onTap = onClick,
             modifier = Modifier
                 .width(84.dp)
@@ -328,14 +319,13 @@ private fun StyleOption(style: WallpaperStyle, scene: WallpaperScene, selected: 
 }
 
 /**
- * El fondo dibujado con el mismo pintor del servicio. Deslizar mueve el efecto de páginas y tocar
- * deja una onda (si [touch]); con [onTap], tocar elige en vez de dejar onda.
+ * El fondo dibujado con el mismo pintor del servicio. Deslizar mueve el efecto de páginas; con
+ * [onTap], tocar elige el diseño.
  */
 @Composable
 fun WallpaperPreview(
     scene: WallpaperScene,
     style: WallpaperStyle,
-    touch: Boolean,
     modifier: Modifier = Modifier,
     onTap: (() -> Unit)? = null,
     corner: Dp = 32.dp,
@@ -349,21 +339,11 @@ fun WallpaperPreview(
         label = "reloj",
     )
     var parallax by remember { mutableFloatStateOf(0.5f) }
-    val ripples = remember { mutableStateListOf<Ripple>() }
     Box(
         modifier
             .scale(zoom)
             .clip(RoundedCornerShape(corner))
-            .pointerInput(onTap, touch) {
-                detectTapGestures { offset ->
-                    if (onTap != null) {
-                        onTap()
-                    } else if (touch) {
-                        ripples.add(Ripple(offset.x, offset.y, SystemClock.uptimeMillis()))
-                        if (ripples.size > 6) ripples.removeAt(0)
-                    }
-                }
-            }
+            .then(if (onTap != null) Modifier.pointerInput(onTap) { detectTapGestures { onTap() } } else Modifier)
             // Las miniaturas no se arrastran, así la fila de diseños se puede deslizar.
             .then(
                 if (onTap == null) {
@@ -379,7 +359,6 @@ fun WallpaperPreview(
             ),
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val now = SystemClock.uptimeMillis()
             // Leer el reloj hace que se redibuje en cada cuadro.
             val tick = clock
             drawIntoCanvas {
@@ -392,8 +371,6 @@ fun WallpaperPreview(
                     scene,
                     style,
                     parallax,
-                    ripples.filter { r -> now - r.startMs <= RIPPLE_MS },
-                    now,
                 )
             }
         }

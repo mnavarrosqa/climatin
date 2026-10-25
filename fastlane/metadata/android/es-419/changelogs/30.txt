@@ -1,0 +1,1 @@
+El fondo de pantalla ya no hace una onda al tocar la pantalla de inicio.

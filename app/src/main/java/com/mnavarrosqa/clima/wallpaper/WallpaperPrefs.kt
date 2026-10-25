@@ -29,7 +29,6 @@ data class WallpaperSettings(
     val motion: WallpaperMotion = WallpaperMotion.SMOOTH,
     val timeOfDay: Boolean = true,
     val showWeather: Boolean = false,
-    val touch: Boolean = true,
 )
 
 /** Ajustes del fondo de pantalla, compartidos entre la pantalla de ajustes y el servicio. */
@@ -47,7 +46,6 @@ object WallpaperPrefs {
             motion = p.getString("movimiento", null)?.let { name -> WallpaperMotion.entries.firstOrNull { it.name == name } } ?: defaults.motion,
             timeOfDay = p.getBoolean("hora", defaults.timeOfDay),
             showWeather = p.getBoolean("clima", defaults.showWeather),
-            touch = p.getBoolean("tacto", defaults.touch),
         )
     }
 
@@ -58,7 +56,6 @@ object WallpaperPrefs {
             .putString("movimiento", settings.motion.name)
             .putBoolean("hora", settings.timeOfDay)
             .putBoolean("clima", settings.showWeather)
-            .putBoolean("tacto", settings.touch)
             .apply()
     }
 }

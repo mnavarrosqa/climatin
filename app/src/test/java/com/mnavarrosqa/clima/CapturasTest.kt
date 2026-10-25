@@ -148,7 +148,7 @@ class CapturasTest {
                     scenes.forEach { scene ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             WallpaperStyle.entries.forEach { style ->
-                                WallpaperPreview(scene, style, touch = false, modifier = Modifier.weight(1f).aspectRatio(9f / 19.5f))
+                                WallpaperPreview(scene, style, modifier = Modifier.weight(1f).aspectRatio(9f / 19.5f))
                             }
                         }
                     }
