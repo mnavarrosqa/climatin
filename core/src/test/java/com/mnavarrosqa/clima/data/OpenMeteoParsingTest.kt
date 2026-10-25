@@ -15,7 +15,7 @@ class OpenMeteoParsingTest {
           "current": {
             "time": "2026-10-24T14:15", "temperature_2m": 21.4, "apparent_temperature": 20.1,
             "relative_humidity_2m": 48, "is_day": 1, "weather_code": 2, "wind_speed_10m": 12.5,
-            "precipitation": 0.0, "surface_pressure": 1012.3, "visibility": 24000.0, "uv_index": 5.2
+            "precipitation": 0.0, "pressure_msl": 1012.3, "visibility": 24000.0, "uv_index": 5.2
           },
           "hourly": {
             "time": ["2026-10-24T13:00", "2026-10-24T14:00", "2026-10-24T15:00"],

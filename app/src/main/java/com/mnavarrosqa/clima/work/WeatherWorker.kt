@@ -10,7 +10,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.mnavarrosqa.clima.data.NoLocationException
 import com.mnavarrosqa.clima.data.WeatherRepository
-import com.mnavarrosqa.clima.widget.updateWeatherWidgets
 import java.util.concurrent.TimeUnit
 
 /**
@@ -21,15 +20,12 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
     override suspend fun doWork(): Result {
         // "Actualizar" desde una notificación fuerza la descarga aunque se haya actualizado hace poco.
-        val error = WeatherRepository.get(applicationContext).refreshAll(force = inputData.getBoolean(FORCE, false))
-        updateWeatherWidgets(applicationContext)
-        // Cada aviso por separado: si uno falla, los demás igual salen.
-        runCatching { RainNotifier.check(applicationContext) }
-        runCatching { AlertNotifier.check(applicationContext) }
-        runCatching { ChangeNotifier.check(applicationContext) }
-        runCatching { TemperatureNotifier.update(applicationContext) }
-        runCatching { SunNotifier.check(applicationContext) }
-        runCatching { WearSync.send(applicationContext) }
+        val force = inputData.getBoolean(FORCE, false)
+        val repository = WeatherRepository.get(applicationContext)
+        // Los avisos solo miran "donde estoy": eso va cada vez, y las ciudades guardadas una vez
+        // por hora (o al forzar). Antes se bajaban todas cada 15 minutos.
+        val error = repository.refreshAll(force = force, cities = force || repository.citiesStale())
+        afterRefresh(applicationContext)
         return when {
             // Sin ubicación ni ciudades no tiene sentido reintentar.
             error == null || error is NoLocationException -> Result.success()

@@ -79,9 +79,6 @@ import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.shortHour
 import com.mnavarrosqa.clima.data.tr
 import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
@@ -145,6 +142,8 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
         cached.map { MapPin(it.place ?: tr("Mi ubicación", "My location"), it.latitude, it.longitude, it.placeId == CURRENT_PLACE_ID) }
     }
     val images = remember { mutableStateMapOf<String, ImageBitmap>() }
+    val tileScope = rememberCoroutineScope()
+    val tilesInFlight = remember { mutableSetOf<String>() }
     val frames = area?.frames.orEmpty()
 
     // Reproducir: avanza parejo, una hora cada 0,9 s; al final espera un poco y vuelve al principio.
@@ -186,17 +185,18 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             }
         }
 
+        // Las teselas se bajan en un alcance que no se cancela al moverse: si el arrastre cruza
+        // un borde, la que ya venía bajando se guarda igual en vez de pedirse de nuevo.
         LaunchedEffect(tiles, dark) {
-            coroutineScope {
-                tiles.map { tile ->
-                    val url = RainMap.baseTileUrl(dark, zoom, Math.floorMod(tile.x, 1 shl zoom), tile.y)
-                    async { if (url !in images) RainMap.tile(url)?.let { images[url] = it } }
-                }.awaitAll()
-            }
+            val urls = tiles.map { RainMap.baseTileUrl(dark, zoom, Math.floorMod(it.x, 1 shl zoom), it.y) }
             // Al moverse quedan teselas viejas: se descartan para no acumular memoria.
-            if (images.size > 160) {
-                val keep = tiles.map { RainMap.baseTileUrl(dark, zoom, Math.floorMod(it.x, 1 shl zoom), it.y) }.toSet()
-                images.keys.retainAll(keep)
+            if (images.size > 160) images.keys.retainAll(urls.toSet())
+            urls.filter { it !in images && it !in tilesInFlight }.forEach { url ->
+                tilesInFlight += url
+                tileScope.launch {
+                    RainMap.tile(url)?.let { images[url] = it }
+                    tilesInFlight -= url
+                }
             }
         }
 
@@ -204,36 +204,50 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
         // se ve sale de lo cargado o cambia el zoom (con una pausa, para no pedir en cada arrastre).
         val loaded = area
         val factor = loaded?.let { 2.0.pow(zoom - it.zoom) } ?: 1.0
-        val covered = loaded != null && loaded.zoom == zoom &&
-            centerX - halfW >= loaded.x0 && centerX + halfW <= loaded.x1 &&
-            centerY - halfH >= loaded.y0 && centerY + halfH <= loaded.y1
+        // Cubierto si lo que se ve entra en lo cargado, aunque sea con otro zoom; al acercarse
+        // más de un paso la grilla queda gruesa y se pide de nuevo.
+        // Arriba y abajo, si lo cargado llega al borde del mundo, más allá no hay nada que pedir.
+        val covered = loaded != null && factor <= 2.0 &&
+            (centerX - halfW) / factor >= loaded.x0 && (centerX + halfW) / factor <= loaded.x1 &&
+            (loaded.y0 <= 0.0 || (centerY - halfH) / factor >= loaded.y0) &&
+            (loaded.y1 >= (1 shl loaded.zoom).toDouble() || (centerY + halfH) / factor <= loaded.y1)
         val wantKey = if (covered) null else Triple(zoom, (centerX * 2).roundToInt(), (centerY * 2).roundToInt())
         LaunchedEffect(wantKey, attempt) {
-            if (wantKey == null && attempt == 0 && loaded != null) return@LaunchedEffect
-            if (loaded != null) delay(350)
+            if (wantKey == null && loaded != null) return@LaunchedEffect
+            // Siempre con una pausa: cada carga son muchos puntos para Open-Meteo, que limita las
+            // consultas por minuto, y mientras se arrastra no tiene sentido pedir.
+            delay(if (loaded == null && attempt == 0) 150 else 400)
             error = null
             loading = true
-            val x0 = centerX - halfW * 1.6
-            val x1 = centerX + halfW * 1.6
-            val y0 = (centerY - halfH * 1.4).coerceAtLeast(0.0)
-            val y1 = (centerY + halfH * 1.4).coerceAtMost(worldSize)
-            val requestZoom = zoom
-            runCatching { RainMap.load(x0, y0, x1, y1, requestZoom) }
-                .onSuccess { result ->
-                    val first = area == null
-                    area = RainArea(x0, y0, x1, y1, requestZoom, result, result.map(RainMap::overlay))
-                    if (first || position.value > result.lastIndex) {
-                        // Arranca en la hora actual.
-                        val now = System.currentTimeMillis() / 1000
-                        position.snapTo(result.indexOfLast { it.epochSeconds <= now }.coerceAtLeast(0).toFloat())
+            try {
+                val x0 = centerX - halfW * 1.6
+                val x1 = centerX + halfW * 1.6
+                val y0 = (centerY - halfH * 1.4).coerceAtLeast(0.0)
+                val y1 = (centerY + halfH * 1.4).coerceAtMost(worldSize)
+                val requestZoom = zoom
+                runCatching { RainMap.load(x0, y0, x1, y1, requestZoom) }
+                    .onSuccess { result ->
+                        val first = area == null
+                        area = RainArea(x0, y0, x1, y1, requestZoom, result, result.map(RainMap::overlay))
+                        if (first || position.value > result.lastIndex) {
+                            // Arranca en la hora actual.
+                            val now = System.currentTimeMillis() / 1000
+                            position.snapTo(result.indexOfLast { it.epochSeconds <= now }.coerceAtLeast(0).toFloat())
+                        }
                     }
-                }
-                .onFailure { failure ->
-                    // Si se canceló porque se movió el mapa, no es un error: lo carga el efecto nuevo.
-                    if (failure is kotlinx.coroutines.CancellationException) throw failure
-                    error = tr("No pude cargar el mapa de lluvia. Revisá la conexión.", "Couldn't load the rain map. Check your connection.")
-                }
-            loading = false
+                    .onFailure { failure ->
+                        // Si se canceló porque se movió el mapa, no es un error: lo carga el efecto nuevo.
+                        if (failure is kotlinx.coroutines.CancellationException) throw failure
+                        error = if (failure is RainMap.TooManyRequests) {
+                            tr("Open-Meteo pide una pausa: probá de nuevo en un minuto.", "Open-Meteo asks for a break: try again in a minute.")
+                        } else {
+                            tr("No pude cargar el mapa de lluvia. Revisá la conexión.", "Couldn't load the rain map. Check your connection.")
+                        }
+                    }
+            } finally {
+                // También si se canceló: si no, "Actualizando…" podía quedar para siempre.
+                loading = false
+            }
         }
 
         val frame = frames.getOrNull(frameIndex)
@@ -244,6 +258,8 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
         )
+        // Los nombres se miden una vez: el mapa se redibuja en cada cuadro mientras se reproduce.
+        val pinLabels = remember(pins, pinStyle) { pins.map { measurer.measure(it.name, pinStyle) } }
 
         /** Lluvia en un punto de la pantalla ([w] x [h]), en la hora que se ve. Lee el estado actual. */
         fun rainAt(point: Offset, w: Float, h: Float): Float? {
@@ -334,12 +350,12 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             }
 
             // Tus ciudades con su nombre, y donde estás con el color de la app.
-            pins.forEach { pin ->
+            pins.forEachIndexed { index, pin ->
                 val p = screen(Geo.tileX(pin.longitude, zoom), Geo.tileY(pin.latitude, zoom))
-                if (p.x < -40 || p.y < -40 || p.x > this.size.width + 40 || p.y > this.size.height + 40) return@forEach
+                if (p.x < -40 || p.y < -40 || p.x > this.size.width + 40 || p.y > this.size.height + 40) return@forEachIndexed
                 drawCircle(Color.White, radius = (if (pin.here) 9 else 6).dp.toPx(), center = p)
                 drawCircle(if (pin.here) markerColor else Color(0xFF5C6370), radius = (if (pin.here) 6 else 4).dp.toPx(), center = p)
-                val label = measurer.measure(pin.name, pinStyle)
+                val label = pinLabels[index]
                 drawText(label, topLeft = Offset(p.x + 10.dp.toPx(), p.y - label.size.height / 2f))
             }
             probe?.let { (point, _) ->

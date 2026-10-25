@@ -36,7 +36,9 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import com.mnavarrosqa.clima.R
 import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
+import com.mnavarrosqa.clima.data.NoLocationException
 import com.mnavarrosqa.clima.data.WeatherRepository
+import com.mnavarrosqa.clima.work.afterRefresh
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 
 /** Tocar ⟳ en un widget refresca el clima sin abrir la app y muestra "Actualizando…" mientras tanto. */
@@ -52,11 +54,18 @@ class RefreshAction : ActionCallback {
         )
         // Solo este widget, para mostrar "Actualizando…"; al final se actualizan todos.
         updateOne(context, glanceId)
+        var failed = false
         try {
-            WeatherRepository.get(context).refreshAll(force = true)
+            failed = WeatherRepository.get(context).refreshAll(force = true).let { it != null && it !is NoLocationException }
         } finally {
-            updateAppWidgetState(context, glanceId) { it.remove(WidgetPrefs.REFRESHING_AT) }
-            updateWeatherWidgets(context)
+            updateAppWidgetState(context, glanceId) { prefs ->
+                prefs.remove(WidgetPrefs.REFRESHING_AT)
+                // Si no se pudo, el widget lo dice un rato en vez de volver como si nada.
+                if (failed) prefs[WidgetPrefs.REFRESH_FAILED_AT] = System.currentTimeMillis() else prefs.remove(WidgetPrefs.REFRESH_FAILED_AT)
+            }
+            // Igual que al actualizar desde la app: también los avisos, la temperatura en la
+            // barra de estado y el reloj.
+            afterRefresh(context, urgentWear = true)
         }
     }
 }
@@ -93,7 +102,17 @@ fun PlaceLabel(
     fontSize: TextUnit,
     fontWeight: FontWeight = FontWeight.Normal,
 ) {
-    val refreshing = (currentState(WidgetPrefs.REFRESHING_AT) ?: 0L) > System.currentTimeMillis() - 90_000
+    val now = System.currentTimeMillis()
+    val refreshing = (currentState(WidgetPrefs.REFRESHING_AT) ?: 0L) > now - 90_000
+    val failed = (currentState(WidgetPrefs.REFRESH_FAILED_AT) ?: 0L) > now - 10 * 60_000
+    // Si el pronóstico tiene horas (el sistema demoró las actualizaciones o no hubo red), se dice:
+    // si no, el widget parecía al día con datos viejos.
+    val age = now - snapshot.fetchedAt
+    val staleNote = when {
+        failed -> tr("Sin conexión", "Offline")
+        age > 2 * 60 * 60_000L -> tr("hace ${age / (60 * 60_000L)} h", "${age / (60 * 60_000L)} h ago")
+        else -> null
+    }
     val hasOtherCities = WeatherRepository.get(LocalContext.current).places().isNotEmpty()
     val showPlace = widgetShows(WidgetPart.PLACE)
     val showRefresh = widgetShows(WidgetPart.REFRESH)
@@ -105,6 +124,14 @@ fun PlaceLabel(
                 if (refreshing) tr("Actualizando…", "Updating…") else snapshot.place ?: tr("Mi ubicación", "My location"),
                 maxLines = 1,
                 style = TextStyle(color = colors.textVariant, fontSize = fontSize, fontWeight = fontWeight),
+            )
+            Spacer(GlanceModifier.width(2.dp))
+        }
+        if (!refreshing && staleNote != null && (showPlace || showRefresh)) {
+            Text(
+                (if (showPlace) "· " else "") + staleNote,
+                maxLines = 1,
+                style = TextStyle(color = colors.textVariant, fontSize = fontSize),
             )
             Spacer(GlanceModifier.width(2.dp))
         }

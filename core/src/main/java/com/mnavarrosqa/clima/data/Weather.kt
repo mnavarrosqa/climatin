@@ -37,15 +37,26 @@ data class WeatherSnapshot(
      * Hora actual en el lugar del pronóstico, no en el teléfono. Con la zona IANA sigue bien
      * aunque cambie el horario de verano después de bajar el pronóstico; si no, el desfase fijo.
      */
-    fun nowAtPlace(): LocalDateTime {
-        val zone = timezone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() } ?: ZoneOffset.ofTotalSeconds(utcOffsetSeconds)
-        return LocalDateTime.now(zone)
+    fun nowAtPlace(): LocalDateTime = LocalDateTime.now(zone)
+
+    // Se arma una vez: los widgets y los avisos piden la hora del lugar muchas veces.
+    private val zone: java.time.ZoneId by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        timezone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() } ?: ZoneOffset.ofTotalSeconds(utcOffsetSeconds)
     }
 
     /** Horas desde la actual. La caché puede tener un rato, así que se recorta al mostrar. */
     fun upcomingHours(count: Int): List<Hour> {
         val from = nowAtPlace().truncatedTo(ChronoUnit.HOURS)
-        return hours.filter { !it.dateTime.isBefore(from) }.take(count)
+        // Las horas vienen en orden: se busca la primera y se corta ahí, sin recorrerlas todas.
+        val start = hours.indexOfFirst { !it.dateTime.isBefore(from) }
+        if (start < 0) return emptyList()
+        return hours.subList(start, minOf(hours.size, start + count)).toList()
+    }
+
+    /** Presión hace unas [hoursAgo] horas, para saber si sube o baja. */
+    fun pressureHoursAgo(hoursAgo: Long = 3): Double? {
+        val target = nowAtPlace().truncatedTo(ChronoUnit.HOURS).minusHours(hoursAgo)
+        return (pastHours + hours).firstOrNull { it.dateTime == target }?.pressure
     }
 
     fun upcomingDays(count: Int): List<Day> {
@@ -64,7 +75,7 @@ data class WeatherSnapshot(
     /** Horas de un día; para hoy, solo desde la hora actual. */
     fun hoursOf(date: LocalDate): List<Hour> {
         val from = nowAtPlace().truncatedTo(ChronoUnit.HOURS)
-        return hours.filter { it.dateTime.toLocalDate() == date && !it.dateTime.isBefore(from) }
+        return hours.filter { val time = it.dateTime; time.toLocalDate() == date && !time.isBefore(from) }
     }
 
     /**
@@ -108,6 +119,7 @@ data class Current(
     val visibility: Double? = null,
     val uvIndex: Double? = null,
     val windDirection: Double? = null,
+    val windGusts: Double? = null,
 )
 
 @Serializable
@@ -120,8 +132,11 @@ data class Hour(
     val feelsLike: Double? = null,
     val windSpeed: Double? = null,
     val precipitation: Double? = null,
+    val pressure: Double? = null,
 ) {
-    val dateTime: LocalDateTime get() = LocalDateTime.parse(time)
+    // Se lee una vez por hora: los gráficos, widgets y avisos la consultan una y otra vez.
+    // Al ser delegada no se guarda en el archivo ni cuenta para equals.
+    val dateTime: LocalDateTime by lazy(LazyThreadSafetyMode.PUBLICATION) { LocalDateTime.parse(time) }
 }
 
 @Serializable
@@ -137,12 +152,12 @@ data class Day(
     val precipitationSum: Double? = null,
     val windMax: Double? = null,
 ) {
-    val localDate: LocalDate get() = LocalDate.parse(date)
+    val localDate: LocalDate by lazy(LazyThreadSafetyMode.PUBLICATION) { LocalDate.parse(date) }
 }
 
 @Serializable
 data class Minutely(val time: String, val precipitation: Double) {
-    val dateTime: LocalDateTime get() = LocalDateTime.parse(time)
+    val dateTime: LocalDateTime by lazy(LazyThreadSafetyMode.PUBLICATION) { LocalDateTime.parse(time) }
 }
 
 @Serializable

@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.ui
 
+import java.io.File
 import com.mnavarrosqa.clima.data.tr
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -32,6 +33,8 @@ data class SearchState(
     val loading: Boolean = false,
     val results: List<Place> = emptyList(),
     val error: String? = null,
+    /** Lo que se buscó: hasta que llega la respuesta de lo que se escribe, no se dice "no encontré". */
+    val query: String = "",
 )
 
 class WeatherViewModel(application: Application) : AndroidViewModel(application) {
@@ -87,9 +90,13 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         recheckUpdates()
     }
 
-    /** Al abrir o volver a la app: consulta (cada 3 h como mucho) y muestra el aviso si corresponde. */
+    private var updatesJob: Job? = null
+
+    /** Al abrir o volver a la app: consulta (cada 10 minutos como mucho) y muestra el aviso si corresponde. */
     fun recheckUpdates() {
-        viewModelScope.launch { publishUpdate(Updates.check(getApplication<Application>(), force = false)) }
+        // Al abrir, el inicio y la vuelta a la pantalla piden a la vez: con una consulta alcanza.
+        if (updatesJob?.isActive == true) return
+        updatesJob = viewModelScope.launch { publishUpdate(Updates.check(getApplication<Application>(), force = false)) }
     }
 
     private fun publishUpdate(release: AppRelease?) {
@@ -114,8 +121,17 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     /** Avance de la descarga de la actualización (0 a 1), o null si no se está bajando. */
     val updateProgress: StateFlow<Float?> = _updateProgress.asStateFlow()
 
-    /** APK ya bajado que espera el permiso de instalar apps. */
-    private var pendingApk: java.io.File? = null
+    /**
+     * APK ya bajado que espera el permiso de instalar apps. Se guarda también en las preferencias:
+     * mientras se da el permiso, Android puede cerrar la app y al volver se perdía.
+     */
+    private var pendingApk: java.io.File?
+        get() = getApplication<Application>().getSharedPreferences("clima", android.content.Context.MODE_PRIVATE)
+            .getString(KEY_PENDING_APK, null)?.let { File(it) }?.takeIf { it.exists() }
+        set(value) {
+            getApplication<Application>().getSharedPreferences("clima", android.content.Context.MODE_PRIVATE)
+                .edit().putString(KEY_PENDING_APK, value?.path).apply()
+        }
 
     /** Baja la versión nueva y abre el instalador (pidiendo el permiso la primera vez). */
     fun downloadUpdate(release: AppRelease) {
@@ -161,9 +177,12 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
     fun cached(placeId: String): WeatherSnapshot? = repository.cached(placeId)
 
-    /** Refresca si falta algún lugar o el de "donde estoy" tiene más de 15 minutos. */
+    /**
+     * Refresca si a algún lugar le falta el pronóstico o tiene más de 15 minutos. Las ciudades que
+     * se están bajando solas (recién agregadas) no cuentan: si no, se bajaba todo dos veces.
+     */
     fun refreshIfStale() {
-        val ids = listOf(CURRENT_PLACE_ID) + places.value.map { it.id }
+        val ids = listOf(CURRENT_PLACE_ID) + places.value.map { it.id }.filterNot { it in fetching }
         val stale = ids.any { id ->
             val snapshot = repository.cached(id)
             snapshot == null || System.currentTimeMillis() - snapshot.fetchedAt > 15 * 60_000
@@ -171,20 +190,18 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         if (stale) refresh()
     }
 
+    /** Ciudades recién agregadas que se están bajando. */
+    private val fetching = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     fun refresh() {
         if (_refreshing.value) return
         viewModelScope.launch {
             _refreshing.value = true
             _error.value = null
             val error = repository.refreshAll(force = true)
-            updateWeatherWidgets(getApplication<Application>())
-            // Un aviso que falla no puede cerrar la app ni dejar el indicador girando.
-            val app = getApplication<Application>()
-            runCatching { RainNotifier.check(app) }
-            runCatching { AlertNotifier.check(app) }
-            runCatching { TemperatureNotifier.update(app) }
-            runCatching { com.mnavarrosqa.clima.work.SunNotifier.check(app) }
-            runCatching { com.mnavarrosqa.clima.work.WearSync.send(app) }
+            // Widgets, avisos y reloj, lo mismo que el trabajo periódico. Un aviso que falla no
+            // puede cerrar la app ni dejar el indicador girando.
+            com.mnavarrosqa.clima.work.afterRefresh(getApplication<Application>())
             _error.value = when (error) {
                 null -> null
                 is NoLocationException -> error.message
@@ -202,26 +219,47 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         }
         searchJob = viewModelScope.launch {
             _search.value = _search.value.copy(loading = true, error = null)
-            _search.value = runCatching { OpenMeteo.searchCities(query) }.fold(
-                onSuccess = { SearchState(results = it) },
-                onFailure = { SearchState(error = tr("No pude buscar. Revisá la conexión.", "Couldn't search. Check your connection.")) },
-            )
+            _search.value = try {
+                SearchState(results = OpenMeteo.searchCities(query), query = query.trim())
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                // La canceló la letra siguiente: no es un error, ya viene la búsqueda nueva.
+                throw cancel
+            } catch (_: Exception) {
+                SearchState(error = tr("No pude buscar. Revisá la conexión.", "Couldn't search. Check your connection."), query = query.trim())
+            }
         }
     }
 
     fun addPlace(place: Place) {
         repository.addPlace(place)
         _search.value = SearchState()
+        // Al deshacer un "Quitar" el pronóstico sigue guardado: no hace falta bajarlo.
+        if (repository.cached(place.id) != null) {
+            viewModelScope.launch { updateWeatherWidgets(getApplication<Application>()) }
+            return
+        }
+        fetching += place.id
         viewModelScope.launch {
-            repository.refreshPlace(place)
+            val result = repository.refreshPlace(place)
+            fetching -= place.id
+            if (result.isFailure) {
+                _error.value = tr(
+                    "No pude bajar el pronóstico de ${place.shownName}. Se reintenta en la próxima actualización.",
+                    "Couldn't get the forecast for ${place.shownName}. It'll retry on the next update.",
+                )
+            }
             updateWeatherWidgets(getApplication<Application>())
         }
     }
 
+    /** Quita la ciudad; el pronóstico guardado queda hasta [discardForecast] por si se deshace. */
     fun removePlace(id: String) {
         repository.removePlace(id)
         viewModelScope.launch { updateWeatherWidgets(getApplication<Application>()) }
     }
+
+    /** Ya no se puede deshacer: se borra el pronóstico de la ciudad quitada. */
+    fun discardForecast(id: String) = repository.discardForecast(id)
 
     fun movePlace(id: String, offset: Int) {
         repository.movePlace(id, offset)
@@ -239,7 +277,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             updateWeatherWidgets(getApplication<Application>())
             // El reloj usa las mismas unidades.
-            runCatching { com.mnavarrosqa.clima.work.WearSync.send(getApplication<Application>()) }
+            com.mnavarrosqa.clima.work.WearSync.send(getApplication<Application>(), urgent = true)
         }
     }
 
@@ -258,5 +296,9 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         // Con el aviso de lluvia prendido se revisa cada 15 minutos.
         WeatherWorker.schedule(getApplication<Application>())
         if (enabled) RainNotifier.check(getApplication<Application>())
+    }
+
+    private companion object {
+        const val KEY_PENDING_APK = "apk_pendiente"
     }
 }

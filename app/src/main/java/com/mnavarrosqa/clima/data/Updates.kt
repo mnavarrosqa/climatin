@@ -51,7 +51,10 @@ object Updates {
      * mientras tanto responde con la última que encontró (antes devolvía nada y el aviso se
      * perdía al volver a abrir la app). Los errores de red se ignoran (no es algo urgente).
      */
-    suspend fun check(context: Context, force: Boolean): AppRelease? {
+    suspend fun check(context: Context, force: Boolean): AppRelease? = withContext(Dispatchers.IO) { checkBlocking(context, force) }
+
+    /** Todo fuera del hilo principal: preguntarle al sistema por el instalador y la versión son llamadas al sistema. */
+    private suspend fun checkBlocking(context: Context, force: Boolean): AppRelease? {
         if (!BuildConfig.SELF_UPDATE || installedFromPlay(context)) return null
         val prefs = prefs(context)
         val now = System.currentTimeMillis()
@@ -61,7 +64,13 @@ object Updates {
             return known?.takeIf { it.versionCode > installed }
         }
         val etag = prefs.getString(KEY_ETAG, null)?.takeIf { known != null }
-        val response = runCatching { latest(etag) }.getOrNull() ?: return known?.takeIf { it.versionCode > installed }
+        val response = runCatching { latest(etag) }.getOrNull()
+        if (response == null) {
+            // Si GitHub falló (sin red o con el límite de pedidos) se espera igual hasta la próxima
+            // consulta: si no, cada vez que se vuelve a la app se le pedía de nuevo.
+            prefs.edit().putLong("updates_checked_at", now).apply()
+            return known?.takeIf { it.versionCode > installed }
+        }
         val latest = response.first ?: known ?: return null
         prefs.edit()
             .putLong("updates_checked_at", now)

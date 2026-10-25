@@ -137,7 +137,9 @@ object Outing {
             .setSmallIcon(R.drawable.ic_tile_outing)
             .setColor(0xFF3F7BE8.toInt())
             .setContentTitle(title)
-            .setContentText(details)
+            // En Android 16 la barra de progreso reemplaza al texto largo: ahí van las próximas
+            // horas, que es lo más útil afuera (la sensación y el viento quedan en las versiones viejas).
+            .setContentText(if (LiveUpdate.supported && hours.isNotBlank()) hours else details)
             .setStyle(NotificationCompat.BigTextStyle().bigText("$details\n$hours\n" + tr("Seguimiento hasta las $endTime", "Tracking until $endTime")))
             .setSubText(snapshot.place)
             .setContentIntent(Notify.open(context, 40, CURRENT_PLACE_ID))

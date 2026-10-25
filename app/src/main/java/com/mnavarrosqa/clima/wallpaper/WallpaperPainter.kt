@@ -65,6 +65,8 @@ class WallpaperPainter {
         style: WallpaperStyle,
         parallax: Float,
     ) {
+        // Con tamaño 0 (al armar la pantalla o en una animación) los degradados redondos tiran error.
+        if (width <= 0f || height <= 0f) return
         sky.southern = scene.southern
         when (style) {
             WallpaperStyle.SKY -> drawSky(canvas, width, height, density, clock, scene, parallax)

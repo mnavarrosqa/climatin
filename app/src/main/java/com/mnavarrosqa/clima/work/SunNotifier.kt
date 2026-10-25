@@ -51,8 +51,11 @@ object SunNotifier {
 
     /** El próximo amanecer o atardecer, en milisegundos, y si es amanecer. */
     private fun nextEvent(snapshot: WeatherSnapshot, now: Long): Pair<Long, Boolean>? {
-        val offset = ZoneOffset.ofTotalSeconds(snapshot.utcOffsetSeconds)
-        fun millis(text: String) = runCatching { LocalDateTime.parse(text).toInstant(offset).toEpochMilli() }.getOrNull()
+        // Con la zona del lugar, no con un desfase fijo: si en el medio cambia el horario de
+        // verano, el amanecer de después no queda corrido una hora.
+        val zone: ZoneId = snapshot.timezone?.let { runCatching { ZoneId.of(it) }.getOrNull() }
+            ?: ZoneOffset.ofTotalSeconds(snapshot.utcOffsetSeconds)
+        fun millis(text: String) = runCatching { LocalDateTime.parse(text).atZone(zone).toInstant().toEpochMilli() }.getOrNull()
         return snapshot.days.flatMap { day ->
             listOfNotNull(millis(day.sunrise)?.let { it to true }, millis(day.sunset)?.let { it to false })
         }.filter { it.first > now }.minByOrNull { it.first }

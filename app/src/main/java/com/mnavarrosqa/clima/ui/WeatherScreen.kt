@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import com.mnavarrosqa.clima.ui.theme.Flex
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.StateFlow
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -111,6 +112,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -188,6 +190,9 @@ fun WeatherRoute(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         viewModel.resumePendingInstall()
         viewModel.recheckUpdates()
+        // Si la app quedó abierta en segundo plano, el sistema pudo demorar las actualizaciones:
+        // al volver se baja lo nuevo si tiene más de 15 minutos.
+        viewModel.refreshIfStale()
         // El permiso se puede dar o quitar desde los ajustes del sistema.
         hasPermission = LocationProvider.hasPermission(context)
     }
@@ -681,8 +686,21 @@ fun ForecastContent(
 ) {
     // La lista del resumen (la única en pantallas angostas) decide si el encabezado se achica.
     val summaryState = rememberLazyListState()
+    // Un reloj por minuto: "Actualizado hace…", el aviso de datos viejos y la lluvia de la
+    // próxima hora siguen al día aunque la pantalla quede abierta.
+    val minute by produceState(System.currentTimeMillis()) {
+        while (true) {
+            delay(60_000)
+            value = System.currentTimeMillis()
+        }
+    }
     // Datos de hace más de 2 horas: se avisa arriba, no solo en la letra chica del final.
-    val stale = snapshot != null && System.currentTimeMillis() - snapshot.fetchedAt > 2 * 60 * 60_000L
+    val stale = snapshot != null && minute - snapshot.fetchedAt > 2 * 60 * 60_000L
+    // Se calculan una vez por pronóstico (y por minuto), no en cada recomposición.
+    val alerts = remember(snapshot, minute) { snapshot?.alerts.orEmpty().distinctBy { it.id }.filterNot { it.isExpired() } }
+    val nextRain = remember(snapshot, minute) { snapshot?.let(::nextHourRain) }
+    val headline = remember(snapshot, minute) { snapshot?.let { Insights.headline(it.copy(alerts = emptyList())) } }
+    val ageLabel = remember(snapshot, minute) { snapshot?.let { ageText(it.fetchedAt) } }
     val heroIndex = listOfNotNull(banner, error ?: if (stale) "" else null).size
     val collapseAt = with(LocalDensity.current) { 180.dp.roundToPx() }
     val isCollapsed by remember(heroIndex) {
@@ -708,7 +726,7 @@ fun ForecastContent(
             item {
                 ErrorBanner(
                     message = error,
-                    age = snapshot?.let { tr("Mostrando datos de ", "Showing data from ") + ageText(it.fetchedAt) },
+                    age = ageLabel?.let { tr("Mostrando datos de ", "Showing data from ") + it },
                     onRetry = onRetry,
                 )
             }
@@ -740,12 +758,12 @@ fun ForecastContent(
                         },
                 ) { Hero(snapshot, isCurrentLocation) }
             }
-            items(snapshot.alerts.distinctBy { it.id }.filterNot { it.isExpired() }, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) } }
-            nextHourRain(snapshot)?.let { values ->
+            items(alerts, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) } }
+            nextRain?.let { values ->
                 item(key = "proxima-hora") { Box(Modifier.reveal(1, shownAt)) { NextHourRainCard(snapshot, values) } }
             }
             // Las alertas ya tienen su tarjeta: la frase busca lo siguiente más útil.
-            Insights.headline(snapshot.copy(alerts = emptyList()))?.let { text ->
+            headline?.let { text ->
                 item { Box(Modifier.reveal(1, shownAt)) { InsightChip(text) } }
             }
         }
@@ -777,7 +795,7 @@ fun ForecastContent(
             cards.filter { !twoPane || !it.leftPane }.forEachIndexed { i, which -> card(which, 2 + i) }
             item {
                 Text(
-                    tr("Actualizado", "Updated") + " ${ageText(snapshot.fetchedAt)} (${updatedAt(snapshot.fetchedAt)}) · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
+                    tr("Actualizado", "Updated") + " $ageLabel (${updatedAt(snapshot.fetchedAt)}) · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
                     style = MaterialTheme.typography.labelMedium.onSky(),
                     color = OnSkyVariant,
                     textAlign = TextAlign.Center,

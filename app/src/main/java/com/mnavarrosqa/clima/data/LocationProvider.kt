@@ -9,6 +9,7 @@ import android.location.Geocoder
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +47,14 @@ object LocationProvider {
         val location = try {
             runCatching {
                 withTimeoutOrNull(15_000) {
-                    client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, token.token).await()
+                    // Una ubicación de hasta 15 minutos alcanza para el clima: si el sistema ya
+                    // tiene una, no se prende el Wi-Fi ni la red para buscar otra en cada actualización.
+                    val request = CurrentLocationRequest.Builder()
+                        .setPriority(Priority.PRIORITY_BALANCED_POWER_ACCURACY)
+                        .setMaxUpdateAgeMillis(15 * 60_000L)
+                        .setDurationMillis(15_000L)
+                        .build()
+                    client.getCurrentLocation(request, token.token).await()
                 } ?: client.lastLocation.await()
             }.getOrNull()
         } finally {

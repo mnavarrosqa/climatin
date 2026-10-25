@@ -2,17 +2,20 @@ package com.mnavarrosqa.clima.ui
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import android.os.PowerManager
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -54,20 +57,31 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
     // Ajustes → Pantalla del clima: quieto no anima nada (se dibuja una vez); reducido va a un
     // tercio de la velocidad, para quien se marea o prefiere algo más tranquilo.
     val motion = Appearance.skyMotion
-    val clock: () -> Float = if (motion == SkyMotion.STILL) {
+    // Con el ahorro de batería del sistema el cielo queda quieto, como en el fondo de pantalla.
+    val context = LocalContext.current
+    var powerSave by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        powerSave = context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true
+    }
+    val clock: () -> Float = if (motion == SkyMotion.STILL || powerSave) {
         { STILL_CLOCK }
     } else {
         val cycle = if (motion == SkyMotion.REDUCED) SKY_CYCLE_MS * 3 else SKY_CYCLE_MS
-        // Con key, pasar de animado a reducido arma la animación de nuevo con la velocidad nueva.
-        val value = key(motion) {
-            rememberInfiniteTransition(label = "cielo").animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(tween(cycle, easing = LinearEasing), RepeatMode.Restart),
-                label = "reloj",
-            )
+        // A unos 30 cuadros por segundo: el cielo se mueve tan despacio que más no se nota, y en
+        // pantallas de 120 Hz eran cuatro veces más dibujos de toda la pantalla.
+        val value = remember { mutableFloatStateOf(0f) }
+        LaunchedEffect(cycle) {
+            var last = 0L
+            while (true) {
+                withFrameMillis { now ->
+                    if (now - last >= 32) {
+                        last = now
+                        value.floatValue = (now % cycle) / cycle.toFloat()
+                    }
+                }
+            }
         }
-        val read: () -> Float = { value.value }
+        val read: () -> Float = { value.floatValue }
         read
     }
     Crossfade(targetState = kind to isDay, animationSpec = tween(1200), modifier = modifier, label = "clima") { (k, day) ->

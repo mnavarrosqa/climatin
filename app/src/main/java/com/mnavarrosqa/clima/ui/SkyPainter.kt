@@ -130,6 +130,8 @@ class SkyPainter {
         celestial: Boolean = true,
         cloudAlpha: Float = 1f,
     ) {
+        // Con tamaño 0 (al armar la pantalla o en una animación) los degradados redondos tiran error.
+        if (width <= 0f || height <= 0f) return
         // Los fondos de pantalla "Formas" y "Oscuro" ponen su propio fondo y usan solo algunas capas.
         if (background) {
             // Opaco siempre: si una capa anterior dejó el pincel transparente (la luna lo hacía),

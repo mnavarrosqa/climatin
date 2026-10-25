@@ -93,6 +93,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -225,17 +226,28 @@ private fun SettingRow(
     icon: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    checked: Boolean? = null,
+    onCheckedChange: ((Boolean) -> Unit)? = null,
 ) {
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = summary?.let { text -> @Composable { Text(text) } },
         leadingContent = icon,
-        trailingContent = trailing,
+        // Con interruptor, toda la fila lo prende y apaga (y TalkBack la lee como un interruptor);
+        // antes solo respondía el interruptor chiquito.
+        trailingContent = if (checked != null) ({ Switch(checked = checked, onCheckedChange = null) }) else trailing,
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
-            // Sin toque propio, TalkBack lee título, resumen e interruptor juntos, en un solo paso.
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier.semantics(mergeDescendants = true) { }),
+            .then(
+                when {
+                    checked != null && onCheckedChange != null ->
+                        Modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+                    onClick != null -> Modifier.clickable(onClick = onClick)
+                    // Sin toque propio, TalkBack lee título, resumen y lo de la derecha juntos, en un solo paso.
+                    else -> Modifier.semantics(mergeDescendants = true) { }
+                },
+            ),
     )
 }
 
@@ -447,7 +459,8 @@ private fun LazyListScope.appearancePage() {
                         ThemeMode.DARK -> tr("Tarjetas y ajustes oscuros siempre", "Dark cards and settings, always")
                     },
                     onClick = { Appearance.setMode(context, mode) },
-                    trailing = { RadioButton(selected = Appearance.mode == mode, onClick = { Appearance.setMode(context, mode) }) },
+                    // Un solo lugar para tocar: la fila. El botón solo muestra cuál está elegido.
+                    trailing = { RadioButton(selected = Appearance.mode == mode, onClick = null) },
                 )
             }
         }
@@ -628,8 +641,8 @@ private fun LazyListScope.screenPage(viewModel: WeatherViewModel) {
             SettingRow(
                 tr("Pronóstico compacto", "Compact forecast"),
                 tr("Menos espacio entre tarjetas, encabezado más bajo y una semana de días", "Less space between cards, a shorter header and one week of days"),
-                onClick = { Appearance.setCompact(context, !Appearance.compact) },
-                trailing = { Switch(checked = Appearance.compact, onCheckedChange = { Appearance.setCompact(context, it) }) },
+                checked = Appearance.compact,
+                onCheckedChange = { Appearance.setCompact(context, it) },
             )
             ChoiceRow(tr("Cielo animado", "Animated sky"), SkyMotion.entries, Appearance.skyMotion, { it.label }) {
                 Appearance.setSkyMotion(context, it)
@@ -688,9 +701,8 @@ private fun LazyListScope.unitsPage(viewModel: WeatherViewModel) {
             SettingRow(
                 tr("Formato de 24 horas", "24-hour time"),
                 if (units.use24h) "18:30" else "6:30 PM",
-                trailing = {
-                    Switch(checked = units.use24h, onCheckedChange = { viewModel.setUnits(units.copy(use24h = it)) })
-                },
+                checked = units.use24h,
+                onCheckedChange = { viewModel.setUnits(units.copy(use24h = it)) },
             )
         }
     }
@@ -809,7 +821,8 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 SettingRow(
                     tr("Lluvia cerca", "Rain nearby"),
                     tr("Cuándo empieza, cuánto dura y qué tan fuerte", "When it starts, how long and how heavy"),
-                    trailing = { Switch(checked = rainAlerts && canNotify, onCheckedChange = { toggle("lluvia", it, viewModel::setRainAlerts) }) },
+                    checked = rainAlerts && canNotify,
+                    onCheckedChange = { toggle("lluvia", it, viewModel::setRainAlerts) },
                 )
                 if (rainAlerts) {
                     ChoiceRow(tr("Avisar con anticipación de", "Warn ahead by"), listOf(15, 30, 60), notify.rainLead, { "$it min" }) { lead ->
@@ -818,7 +831,8 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     SettingRow(
                         tr("Cuando para de llover", "When rain stops"),
                         tr("\"Para de llover en unos 15 min\"", "\"Rain stops in about 15 min\""),
-                        trailing = { Switch(checked = notify.rainStops, onCheckedChange = { on -> change { it.copy(rainStops = on) } }) },
+                        checked = notify.rainStops,
+                        onCheckedChange = { on -> change { it.copy(rainStops = on) } },
                     )
                 }
             }
@@ -830,7 +844,8 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 SettingRow(
                     tr("Alertas del SMN", "Official alerts (Argentina)"),
                     tr("Con su nivel (amarilla, naranja o roja) y aviso cuando terminan", "With their level (yellow, orange or red) and a notice when they end"),
-                    trailing = { Switch(checked = smnAlerts && canNotify, onCheckedChange = { toggle("smn", it, viewModel::setSmnAlerts) }) },
+                    checked = smnAlerts && canNotify,
+                    onCheckedChange = { toggle("smn", it, viewModel::setSmnAlerts) },
                 )
             }
         }
@@ -841,14 +856,13 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 SettingRow(
                     tr("Resumen del día", "Daily summary"),
                     tr("Máxima, mínima, lluvia, UV y viento. Desde las 17, el de mañana", "High, low, rain, UV and wind. From 5 PM, tomorrow's"),
-                    trailing = {
-                        Switch(checked = notify.summary && canNotify, onCheckedChange = { on ->
+                    checked = notify.summary && canNotify,
+                    onCheckedChange = { on ->
                             toggle("resumen", on) { enabled ->
                                 change { it.copy(summary = enabled) }
                                 SummaryNotifier.schedule(context)
                             }
-                        })
-                    },
+                        },
                 )
                 if (notify.summary) {
                     ChoiceRow(tr("A las", "At"), listOf(6, 7, 8, 9, 18, 20, 21), notify.summaryHour, { hourLabel(it) }) { hour ->
@@ -865,32 +879,35 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 SettingRow(
                     tr("Avisar cambios bruscos", "Alert on big changes"),
                     tr("Una vez por día cada uno, en un horario que tenga sentido", "Once a day each, at a sensible time"),
-                    trailing = {
-                        Switch(checked = notify.changes && canNotify, onCheckedChange = { on ->
+                    checked = notify.changes && canNotify,
+                    onCheckedChange = { on ->
                             toggle("cambios", on) { enabled -> change { it.copy(changes = enabled) } }
-                        })
-                    },
+                        },
                 )
                 if (notify.changes) {
                     SettingRow(
                         tr("Bajón o subida de temperatura", "Temperature swing"),
                         tr("Mañana 6° o más distinto que hoy", "Tomorrow 6° or more different from today"),
-                        trailing = { Switch(checked = notify.changeTemperature, onCheckedChange = { on -> change { it.copy(changeTemperature = on) } }) },
+                        checked = notify.changeTemperature,
+                        onCheckedChange = { on -> change { it.copy(changeTemperature = on) } },
                     )
                     SettingRow(
                         tr("Heladas", "Frost"),
                         tr("Mínima de 1° o menos, avisado a la tarde", "Low of 1° or less, in the afternoon"),
-                        trailing = { Switch(checked = notify.changeFrost, onCheckedChange = { on -> change { it.copy(changeFrost = on) } }) },
+                        checked = notify.changeFrost,
+                        onCheckedChange = { on -> change { it.copy(changeFrost = on) } },
                     )
                     SettingRow(
                         tr("Viento fuerte", "Strong wind"),
                         tr("50 km/h o más", "50 km/h or more"),
-                        trailing = { Switch(checked = notify.changeWind, onCheckedChange = { on -> change { it.copy(changeWind = on) } }) },
+                        checked = notify.changeWind,
+                        onCheckedChange = { on -> change { it.copy(changeWind = on) } },
                     )
                     SettingRow(
                         tr("UV muy alto", "Very high UV"),
                         tr("Índice 8 o más, avisado a la mañana", "Index 8 or more, in the morning"),
-                        trailing = { Switch(checked = notify.changeUv, onCheckedChange = { on -> change { it.copy(changeUv = on) } }) },
+                        checked = notify.changeUv,
+                        onCheckedChange = { on -> change { it.copy(changeUv = on) } },
                     )
                 }
             }
@@ -902,7 +919,8 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 SettingRow(
                     tr("Temperatura en la barra de estado", "Temperature in the status bar"),
                     tr("Los grados al lado de la hora; al expandirla, las próximas horas", "The temperature next to the clock; expand it for the next hours"),
-                    trailing = { Switch(checked = statusTemperature && canNotify, onCheckedChange = { toggle("temperatura", it, viewModel::setStatusTemperature) }) },
+                    checked = statusTemperature && canNotify,
+                    onCheckedChange = { toggle("temperatura", it, viewModel::setStatusTemperature) },
                 )
             }
         }
@@ -943,14 +961,13 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 SettingRow(
                     tr("Hora dorada", "Golden hour"),
                     tr("Media hora antes de que salga o se ponga el sol, con cuenta regresiva", "Half an hour before sunrise or sunset, with a countdown"),
-                    trailing = {
-                        Switch(checked = notify.goldenHour && canNotify, onCheckedChange = { on ->
+                    checked = notify.goldenHour && canNotify,
+                    onCheckedChange = { on ->
                             toggle("sol", on) { enabled ->
                                 change { it.copy(goldenHour = enabled) }
                                 if (enabled) SunNotifier.check(context)
                             }
-                        })
-                    },
+                        },
                 )
             }
         }
@@ -970,22 +987,23 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     SettingRow(
                         tr("Lluvia en camino", "Rain on the way"),
                         tr("\"12 min\" hasta que empieza y \"Para 25 min\" mientras llueve", "\"12 min\" until it starts and \"Stops 25 min\" while raining"),
-                        trailing = { Switch(checked = notify.liveRain, onCheckedChange = { on -> change { it.copy(liveRain = on) } }) },
+                        checked = notify.liveRain,
+                        onCheckedChange = { on -> change { it.copy(liveRain = on) } },
                     )
                     SettingRow(
                         tr("Alertas naranjas y rojas", "Orange and red alerts"),
                         tr("Mientras están vigentes, con cuánto falta para que terminen", "While active, with how long until they end"),
-                        trailing = { Switch(checked = notify.liveAlerts, onCheckedChange = { on -> change { it.copy(liveAlerts = on) } }) },
+                        checked = notify.liveAlerts,
+                        onCheckedChange = { on -> change { it.copy(liveAlerts = on) } },
                     )
                     SettingRow(
                         tr("Temperatura", "Temperature"),
                         tr("Los grados de ahora y lo que viene (↓ 12°, ☔ 16:00). Necesita la temperatura en la barra de estado prendida", "The temperature now and what comes next (↓ 12°, ☔ 4 PM). Needs the status bar temperature on"),
-                        trailing = {
-                            Switch(checked = notify.liveTemperature, onCheckedChange = { on ->
+                        checked = notify.liveTemperature,
+                        onCheckedChange = { on ->
                                 change { it.copy(liveTemperature = on) }
                                 TemperatureNotifier.update(context)
-                            })
-                        },
+                            },
                     )
                     SettingRow(
                         tr("Permiso de Live Updates", "Live Updates permission"),
@@ -1003,7 +1021,8 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 SettingRow(
                     tr("No avisar de noche", "No alerts at night"),
                     tr("Las alertas rojas del SMN avisan igual", "Red official alerts still come through"),
-                    trailing = { Switch(checked = notify.quiet, onCheckedChange = { on -> change { it.copy(quiet = on) } }) },
+                    checked = notify.quiet,
+                    onCheckedChange = { on -> change { it.copy(quiet = on) } },
                 )
                 if (notify.quiet) {
                     ChoiceRow(tr("Desde", "From"), listOf(21, 22, 23, 0), notify.quietStart, { hourLabel(it) }) { hour ->

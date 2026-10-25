@@ -31,7 +31,15 @@ import com.mnavarrosqa.clima.ui.toGradient
  */
 class SkyWallpaperService : WallpaperService() {
 
+    /** Un hilo para leer el pronóstico del disco sin trabar el que dibuja. */
+    private val loader = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     override fun onCreateEngine(): Engine = SkyEngine()
+
+    override fun onDestroy() {
+        loader.shutdown()
+        super.onDestroy()
+    }
 
     private inner class SkyEngine : Engine(), Choreographer.FrameCallback, SharedPreferences.OnSharedPreferenceChangeListener {
         private val choreographer = Choreographer.getInstance()
@@ -40,8 +48,10 @@ class SkyWallpaperService : WallpaperService() {
         private val power = getSystemService(Context.POWER_SERVICE) as PowerManager
         private var settings = WallpaperPrefs.load(applicationContext)
         private var scene = wallpaperScene(null, settings)
-        private var visible = false
         private var scheduled = false
+        private var destroyed = false
+        /** Si alguna vez se pudo dibujar con la GPU: entonces no se prueba el dibujo por software. */
+        private var hardwareWorks = false
         private var loadedAt = 0L
         private var lastFrameNanos = 0L
         private var parallax = 0.5f
@@ -51,7 +61,7 @@ class SkyWallpaperService : WallpaperService() {
         /** En modo quieto: un cuadro por minuto para seguir la hora y el clima. */
         private val minuteTick = object : Runnable {
             override fun run() {
-                if (!visible) return
+                if (!isVisible) return
                 loadWeather()
                 schedule()
                 handler.postDelayed(this, 60_000)
@@ -79,7 +89,6 @@ class SkyWallpaperService : WallpaperService() {
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
-            this.visible = visible
             if (visible) {
                 if (SystemClock.uptimeMillis() - loadedAt > 60_000) loadWeather()
                 restart()
@@ -94,18 +103,25 @@ class SkyWallpaperService : WallpaperService() {
             if (settings.motion == WallpaperMotion.STILL) schedule()
         }
 
+        override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+            super.onSurfaceChanged(holder, format, width, height)
+            // Si la superficie se rehízo estando visible (al plegar, rotar o cambiar de pantalla),
+            // el sistema no vuelve a avisar que se ve: sin esto el fondo quedaba congelado.
+            if (isVisible) restart()
+        }
+
         override fun onSurfaceRedrawNeeded(holder: SurfaceHolder) {
             super.onSurfaceRedrawNeeded(holder)
             drawFrame(System.nanoTime())
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
-            visible = false
             stop()
             super.onSurfaceDestroyed(holder)
         }
 
         override fun onDestroy() {
+            destroyed = true
             stop()
             WallpaperPrefs.prefs(applicationContext).unregisterOnSharedPreferenceChangeListener(this)
             super.onDestroy()
@@ -126,7 +142,7 @@ class SkyWallpaperService : WallpaperService() {
 
         private fun restart() {
             stop()
-            if (!visible) return
+            if (!isVisible) return
             schedule()
             if (settings.motion == WallpaperMotion.STILL) handler.postDelayed(minuteTick, 60_000)
         }
@@ -144,16 +160,27 @@ class SkyWallpaperService : WallpaperService() {
             handler.removeCallbacks(reload)
         }
 
+        /**
+         * Lee el pronóstico guardado en otro hilo (es leer y decodificar un archivo) y pasa la
+         * escena nueva al hilo principal, que es el que dibuja.
+         */
         private fun loadWeather() {
             loadedAt = SystemClock.uptimeMillis()
-            val repository = WeatherRepository.get(applicationContext)
-            val snapshot = runCatching { repository.cached(settings.placeId) ?: repository.cached() }.getOrNull()
-            val updated = runCatching { wallpaperScene(snapshot, settings) }
-                .onFailure { CrashLog.record(applicationContext, it, "fondo de pantalla") }
-                .getOrElse { wallpaperScene(null, settings) }
-            val colorsChanged = updated.kind != scene.kind || updated.isDay != scene.isDay
-            scene = updated
-            if (colorsChanged && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) notifyColorsChanged()
+            val current = settings
+            runCatching { loader.execute {
+                val repository = runCatching { WeatherRepository.get(applicationContext) }.getOrNull()
+                val snapshot = runCatching { repository?.cached(current.placeId) ?: repository?.cached() }.getOrNull()
+                val updated = runCatching { wallpaperScene(snapshot, current) }
+                    .onFailure { CrashLog.recordCaught(applicationContext, it, "fondo de pantalla") }
+                    .getOrElse { wallpaperScene(null, current) }
+                handler.post {
+                    if (destroyed) return@post
+                    val colorsChanged = updated.kind != scene.kind || updated.isDay != scene.isDay
+                    scene = updated
+                    if (colorsChanged && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) runCatching { notifyColorsChanged() }
+                    if (isVisible && settings.motion == WallpaperMotion.STILL) schedule()
+                }
+            } }
         }
 
         /** Tiempo mínimo entre cuadros según el modo: 60 o 30 por segundo. */
@@ -170,7 +197,7 @@ class SkyWallpaperService : WallpaperService() {
 
         override fun doFrame(frameTimeNanos: Long) {
             scheduled = false
-            if (!visible) return
+            if (!isVisible) return
             val now = SystemClock.uptimeMillis()
             val animating = settings.motion != WallpaperMotion.STILL
             val gap = frameGapNanos()
@@ -189,8 +216,11 @@ class SkyWallpaperService : WallpaperService() {
 
         private fun drawFrame(frameTimeNanos: Long) {
             val holder = surfaceHolder
-            val canvas = runCatching { holder.lockHardwareCanvas() }.getOrNull()
-                ?: runCatching { holder.lockCanvas() }.getOrNull()
+            if (holder.surface?.isValid != true) return
+            // Si falla el bloqueo, el sistema espera hasta 100 ms antes de devolver: por eso el
+            // dibujo por software se prueba solo si la GPU nunca anduvo.
+            val canvas = runCatching { holder.lockHardwareCanvas() }.getOrNull()?.also { hardwareWorks = true }
+                ?: (if (hardwareWorks) null else runCatching { holder.lockCanvas() }.getOrNull())
                 ?: return
             try {
                 val clock = ((frameTimeNanos / 1_000_000L) % SKY_CYCLE_MS) / SKY_CYCLE_MS.toFloat()
@@ -207,7 +237,7 @@ class SkyWallpaperService : WallpaperService() {
                     settings.style,
                     parallax,
                 )
-                }.onFailure { CrashLog.record(applicationContext, it, "fondo de pantalla") }
+                }.onFailure { CrashLog.recordCaught(applicationContext, it, "fondo de pantalla") }
             } finally {
                 runCatching { holder.unlockCanvasAndPost(canvas) }
             }

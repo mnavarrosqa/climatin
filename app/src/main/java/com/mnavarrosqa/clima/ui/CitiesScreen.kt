@@ -171,6 +171,8 @@ fun CitiesScreen(
                 viewModel.addPlace(place)
                 // Vuelve al final: se lo sube al lugar que tenía.
                 viewModel.movePlace(id, index - remaining)
+            } else {
+                viewModel.discardForecast(id)
             }
         }
     }
@@ -247,17 +249,33 @@ fun CitiesScreen(
             when {
                 search.loading -> item { Hint(tr("Buscando…", "Searching…")) }
                 search.error != null -> item { Hint(search.error.orEmpty()) }
-                query.trim().length >= 2 && search.results.isEmpty() -> item { Hint(tr("No encontré esa ciudad", "City not found")) }
+                // Solo cuando llegó la respuesta de lo que está escrito: mientras se tipea no.
+                query.trim().length >= 2 && search.query == query.trim() && search.results.isEmpty() ->
+                    item { Hint(tr("No encontré esa ciudad", "City not found")) }
+                query.trim().length >= 2 && search.query != query.trim() && search.results.isEmpty() ->
+                    item { Hint(tr("Buscando…", "Searching…")) }
             }
             items(search.results, key = { "r-" + it.id }) { place ->
+                // Las que ya están guardadas se marcan: agregarlas de nuevo no hacía nada.
+                val saved = places.any { it.id == place.id }
                 ListItem(
                     headlineContent = { Text(place.name) },
                     supportingContent = place.detail?.let { detail -> @Composable { Text(detail) } },
                     leadingContent = { Icon(Icons.Rounded.Place, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Rounded.Add, contentDescription = tr("Agregar", "Add")) },
+                    trailingContent = {
+                        if (saved) {
+                            Text(tr("Ya está", "Added"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Icon(Icons.Rounded.Add, contentDescription = tr("Agregar", "Add"))
+                        }
+                    },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
                     modifier = Modifier.clickable {
-                        viewModel.addPlace(place)
+                        if (saved) {
+                            onOpenPlace(place.id)
+                        } else {
+                            viewModel.addPlace(place)
+                        }
                         query = ""
                     },
                 )

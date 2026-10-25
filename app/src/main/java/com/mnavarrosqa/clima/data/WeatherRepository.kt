@@ -77,12 +77,29 @@ class WeatherRepository private constructor(private val context: Context) {
         cached(id)?.let { snapshot -> writeSnapshot(id, snapshot.copy(place = place.shownName)) }
     }
 
+    /**
+     * Saca la ciudad de la lista. El pronóstico queda guardado hasta [discardForecast] (o la
+     * próxima actualización completa): así "Deshacer" la devuelve con su pronóstico.
+     */
     fun removePlace(id: String) {
         savePlaces(places().filterNot { it.id == id })
+        changes.tryEmit(id)
+    }
+
+    /** Borra el pronóstico de una ciudad que ya no está en la lista. */
+    fun discardForecast(id: String) {
+        if (id == CURRENT_PLACE_ID || places().any { it.id == id }) return
         file(id).delete()
         decoded.remove(id)
         prefs.edit().remove(snapshotKey(id)).apply()
-        changes.tryEmit(id)
+    }
+
+    /** Pronósticos de ciudades quitadas que quedaron (por ejemplo, si se cerró la app antes de tiempo). */
+    private fun discardOrphans() {
+        val keep = (listOf(CURRENT_PLACE_ID) + places().map { it.id }).map { file(it).name }.toSet()
+        snapshotDir.listFiles()?.forEach { file ->
+            if (file.name.endsWith(".json") && file.name !in keep) file.delete()
+        }
     }
 
     fun movePlace(id: String, offset: Int) {
@@ -165,32 +182,54 @@ class WeatherRepository private constructor(private val context: Context) {
         (listOf(CURRENT_PLACE_ID) + places().map { it.id }).mapNotNull { cached(it) }
 
     private val refreshLock = Mutex()
+    /** Última actualización de "donde estoy" y de todo (con las ciudades), en milisegundos. */
     @Volatile
     private var lastRefreshAt = 0L
+    @Volatile
+    private var lastFullRefreshAt = 0L
 
     /**
-     * Actualiza "donde estoy" y todas las ciudades guardadas, en paralelo. Devuelve el primer error,
-     * si hubo. Si ya hay una actualización en curso se espera a esa, y si terminó hace menos de un
-     * minuto no se vuelve a pedir (la app, el widget y el refresco periódico pueden coincidir).
+     * Si las ciudades guardadas tienen más de una hora. Se guarda en las preferencias porque el
+     * trabajo periódico suele correr en un proceso nuevo cada vez.
      */
-    suspend fun refreshAll(force: Boolean = false): Throwable? {
+    fun citiesStale(): Boolean =
+        places().isNotEmpty() && System.currentTimeMillis() - prefs.getLong(KEY_CITIES_AT, 0L) > 55 * 60_000L
+
+    /**
+     * Actualiza "donde estoy" y, con [cities], todas las ciudades guardadas, en paralelo. Devuelve
+     * el primer error, si hubo. Si ya hay una actualización en curso se espera a esa, y si terminó
+     * hace menos de un minuto no se vuelve a pedir (la app, el widget y el refresco periódico
+     * pueden coincidir).
+     */
+    suspend fun refreshAll(force: Boolean = false, cities: Boolean = true): Throwable? {
         val requestedAt = System.currentTimeMillis()
-        return refreshLock.withLock { refreshLocked(force, requestedAt) }
+        return refreshLock.withLock { refreshLocked(force, cities, requestedAt) }
     }
 
-    private suspend fun refreshLocked(force: Boolean, requestedAt: Long): Throwable? {
-        // Si otra actualización terminó mientras esta esperaba, ya está todo fresco (aunque sea forzada).
-        if (lastRefreshAt >= requestedAt) return null
-        if (!force && System.currentTimeMillis() - lastRefreshAt < 60_000) return null
+    private suspend fun refreshLocked(force: Boolean, cities: Boolean, requestedAt: Long): Throwable? {
+        // Si otra actualización que cubre lo mismo terminó mientras esta esperaba, ya está fresco
+        // (aunque sea forzada).
+        val last = if (cities) lastFullRefreshAt else lastRefreshAt
+        if (last >= requestedAt) return null
+        if (!force && System.currentTimeMillis() - last < 60_000) return null
         // Todos los lugares en un solo pedido a Open-Meteo (acepta varias coordenadas): con cinco
         // ciudades, 2 pedidos por actualización en vez de 12.
         val here = runCatchingCancellable { currentTarget() }
-        val targets = listOfNotNull(here.getOrNull()) + places().map { Target(it.id, it.shownName, it.latitude, it.longitude) }
+        val saved = if (cities) places().map { Target(it.id, it.shownName, it.latitude, it.longitude) } else emptyList()
+        val targets = listOfNotNull(here.getOrNull()) + saved
         if (targets.isEmpty()) return here.exceptionOrNull()
         val result = runCatchingCancellable { fetchAll(targets) }
         val firstError = result.exceptionOrNull()
             ?: here.exceptionOrNull()?.takeIf { it !is NoLocationException }
-        if (result.isSuccess) lastRefreshAt = System.currentTimeMillis()
+        if (result.isSuccess) {
+            val now = System.currentTimeMillis()
+            if (here.isSuccess) lastRefreshAt = now
+            if (cities) {
+                lastFullRefreshAt = now
+                prefs.edit().putLong(KEY_CITIES_AT, now).apply()
+                runCatching { discardOrphans() }
+            }
+        }
         return firstError
     }
 
@@ -208,11 +247,31 @@ class WeatherRepository private constructor(private val context: Context) {
         alerts
     }
 
+    /**
+     * La calidad del aire cambia despacio: se guarda una hora por lugar. Con el trabajo cada 15
+     * minutos eran cuatro pedidos por hora que daban casi lo mismo.
+     */
+    private val airCache = java.util.concurrent.ConcurrentHashMap<String, Triple<Long, Pair<Double, Double>, AirQuality>>()
+
+    private suspend fun airQualities(targets: List<Target>): List<AirQuality?> {
+        val now = System.currentTimeMillis()
+        fun fresh(t: Target) = airCache[t.id]?.takeIf { (at, point) ->
+            now - at < 60 * 60_000L && abs(point.first - t.latitude) < 0.02 && abs(point.second - t.longitude) < 0.02
+        }?.third
+        val missing = targets.filter { fresh(it) == null }
+        val fetched = OpenMeteo.airQualities(missing.map { it.latitude to it.longitude })
+        missing.forEachIndexed { i, t ->
+            fetched.getOrNull(i)?.let { airCache[t.id] = Triple(now, t.latitude to t.longitude, it) }
+        }
+        // Si falló, mejor la de la última vez que nada.
+        return targets.map { t -> fresh(t) ?: airCache[t.id]?.third ?: cached(t.id)?.airQuality }
+    }
+
     /** Un lugar para pedir: id, nombre a mostrar y coordenadas. */
     private data class Target(val id: String, val name: String?, val latitude: Double, val longitude: Double)
 
     suspend fun refreshCurrent(): Result<WeatherSnapshot> = runCatchingCancellable {
-        fetchAll(listOf(currentTarget())).first()
+        fetchAll(listOf(currentTarget())).first().also { lastRefreshAt = System.currentTimeMillis() }
     }
 
     /** Dónde estás ahora (o la última ubicación conocida), con su nombre. */
@@ -240,7 +299,7 @@ class WeatherRepository private constructor(private val context: Context) {
         val points = targets.map { it.latitude to it.longitude }
         val (forecasts, airs, alerts) = coroutineScope {
             val forecasts = async { OpenMeteo.forecasts(points) }
-            val airs = async { OpenMeteo.airQualities(points) }
+            val airs = async { airQualities(targets) }
             val alerts = async {
                 val inArgentina = targets.filter { Geo.isInArgentina(it.latitude, it.longitude) }
                 // Si el SMN falla, se mantienen las alertas de la última vez: si no, una alerta
@@ -354,6 +413,7 @@ class WeatherRepository private constructor(private val context: Context) {
         private const val KEY_UNIT_WIND = "unit_wind"
         private const val KEY_UNIT_PRESSURE = "unit_pressure"
         private const val KEY_USE_24H = "use_24h"
+        private const val KEY_CITIES_AT = "ciudades_actualizadas"
 
         private fun snapshotKey(placeId: String) = "snapshot:$placeId"
 

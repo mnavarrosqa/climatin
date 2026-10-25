@@ -129,13 +129,19 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
             Detail(
                 tr("Viento", "Wind"),
                 windText(current.windSpeed),
-                current.windDirection?.let { tr("Del", "From") + " " + windFrom(it) },
+                // Las ráfagas solo si suman algo: con viento parejo, la dirección alcanza.
+                listOfNotNull(
+                    current.windDirection?.let { tr("Del", "From") + " " + windFrom(it) },
+                    current.windGusts?.takeIf { it >= current.windSpeed + 10 }?.let { tr("Ráfagas", "Gusts") + " " + windText(it) },
+                ).joinToString(" · ").ifEmpty { null },
                 visual = current.windDirection?.let { direction -> @Composable { WindCompass(direction.toFloat()) } },
             ).apply {
                 info = tr(
                     "Viento medio a 10 metros del suelo; las ráfagas pueden ser bastante más fuertes. La dirección es de dónde viene." +
+                        (current.windGusts?.let { gust -> " Ráfagas de hasta ${windText(gust)}." } ?: "") +
                         (today?.windMax?.let { max -> " Hoy, como mucho ${windText(max)}." } ?: ""),
                     "Average wind 10 meters above ground; gusts can be much stronger. The direction is where it comes from." +
+                        (current.windGusts?.let { gust -> " Gusts up to ${windText(gust)}." } ?: "") +
                         (today?.windMax?.let { max -> " Today, up to ${windText(max)}." } ?: ""),
                 )
             },
@@ -204,11 +210,21 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier) {
             },
         )
         current.pressure?.let {
+            // Cuánto cambió en 3 horas: más de 1 hPa ya es una tendencia; más de 3, rápida.
+            val change = snapshot.pressureHoursAgo(3)?.let { before -> it - before }
+            val trend = when {
+                change == null -> null
+                change <= -3 -> tr("↓ Baja rápido", "↓ Falling fast")
+                change <= -1 -> tr("↓ Bajando", "↓ Falling")
+                change >= 3 -> tr("↑ Sube rápido", "↑ Rising fast")
+                change >= 1 -> tr("↑ Subiendo", "↑ Rising")
+                else -> tr("Estable", "Steady")
+            }
             add(
-                Detail(tr("Presión", "Pressure"), pressureText(it)).apply {
+                Detail(tr("Presión", "Pressure"), pressureText(it), trend).apply {
                     info = tr(
-                        "Presión del aire en el lugar. Lo normal al nivel del mar ronda los 1013 hPa; si baja rápido suele venir mal tiempo, y si sube, se estabiliza. En lugares altos es siempre más baja.",
-                        "Air pressure at the location. Around 1013 hPa is normal at sea level; a quick drop often means bad weather and a rise means it's settling. It's always lower at altitude.",
+                        "Presión del aire llevada al nivel del mar, para comparar entre lugares. Lo normal ronda los 1013 hPa; si baja rápido suele venir mal tiempo, y si sube, se estabiliza. La flecha compara con 3 horas atrás.",
+                        "Air pressure adjusted to sea level, so places can be compared. Around 1013 hPa is normal; a quick drop often means bad weather and a rise means it's settling. The arrow compares with 3 hours ago.",
                     )
                 },
             )

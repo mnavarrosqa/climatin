@@ -237,6 +237,8 @@ object WidgetPrefs {
      * hora y no un sí/no: si el proceso muere a mitad de camino, no queda trabado para siempre.
      */
     val REFRESHING_AT = longPreferencesKey("refreshing_at")
+    /** Cuándo falló el último ⟳: el widget dice "Sin conexión" unos minutos. */
+    val REFRESH_FAILED_AT = longPreferencesKey("refresh_failed_at")
 }
 
 /** Parámetros de los accesos directos: abren la app en una ciudad y un día. */

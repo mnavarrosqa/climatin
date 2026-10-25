@@ -24,7 +24,22 @@ object CrashLog {
         }
     }
 
-    /** Anota un error (también los que se atajan, como un cuadro del fondo de pantalla). */
+    @Volatile private var caughtAt = 0L
+
+    /**
+     * Anota un error que se atajó (como un cuadro del fondo de pantalla). A lo sumo uno cada 10
+     * minutos, porque un error que se repite en cada cuadro escribiría el archivo 60 veces por
+     * segundo, y nunca encima de un cierre de verdad, que es el que más importa ver.
+     */
+    fun recordCaught(context: Context, error: Throwable, where: String) {
+        val now = System.currentTimeMillis()
+        if (now - caughtAt < 10 * 60_000L) return
+        caughtAt = now
+        if (last(context)?.contains("· cierre en ") == true) return
+        record(context, error, where)
+    }
+
+    /** Anota un error: lo último que pasó queda en el archivo. */
     fun record(context: Context, error: Throwable, where: String) {
         runCatching {
             val trace = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
@@ -40,7 +55,7 @@ object CrashLog {
     }
 
     /** El último error guardado, si hay. */
-    fun last(context: Context): String? = file(context).takeIf { it.exists() }?.readText()
+    fun last(context: Context): String? = runCatching { file(context).takeIf { it.exists() }?.readText() }.getOrNull()
 
     fun clear(context: Context) {
         file(context).delete()

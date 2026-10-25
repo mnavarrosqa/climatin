@@ -21,9 +21,9 @@ object OpenMeteo {
 
     private const val FORECAST_FIELDS =
         "&current=temperature_2m,apparent_temperature,relative_humidity_2m,is_day," +
-            "weather_code,wind_speed_10m,wind_direction_10m,precipitation,surface_pressure,visibility,uv_index" +
+            "weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,pressure_msl,visibility,uv_index" +
             "&hourly=temperature_2m,weather_code,precipitation_probability,is_day," +
-            "apparent_temperature,wind_speed_10m,precipitation" +
+            "apparent_temperature,wind_speed_10m,precipitation,pressure_msl" +
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset," +
             "uv_index_max,precipitation_probability_max,precipitation_sum,wind_speed_10m_max" +
             "&minutely_15=precipitation&forecast_minutely_15=8" +
@@ -45,18 +45,24 @@ object OpenMeteo {
         return if (points.size == 1) listOf(get(url, Forecast.serializer())) else get(url, ListSerializer(Forecast.serializer()))
     }
 
-    /** Calidad del aire. Es opcional: si falla, se muestra el resto igual. */
-    suspend fun airQuality(latitude: Double, longitude: Double): AirQuality? = airQualities(listOf(latitude to longitude)).first()
-
-    suspend fun airQualities(points: List<Pair<Double, Double>>): List<AirQuality?> = runCatching {
-        val url = "https://air-quality-api.open-meteo.com/v1/air-quality?" + coordinates(points) + "&current=european_aqi,pm2_5&timezone=auto"
-        val responses = if (points.size == 1) listOf(get(url, AirQualityResponse.serializer())) else get(url, ListSerializer(AirQualityResponse.serializer()))
-        responses.map { AirQuality(europeanAqi = it.current.europeanAqi, pm25 = it.current.pm25) }
-    }.getOrNull()?.takeIf { it.size == points.size } ?: List(points.size) { null }
+    /** Calidad del aire. Es opcional: si falla, se muestra el resto igual (pero una cancelación sigue de largo). */
+    suspend fun airQualities(points: List<Pair<Double, Double>>): List<AirQuality?> {
+        if (points.isEmpty()) return emptyList()
+        val list = try {
+            val url = "https://air-quality-api.open-meteo.com/v1/air-quality?" + coordinates(points) + "&current=european_aqi,pm2_5&timezone=auto"
+            val responses = if (points.size == 1) listOf(get(url, AirQualityResponse.serializer())) else get(url, ListSerializer(AirQualityResponse.serializer()))
+            responses.map { AirQuality(europeanAqi = it.current.europeanAqi, pm25 = it.current.pm25) }
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            null
+        }
+        return list?.takeIf { it.size == points.size } ?: List(points.size) { null }
+    }
 
     suspend fun searchCities(query: String): List<Place> {
         val response = get(
-            "https://geocoding-api.open-meteo.com/v1/search?count=10&language=es&format=json&name=" +
+            "https://geocoding-api.open-meteo.com/v1/search?count=10&format=json&language=" + (if (Lang.isSpanish) "es" else "en") + "&name=" +
                 URLEncoder.encode(query.trim(), "UTF-8"),
             GeocodingResponse.serializer(),
         )
@@ -113,6 +119,7 @@ object OpenMeteo {
                 feelsLike = h.feelsLike.getOrNull(i),
                 windSpeed = h.windSpeed.getOrNull(i),
                 precipitation = h.precipitation.getOrNull(i),
+                pressure = h.pressure.getOrNull(i),
             )
         }
         val (pastHours, hours) = allHours.partition { it.dateTime.isBefore(currentHour) }
@@ -157,9 +164,11 @@ object OpenMeteo {
                 visibility = c.visibility,
                 uvIndex = c.uvIndex,
                 windDirection = c.windDirection,
+                windGusts = c.windGusts,
             ),
             hours = hours,
-            pastHours = pastHours.map { Hour(it.time, it.temperature, it.code, null, it.isDay) },
+            // De las que pasaron alcanza con la temperatura y la presión (para ver si sube o baja).
+            pastHours = pastHours.map { Hour(it.time, it.temperature, it.code, null, it.isDay, pressure = it.pressure) },
             days = days,
             minutely = minutely,
             airQuality = airQuality,
@@ -188,10 +197,12 @@ data class CurrentDto(
     @SerialName("weather_code") val weatherCode: Int,
     @SerialName("wind_speed_10m") val windSpeed: Double,
     val precipitation: Double = 0.0,
-    @SerialName("surface_pressure") val pressure: Double? = null,
+    /** Al nivel del mar: así se compara con los 1013 hPa de siempre aunque el lugar esté alto. */
+    @SerialName("pressure_msl") val pressure: Double? = null,
     val visibility: Double? = null,
     @SerialName("uv_index") val uvIndex: Double? = null,
     @SerialName("wind_direction_10m") val windDirection: Double? = null,
+    @SerialName("wind_gusts_10m") val windGusts: Double? = null,
 )
 
 @Serializable
@@ -204,6 +215,7 @@ data class HourlyDto(
     @SerialName("apparent_temperature") val feelsLike: List<Double?> = emptyList(),
     @SerialName("wind_speed_10m") val windSpeed: List<Double?> = emptyList(),
     val precipitation: List<Double?> = emptyList(),
+    @SerialName("pressure_msl") val pressure: List<Double?> = emptyList(),
 )
 
 @Serializable

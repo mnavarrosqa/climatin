@@ -29,9 +29,13 @@ class RainFrame(val epochSeconds: Long, val values: FloatArray)
 object RainMap {
     const val MIN_ZOOM = 4
     const val MAX_ZOOM = 9
-    // Más puntos que antes (12x16): la lluvia se ve más fina. Siguen siendo una sola consulta.
-    const val COLUMNS = 14
-    const val ROWS = 20
+    // Open-Meteo cuenta cada punto como una consulta y limita a 600 por minuto: con 12x16 (192)
+    // entran varias cargas por minuto mientras se recorre el mapa.
+    const val COLUMNS = 12
+    const val ROWS = 16
+
+    /** Open-Meteo devolvió 429: se pasó el límite de consultas por minuto. */
+    class TooManyRequests : Exception("HTTP 429")
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -125,7 +129,9 @@ object RainMap {
             connection.connectTimeout = 15_000
             connection.readTimeout = 20_000
             connection.setRequestProperty("User-Agent", "Climatin (Android)")
-            if (connection.responseCode !in 200..299) error("HTTP ${connection.responseCode}")
+            val code = connection.responseCode
+            if (code == 429) throw TooManyRequests()
+            if (code !in 200..299) error("HTTP $code")
             return connection.inputStream.use { it.readBytes() }
         } finally {
             connection.disconnect()

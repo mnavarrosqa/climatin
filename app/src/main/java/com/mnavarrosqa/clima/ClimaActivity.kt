@@ -28,10 +28,24 @@ class ClimaActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
-        // Se queda hasta que termine de dibujarse el ícono (850 ms), así la animación se ve entera;
-        // mientras, los pronósticos guardados se terminan de leer en segundo plano.
+        // Se queda hasta que esté leído el pronóstico guardado (en otro hilo), con un mínimo para
+        // que se vea el ícono y nunca más de 850 ms. Desde un widget, una notificación o un acceso
+        // directo no hay ícono que mostrar: solo se espera el pronóstico, poco.
         val shownAt = SystemClock.uptimeMillis()
-        splash.setKeepOnScreenCondition { savedInstanceState == null && SystemClock.uptimeMillis() - shownAt < 850 }
+        val fromLauncher = intent?.action == Intent.ACTION_MAIN && intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true
+        val minimum = if (fromLauncher) 450L else 0L
+        val maximum = if (fromLauncher) 850L else 300L
+        val ready = java.util.concurrent.atomic.AtomicBoolean(savedInstanceState != null)
+        if (!ready.get()) {
+            Thread {
+                runCatching { com.mnavarrosqa.clima.data.WeatherRepository.get(applicationContext).cached() }
+                ready.set(true)
+            }.start()
+        }
+        splash.setKeepOnScreenCondition {
+            val elapsed = SystemClock.uptimeMillis() - shownAt
+            savedInstanceState == null && elapsed < maximum && (!ready.get() || elapsed < minimum)
+        }
         // Al salir, el ícono se agranda y todo se desvanece hacia el pronóstico.
         splash.setOnExitAnimationListener { provider ->
             // Abierta desde un widget o una notificación, Android 13+ muestra la pantalla de inicio
