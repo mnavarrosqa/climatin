@@ -12,7 +12,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,6 +64,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -243,12 +249,68 @@ private fun ConfigScreen(
                 ) {
                     if (kind != null) {
                         listOf(tr("Chico", "Small"), tr("Mediano", "Medium"), tr("Grande", "Large")).forEachIndexed { index, label ->
-                            FilterChip(selected = sizeIndex == index, onClick = { sizeIndex = index }, label = { Text(label) })
+                            FilterChip(
+                                selected = sizeIndex == index,
+                                onClick = { sizeIndex = index },
+                                label = { Text(label) },
+                                modifier = Modifier.radioSemantics(sizeIndex == index),
+                            )
                         }
                         Spacer(Modifier.width(8.dp))
                     }
                     PreviewBackdrop.entries.forEach { option ->
-                        FilterChip(selected = backdrop == option, onClick = { backdrop = option }, label = { Text(option.label) })
+                        FilterChip(
+                            selected = backdrop == option,
+                            onClick = { backdrop = option },
+                            label = { Text(option.label) },
+                            modifier = Modifier.radioSemantics(backdrop == option),
+                        )
+                    }
+                }
+            }
+
+            // --- Ciudad --- (lo primero que se elige; Ciudades muestra todas y no la usa)
+            if (kind?.supportsCity != false) {
+                item { SectionTitle(tr("Ciudad", "City")) }
+                item {
+                    Row(
+                        Modifier
+                            .horizontalScroll(rememberScrollState())
+                            .selectableGroup(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        val here = snapshots.firstOrNull { it.placeId == CURRENT_PLACE_ID }
+                        CityOption(
+                            title = tr("Mi ubicación", "My location"),
+                            snapshot = here,
+                            icon = true,
+                            selected = config.placeId == CURRENT_PLACE_ID,
+                        ) { onChange(config.copy(placeId = CURRENT_PLACE_ID)) }
+                        places.forEach { (id, name) ->
+                            CityOption(
+                                title = name,
+                                snapshot = snapshots.firstOrNull { it.placeId == id },
+                                selected = config.placeId == id,
+                            ) { onChange(config.copy(placeId = id)) }
+                        }
+                        if (places.isNotEmpty()) {
+                            CityOption(
+                                title = tr("Rotar", "Rotate"),
+                                subtitle = tr("Una ciudad distinta cada media hora", "A different city every half hour"),
+                                snapshot = null,
+                                selected = config.placeId == ROTATE_PLACE_ID,
+                            ) { onChange(config.copy(placeId = ROTATE_PLACE_ID)) }
+                        }
+                    }
+                }
+                if (places.isEmpty()) {
+                    item {
+                        Text(
+                            tr("Podés agregar más ciudades desde la app, en Ciudades.", "You can add more cities in the app, under Cities."),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp, start = 4.dp),
+                        )
                     }
                 }
             }
@@ -263,13 +325,22 @@ private fun ConfigScreen(
             // --- Estilo, color y forma ---
             item { SectionTitle(tr("Estilo", "Style")) }
             item {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     WidgetStyle.entries.forEach { style ->
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
-                                .clickable { onChange(config.copy(style = style)) }
+                                .selectable(
+                                    selected = config.style == style,
+                                    role = Role.RadioButton,
+                                    onClick = { onChange(config.copy(style = style)) },
+                                )
                                 .padding(4.dp),
                         ) {
                             StyleThumbnail(style, config.accent, config.opacity, previewSnapshot, selected = config.style == style)
@@ -285,7 +356,12 @@ private fun ConfigScreen(
             }
             item { SectionTitle(tr("Color", "Color")) }
             item {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
                     WidgetAccent.entries.forEach { accent ->
                         AccentOption(accent, selected = config.accent == accent) { onChange(config.copy(accent = accent)) }
                     }
@@ -306,76 +382,39 @@ private fun ConfigScreen(
             item { ChipRow(WidgetCorners.entries, config.corners, { it.label }) { onChange(config.copy(corners = it)) } }
 
             // --- Contenido y comportamiento ---
-            item { SectionTitle(tr("Qué mostrar", "What to show")) }
-            item {
-                Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
-                    Column {
-                        WidgetPart.entries.forEach { part ->
-                            ListItem(
-                                headlineContent = { Text(part.label) },
-                                supportingContent = { Text(part.note) },
-                                trailingContent = {
-                                    Switch(
-                                        checked = part !in config.hidden,
-                                        onCheckedChange = { show ->
+            // Solo las partes que este widget dibuja: las demás no cambiaban nada.
+            val parts = kind?.parts?.let { shown -> WidgetPart.entries.filter { it in shown } } ?: WidgetPart.entries
+            if (parts.isNotEmpty()) {
+                item { SectionTitle(tr("Qué mostrar", "What to show")) }
+                item {
+                    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
+                        Column {
+                            parts.forEach { part ->
+                                val shown = part !in config.hidden
+                                ListItem(
+                                    headlineContent = { Text(part.label) },
+                                    supportingContent = { Text(part.note) },
+                                    // Toda la fila prende y apaga; el interruptor solo muestra el estado.
+                                    trailingContent = { Switch(checked = shown, onCheckedChange = null) },
+                                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                                    modifier = Modifier.toggleable(
+                                        value = shown,
+                                        role = Role.Switch,
+                                        onValueChange = { show ->
                                             onChange(config.copy(hidden = if (show) config.hidden - part else config.hidden + part))
                                         },
-                                    )
-                                },
-                                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                            )
+                                    ),
+                                )
+                            }
                         }
                     }
                 }
             }
-            item {
-                Text(
-                    tr("No todos los widgets tienen todas las partes: cada uno ignora las que no muestra.", "Not every widget has every part: each one ignores the ones it doesn't show."),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, top = 6.dp),
-                )
-            }
-            item { SectionTitle(tr("Al tocar el widget", "When you tap the widget")) }
-            item { ChipRow(WidgetTap.entries, config.tap, { it.label }) { onChange(config.copy(tap = it)) } }
-
-            // --- Ciudad ---
-            item { SectionTitle(tr("Ciudad", "City")) }
-            item {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    val here = snapshots.firstOrNull { it.placeId == CURRENT_PLACE_ID }
-                    CityOption(
-                        title = tr("Mi ubicación", "My location"),
-                        snapshot = here,
-                        icon = true,
-                        selected = config.placeId == CURRENT_PLACE_ID,
-                    ) { onChange(config.copy(placeId = CURRENT_PLACE_ID)) }
-                    places.forEach { (id, name) ->
-                        CityOption(
-                            title = name,
-                            snapshot = snapshots.firstOrNull { it.placeId == id },
-                            selected = config.placeId == id,
-                        ) { onChange(config.copy(placeId = id)) }
-                    }
-                    if (places.isNotEmpty()) {
-                        CityOption(
-                            title = tr("Rotar", "Rotate"),
-                            subtitle = tr("Una ciudad distinta cada media hora", "A different city every half hour"),
-                            snapshot = null,
-                            selected = config.placeId == ROTATE_PLACE_ID,
-                        ) { onChange(config.copy(placeId = ROTATE_PLACE_ID)) }
-                    }
-                }
-            }
-            if (places.isEmpty()) {
-                item {
-                    Text(
-                        tr("Podés agregar más ciudades desde la app, en Ciudades.", "You can add more cities in the app, under Cities."),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp, start = 4.dp),
-                    )
-                }
+            if (kind?.supportsTap != false) {
+                // "Siguiente ciudad" no hace nada sin otra ciudad a la cual pasar.
+                val taps = WidgetTap.entries.filter { it != WidgetTap.NEXT || (kind?.supportsCity != false && places.isNotEmpty()) }
+                item { SectionTitle(tr("Al tocar el widget", "When you tap the widget")) }
+                item { ChipRow(taps, config.tap, { it.label }) { onChange(config.copy(tap = it)) } }
             }
 
             // --- Copiar ---
@@ -406,11 +445,31 @@ private fun ConfigScreen(
 
 @Composable
 private fun <T> ChipRow(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Una sola opción a la vez: TalkBack la lee como botón de opción, no como casilla.
+    Row(
+        Modifier
+            .horizontalScroll(rememberScrollState())
+            .selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         options.forEach { option ->
-            FilterChip(selected = option == selected, onClick = { onSelect(option) }, label = { Text(label(option)) })
+            FilterChip(
+                selected = option == selected,
+                onClick = { onSelect(option) },
+                label = { Text(label(option)) },
+                modifier = Modifier.radioSemantics(option == selected),
+            )
         }
     }
+}
+
+/**
+ * Un chip de opción única. FilterChip se anuncia como casilla; la semántica de afuera pisa la del
+ * chip, así que se lee como botón de opción, elegido o no.
+ */
+private fun Modifier.radioSemantics(isSelected: Boolean): Modifier = semantics {
+    role = Role.RadioButton
+    selected = isSelected
 }
 
 /** Miniatura del widget en un estilo, con el color y la opacidad elegidos. */
@@ -492,7 +551,7 @@ private fun AccentOption(accent: WidgetAccent, selected: Boolean, onClick: () ->
                     },
                 )
                 .then(if (selected) Modifier.border(3.dp, colors.onSurface, CircleShape) else Modifier)
-                .clickable(onClick = onClick)
+                .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
                 .semantics { contentDescription = accent.label },
         )
         Text(
@@ -522,7 +581,7 @@ private fun CityOption(
         modifier = Modifier
             .width(150.dp)
             .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick),
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -560,6 +619,9 @@ private fun SectionTitle(text: String) {
         text,
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 4.dp, top = 24.dp, bottom = 8.dp),
+        // Encabezado: TalkBack permite saltar de sección en sección.
+        modifier = Modifier
+            .padding(start = 4.dp, top = 24.dp, bottom = 8.dp)
+            .semantics { heading() },
     )
 }

@@ -20,6 +20,7 @@ import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.shortHour
 import com.mnavarrosqa.clima.data.windText
 import com.mnavarrosqa.clima.work.Notify.muteAction
+import com.mnavarrosqa.clima.work.Notify.radarAction
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
@@ -82,7 +83,7 @@ object SummaryNotifier {
             day.windMax?.takeIf { it >= 35 }?.let { tr("Viento hasta", "Wind up to") + " ${windText(it)}" },
             Insights.headline(snapshot).takeIf { !tomorrow },
         )
-        val notification = NotificationCompat.Builder(context, Notify.CHANNEL_SUMMARY)
+        val builder = NotificationCompat.Builder(context, Notify.CHANNEL_SUMMARY)
             .setSmallIcon(R.drawable.ic_notification_weather)
             .setColor(0xFF3F7BE8.toInt())
             .setContentTitle(title)
@@ -91,6 +92,9 @@ object SummaryNotifier {
             .setContentIntent(Notify.open(context, 30, CURRENT_PLACE_ID))
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
+        // Con lluvia probable, el mapa queda a un toque para ver por dónde viene.
+        if (rainyHour != null) builder.radarAction(context, CURRENT_PLACE_ID, 31)
+        val notification = builder
             .muteAction(context, Notify.ID_SUMMARY)
             .build()
         NotificationManagerCompat.from(context).notify(Notify.ID_SUMMARY, notification)

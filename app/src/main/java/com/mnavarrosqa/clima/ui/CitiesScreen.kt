@@ -1,13 +1,6 @@
 package com.mnavarrosqa.clima.ui
 
 import com.mnavarrosqa.clima.data.tr
-import android.Manifest
-import android.app.WallpaperManager
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -35,10 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.zIndex
 import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -60,7 +50,6 @@ import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
@@ -73,8 +62,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
 import com.mnavarrosqa.clima.data.shortHour
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -94,13 +81,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mnavarrosqa.clima.data.LocationProvider
-import com.mnavarrosqa.clima.data.Updates
-import com.mnavarrosqa.clima.data.PressureUnit
-import com.mnavarrosqa.clima.data.TemperatureUnit
-import com.mnavarrosqa.clima.data.WindUnit
-import com.mnavarrosqa.clima.wallpaper.WallpaperSettingsActivity
-import com.mnavarrosqa.clima.widget.WidgetGalleryActivity
-import com.mnavarrosqa.clima.work.RainNotifier
 import kotlinx.coroutines.delay
 import com.mnavarrosqa.clima.data.Place
 import androidx.compose.foundation.layout.Spacer
@@ -112,7 +92,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import kotlin.math.roundToInt
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,7 +139,33 @@ fun CitiesScreen(
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    // Ciudad a la que se le está poniendo apodo.
+    val density = LocalDensity.current
+    // Arrastrando cerca del borde de arriba o de abajo, la lista se corre sola.
+    LaunchedEffect(reorder.dragging) {
+        if (reorder.dragging == null) return@LaunchedEffect
+        val threshold = with(density) { 72.dp.toPx() }
+        val maxStep = with(density) { 14.dp.toPx() }
+        while (true) {
+            withFrameNanos { }
+            val step = reorder.edgeScroll(threshold, maxStep)
+            if (step != 0f) {
+                val moved = listState.scrollBy(step)
+                if (moved != 0f && reorder.scrolled(moved)) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+        }
+    }
+    // Ciudad recién agregada desde el buscador: se avisa y se baja hasta ella cuando aparece.
+    var justAdded by remember { mutableStateOf<Place?>(null) }
+    LaunchedEffect(justAdded) {
+        val place = justAdded ?: return@LaunchedEffect
+        // En el scope de la pantalla: este efecto se cancela al terminar y cerraría el aviso.
+        scope.launch { snackbar.showSnackbar(tr("Agregaste ${place.shownName}", "Added ${place.shownName}"), duration = SnackbarDuration.Short) }
+        // Va al final de la lista, justo antes de la ayuda; se espera a que esté y a que la lista la mida.
+        snapshotFlow { reorder.order.lastOrNull() == place.id && query.isBlank() }.first { it }
+        withFrameNanos { }
+        listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 2).coerceAtLeast(0))
+        justAdded = null
+    }
     /** Quita la ciudad con "Deshacer", igual al deslizar que desde TalkBack. */
     fun removeWithUndo(id: String) {
         // Se lee la lista actual (el estado de deslizar se recuerda entre composiciones).
@@ -275,6 +288,7 @@ fun CitiesScreen(
                             onOpenPlace(place.id)
                         } else {
                             viewModel.addPlace(place)
+                            justAdded = place
                         }
                         query = ""
                     },
@@ -372,6 +386,17 @@ fun CitiesScreen(
                         ).joinToString(" · ").ifEmpty { null },
                         snapshot = snapshot,
                         onClick = { onOpenPlace(id) },
+                        menu = {
+                            val index = reorder.order.indexOf(id)
+                            CityMenu(
+                                name = place.shownName,
+                                canMoveUp = index > 0,
+                                canMoveDown = index in 0 until reorder.order.lastIndex,
+                                onRename = { renamingId = id },
+                                onMove = { viewModel.movePlace(id, it) },
+                                onRemove = { removeWithUndo(id) },
+                            )
+                        },
                         modifier = Modifier
                             .shadow(elevation, RoundedCornerShape(22.dp))
                             .pointerInput(id) {
@@ -393,7 +418,7 @@ fun CitiesScreen(
                                 customActions = listOf(
                                     CustomAccessibilityAction(tr("Subir", "Move up")) { viewModel.movePlace(id, -1); true },
                                     CustomAccessibilityAction(tr("Bajar", "Move down")) { viewModel.movePlace(id, 1); true },
-                                    CustomAccessibilityAction(tr("Cambiar nombre", "Rename")) { renamingId = id; true },
+                                    CustomAccessibilityAction(tr("Apodo", "Nickname")) { renamingId = id; true },
                                     CustomAccessibilityAction(tr("Quitar", "Remove")) { removeWithUndo(id); true },
                                 )
                             },
@@ -404,24 +429,14 @@ fun CitiesScreen(
             item {
                 Hint(
                     tr(
-                        "Tocá una ciudad para ver su pronóstico. Deslizala a la izquierda para quitarla o a la derecha para ponerle un apodo; mantenela apretada para moverla.",
-                        "Tap a city to see its forecast. Swipe left to remove it or right to give it a nickname; press and hold to move it.",
+                        "Tocá una ciudad para ver su pronóstico. Con ⋮ le ponés un apodo, la movés o la quitás; también podés deslizarla (izquierda quita, derecha apodo) o mantenerla apretada para arrastrarla.",
+                        "Tap a city to see its forecast. Use ⋮ to nickname, move or remove it; you can also swipe it (left removes, right nicknames) or press and hold to drag it.",
                     ),
                 )
             }
             }
         }
     }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
-    )
 }
 
 @Composable
@@ -434,20 +449,47 @@ private fun Hint(text: String) {
     )
 }
 
+/** El "⋮" de cada ciudad guardada: lo mismo que los gestos, a la vista. */
 @Composable
-private fun Group(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(20.dp),
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp)),
-        content = content,
-    )
+private fun CityMenu(
+    name: String,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onRename: () -> Unit,
+    onMove: (Int) -> Unit,
+    onRemove: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Rounded.MoreVert, contentDescription = tr("Opciones de $name", "Options for $name"), tint = Color.White)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(tr("Apodo", "Nickname")) },
+                leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                onClick = { open = false; onRename() },
+            )
+            DropdownMenuItem(
+                text = { Text(tr("Subir", "Move up")) },
+                leadingIcon = { Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = null) },
+                enabled = canMoveUp,
+                onClick = { open = false; onMove(-1) },
+            )
+            DropdownMenuItem(
+                text = { Text(tr("Bajar", "Move down")) },
+                leadingIcon = { Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = null) },
+                enabled = canMoveDown,
+                onClick = { open = false; onMove(1) },
+            )
+            DropdownMenuItem(
+                text = { Text(tr("Quitar", "Remove")) },
+                leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
+                onClick = { open = false; onRemove() },
+            )
+        }
+    }
 }
-
-@Composable
-private fun groupColors() = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
 
 /** Apodo para una ciudad guardada: "Casa", "Trabajo", "Lo de mamá". */
 @Composable

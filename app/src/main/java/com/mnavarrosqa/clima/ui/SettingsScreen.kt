@@ -80,6 +80,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import com.mnavarrosqa.clima.data.degrees
+import com.mnavarrosqa.clima.data.degreesDelta
+import com.mnavarrosqa.clima.data.windText
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -228,11 +234,14 @@ private fun SettingRow(
     trailing: (@Composable () -> Unit)? = null,
     checked: Boolean? = null,
     onCheckedChange: ((Boolean) -> Unit)? = null,
+    nested: Boolean = false,
 ) {
+    // Una opción que depende de la de arriba va corrida a la derecha, como en los ajustes del sistema.
+    val indent: (@Composable () -> Unit)? = if (nested) ({ Spacer(Modifier.width(8.dp)) }) else null
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = summary?.let { text -> @Composable { Text(text) } },
-        leadingContent = icon,
+        leadingContent = icon ?: indent,
         // Con interruptor, toda la fila lo prende y apaga (y TalkBack la lee como un interruptor);
         // antes solo respondía el interruptor chiquito.
         trailingContent = if (checked != null) ({ Switch(checked = checked, onCheckedChange = null) }) else trailing,
@@ -272,7 +281,10 @@ private fun SectionTitle(text: String) {
         text,
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
+        // Encabezado: TalkBack permite saltar de sección en sección.
+        modifier = Modifier
+            .padding(start = 16.dp, top = 24.dp, bottom = 8.dp)
+            .semantics { heading() },
     )
 }
 
@@ -404,7 +416,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
                 SettingRow(
                     tr("Widgets", "Widgets"),
                     when (placedWidgets) {
-                        0 -> tr("11 widgets para tu pantalla de inicio", "11 widgets for your home screen")
+                        0 -> WidgetCatalog.kinds.size.let { tr("$it widgets para tu pantalla de inicio", "$it widgets for your home screen") }
                         1 -> tr("1 puesto · agregar o personalizar", "1 placed · add or customize")
                         else -> tr("$placedWidgets puestos · agregar o personalizar", "$placedWidgets placed · add or customize")
                     },
@@ -727,7 +739,16 @@ private fun <T> ChoiceRow(label: String, options: List<T>, selected: T, labelOf:
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 options.forEach { option ->
-                    FilterChip(selected = option == selected, onClick = { onSelect(option) }, label = { Text(labelOf(option)) })
+                    FilterChip(
+                        selected = option == selected,
+                        onClick = { onSelect(option) },
+                        label = { Text(labelOf(option)) },
+                        // FilterChip se anuncia como casilla; la semántica de afuera la pisa: botón de opción.
+                        modifier = Modifier.semantics {
+                            role = Role.RadioButton
+                            this.selected = option == selected
+                        },
+                    )
                 }
             }
         }
@@ -785,6 +806,24 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
     val notify = NotifyPrefs.settings
     fun change(transform: (NotifySettings) -> NotifySettings) = NotifyPrefs.update(context, transform)
 
+    // Qué hora se está eligiendo: la del resumen o el principio o el final del silencio.
+    var picking by rememberSaveable { mutableStateOf<String?>(null) }
+    when (picking) {
+        "resumen" -> HourPickerDialog(tr("Resumen a las", "Summary at"), notify.summaryHour, onDismiss = { picking = null }) { hour ->
+            change { it.copy(summaryHour = hour) }
+            SummaryNotifier.schedule(context)
+            picking = null
+        }
+        "desde" -> HourPickerDialog(tr("Silencio desde", "Quiet from"), notify.quietStart, onDismiss = { picking = null }) { hour ->
+            change { it.copy(quietStart = hour) }
+            picking = null
+        }
+        "hasta" -> HourPickerDialog(tr("Silencio hasta", "Quiet until"), notify.quietEnd, onDismiss = { picking = null }) { hour ->
+            change { it.copy(quietEnd = hour) }
+            picking = null
+        }
+    }
+
     SettingsScaffold(tr("Notificaciones", "Notifications"), onBack = onBack) {
         if (!canNotify) {
             item {
@@ -834,6 +873,15 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                         checked = notify.rainStops,
                         onCheckedChange = { on -> change { it.copy(rainStops = on) } },
                     )
+                    if (LiveUpdate.supported) {
+                        SettingRow(
+                            tr("En vivo en la barra de estado", "Live in the status bar"),
+                            tr("\"12 min\" hasta que empieza y \"Para 25 min\" mientras llueve", "\"12 min\" until it starts and \"Stops 25 min\" while raining"),
+                            checked = notify.liveRain,
+                            onCheckedChange = { on -> change { it.copy(liveRain = on) } },
+                            nested = true,
+                        )
+                    }
                 }
             }
         }
@@ -847,6 +895,15 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     checked = smnAlerts && canNotify,
                     onCheckedChange = { toggle("smn", it, viewModel::setSmnAlerts) },
                 )
+                if (smnAlerts && LiveUpdate.supported) {
+                    SettingRow(
+                        tr("Naranjas y rojas, en vivo", "Orange and red, live"),
+                        tr("En la barra de estado mientras están vigentes, con cuánto falta para que terminen", "In the status bar while active, with how long until they end"),
+                        checked = notify.liveAlerts,
+                        onCheckedChange = { on -> change { it.copy(liveAlerts = on) } },
+                        nested = true,
+                    )
+                }
             }
         }
 
@@ -865,10 +922,12 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                         },
                 )
                 if (notify.summary) {
-                    ChoiceRow(tr("A las", "At"), listOf(6, 7, 8, 9, 18, 20, 21), notify.summaryHour, { hourLabel(it) }) { hour ->
-                        change { it.copy(summaryHour = hour) }
-                        SummaryNotifier.schedule(context)
-                    }
+                    SettingRow(
+                        tr("A las", "At"),
+                        hourLabel(notify.summaryHour),
+                        onClick = { picking = "resumen" },
+                        trailing = Chevron,
+                    )
                 }
             }
         }
@@ -887,19 +946,19 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 if (notify.changes) {
                     SettingRow(
                         tr("Bajón o subida de temperatura", "Temperature swing"),
-                        tr("Mañana 6° o más distinto que hoy", "Tomorrow 6° or more different from today"),
+                        6.0.degreesDelta().let { tr("Mañana $it o más distinto que hoy", "Tomorrow $it or more different from today") },
                         checked = notify.changeTemperature,
                         onCheckedChange = { on -> change { it.copy(changeTemperature = on) } },
                     )
                     SettingRow(
                         tr("Heladas", "Frost"),
-                        tr("Mínima de 1° o menos, avisado a la tarde", "Low of 1° or less, in the afternoon"),
+                        1.0.degrees().let { tr("Mínima de $it o menos, avisado a la tarde", "Low of $it or less, in the afternoon") },
                         checked = notify.changeFrost,
                         onCheckedChange = { on -> change { it.copy(changeFrost = on) } },
                     )
                     SettingRow(
                         tr("Viento fuerte", "Strong wind"),
-                        tr("50 km/h o más", "50 km/h or more"),
+                        windText(50.0).let { tr("$it o más", "$it or more") },
                         checked = notify.changeWind,
                         onCheckedChange = { on -> change { it.copy(changeWind = on) } },
                     )
@@ -922,6 +981,19 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     checked = statusTemperature && canNotify,
                     onCheckedChange = { toggle("temperatura", it, viewModel::setStatusTemperature) },
                 )
+                // Depende de la temperatura en la barra: sin ella no hay notificación que subir a chip.
+                if (statusTemperature && LiveUpdate.supported) {
+                    SettingRow(
+                        tr("Como chip en vivo", "As a live chip"),
+                        12.0.degrees().let { tr("Los grados de ahora y lo que viene (↓ $it, ☔ 16:00)", "The temperature now and what comes next (↓ $it, ☔ 4 PM)") },
+                        checked = notify.liveTemperature,
+                        onCheckedChange = { on ->
+                            change { it.copy(liveTemperature = on) }
+                            TemperatureNotifier.update(context)
+                        },
+                        nested = true,
+                    )
+                }
             }
         }
 
@@ -977,34 +1049,13 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
             item {
                 Hint(
                     tr(
-                        "Android 16 puede mostrar algunos avisos como un chip al lado de la hora y arriba en la pantalla de bloqueo (Live Updates). El sistema decide cuándo; se puede apagar en los ajustes de la app.",
-                        "Android 16 can show some alerts as a chip next to the clock and at the top of the lock screen (Live Updates). The system decides when; you can turn it off in the app's settings.",
+                        "Android 16 puede mostrar la lluvia, las alertas y la temperatura como un chip al lado de la hora y arriba en la pantalla de bloqueo (Live Updates). Se eligen en cada aviso; el sistema decide cuándo.",
+                        "Android 16 can show rain, alerts and the temperature as a chip next to the clock and at the top of the lock screen (Live Updates). Choose them under each alert; the system decides when.",
                     ),
                 )
             }
             item {
                 Rows {
-                    SettingRow(
-                        tr("Lluvia en camino", "Rain on the way"),
-                        tr("\"12 min\" hasta que empieza y \"Para 25 min\" mientras llueve", "\"12 min\" until it starts and \"Stops 25 min\" while raining"),
-                        checked = notify.liveRain,
-                        onCheckedChange = { on -> change { it.copy(liveRain = on) } },
-                    )
-                    SettingRow(
-                        tr("Alertas naranjas y rojas", "Orange and red alerts"),
-                        tr("Mientras están vigentes, con cuánto falta para que terminen", "While active, with how long until they end"),
-                        checked = notify.liveAlerts,
-                        onCheckedChange = { on -> change { it.copy(liveAlerts = on) } },
-                    )
-                    SettingRow(
-                        tr("Temperatura", "Temperature"),
-                        tr("Los grados de ahora y lo que viene (↓ 12°, ☔ 16:00). Necesita la temperatura en la barra de estado prendida", "The temperature now and what comes next (↓ 12°, ☔ 4 PM). Needs the status bar temperature on"),
-                        checked = notify.liveTemperature,
-                        onCheckedChange = { on ->
-                                change { it.copy(liveTemperature = on) }
-                                TemperatureNotifier.update(context)
-                            },
-                    )
                     SettingRow(
                         tr("Permiso de Live Updates", "Live Updates permission"),
                         tr("Si no aparece el chip, revisá que esté permitido", "If the chip doesn't show, check that it's allowed"),
@@ -1025,12 +1076,8 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     onCheckedChange = { on -> change { it.copy(quiet = on) } },
                 )
                 if (notify.quiet) {
-                    ChoiceRow(tr("Desde", "From"), listOf(21, 22, 23, 0), notify.quietStart, { hourLabel(it) }) { hour ->
-                        change { it.copy(quietStart = hour) }
-                    }
-                    ChoiceRow(tr("Hasta", "Until"), listOf(6, 7, 8, 9), notify.quietEnd, { hourLabel(it) }) { hour ->
-                        change { it.copy(quietEnd = hour) }
-                    }
+                    SettingRow(tr("Desde", "From"), hourLabel(notify.quietStart), onClick = { picking = "desde" }, trailing = Chevron)
+                    SettingRow(tr("Hasta", "Until"), hourLabel(notify.quietEnd), onClick = { picking = "hasta" }, trailing = Chevron)
                 }
             }
         }
@@ -1074,9 +1121,6 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
         }
     }
 }
-
-/** "7:00" o "7 AM" según el formato elegido en Unidades. */
-private fun hourLabel(hour: Int): String = shortHour(java.time.LocalDate.now().atTime(hour, 0))
 
 // --- Ubicación ---
 

@@ -1,0 +1,1 @@
+Accesibilidad: TalkBack lee encabezados, opciones como tales y cada ciudad de una vez. Ciudades con menú ⋮ (apodo, subir, bajar, quitar) y aviso al agregar. Ajustes de notificaciones más claros, con selector de hora. Ajustes del widget con la ciudad arriba y solo las opciones que usa. Resumen diario con botón al mapa de lluvia.
