@@ -89,15 +89,18 @@ object RainMap {
         return bitmap.asImageBitmap()
     }
 
-    /** Celeste para llovizna, azul para lluvia, amarillo y rojo para lluvia fuerte. */
+    /**
+     * Celeste para llovizna, azul para lluvia, amarillo y rojo para lluvia fuerte. Más opacos que
+     * antes: sobre el mapa claro, la lluvia débil casi no se distinguía.
+     */
     private fun rainColor(mm: Float): Int = when {
         mm < 0.1f -> 0x00000000
-        mm < 0.5f -> 0x6681D4FA
-        mm < 1.5f -> 0x9942A5F5.toInt()
-        mm < 4f -> 0xB31E88E5.toInt()
-        mm < 8f -> 0xC0FFC107.toInt()
-        mm < 15f -> 0xCCFF7043.toInt()
-        else -> 0xD9E53935.toInt()
+        mm < 0.5f -> 0x9981D4FA.toInt()
+        mm < 1.5f -> 0xB342A5F5.toInt()
+        mm < 4f -> 0xCC1E88E5.toInt()
+        mm < 8f -> 0xD9FFC107.toInt()
+        mm < 15f -> 0xE0FF7043.toInt()
+        else -> 0xE6E53935.toInt()
     }
 
     /**

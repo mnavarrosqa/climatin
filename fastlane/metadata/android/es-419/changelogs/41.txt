@@ -1,0 +1,1 @@
+Mapa de lluvia más fluido: la lluvia avanza pareja entre horas, línea de tiempo con barras de cuánto llueve hora por hora y marca de ahora, zoom flotante y colores más visibles.

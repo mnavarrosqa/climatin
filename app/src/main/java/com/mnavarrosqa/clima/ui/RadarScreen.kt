@@ -6,6 +6,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlin.math.sqrt
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,11 +34,9 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -118,7 +122,11 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
     var centerX by rememberSaveable { mutableDoubleStateOf(Geo.tileX(longitude, 7)) }
     var centerY by rememberSaveable { mutableDoubleStateOf(Geo.tileY(latitude, 7)) }
     var area by remember { mutableStateOf<RainArea?>(null) }
-    var frameIndex by remember { mutableIntStateOf(0) }
+    // Posición en la línea de tiempo, continua (2,4 es "entre las 2 y las 3"): la lluvia se funde de
+    // una hora a la otra en vez de saltar.
+    val position = remember { Animatable(0f) }
+    val frameIndex by remember { derivedStateOf { position.value.roundToInt() } }
+    val scope = rememberCoroutineScope()
     var playing by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
@@ -139,19 +147,23 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
     val images = remember { mutableStateMapOf<String, ImageBitmap>() }
     val frames = area?.frames.orEmpty()
 
-    // Fundido entre horas para que la lluvia se mueva sin saltos.
-    var previousIndex by remember { mutableIntStateOf(0) }
-    val fade = remember { Animatable(1f) }
-    LaunchedEffect(frameIndex) {
-        fade.snapTo(0f)
-        fade.animateTo(1f, tween(500, easing = LinearEasing))
-        previousIndex = frameIndex
-    }
+    // Reproducir: avanza parejo, una hora cada 0,9 s; al final espera un poco y vuelve al principio.
     LaunchedEffect(playing, frames.size) {
-        while (playing && frames.isNotEmpty()) {
-            delay(if (frameIndex == frames.lastIndex) 1600 else 800)
-            frameIndex = (frameIndex + 1) % frames.size
+        if (!playing || frames.size < 2) return@LaunchedEffect
+        val last = frames.lastIndex.toFloat()
+        while (true) {
+            if (position.value >= last - 0.001f) {
+                delay(1200)
+                position.snapTo(0f)
+            }
+            val target = (floor(position.value) + 1f).coerceAtMost(last)
+            position.animateTo(target, tween(((target - position.value) * 900).roundToInt().coerceAtLeast(16), easing = LinearEasing))
         }
+    }
+    val scrub: (Float) -> Unit = { value ->
+        playing = false
+        probe = null
+        scope.launch { position.snapTo(value.coerceIn(0f, frames.lastIndex.coerceAtLeast(0).toFloat())) }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -210,11 +222,10 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                 .onSuccess { result ->
                     val first = area == null
                     area = RainArea(x0, y0, x1, y1, requestZoom, result, result.map(RainMap::overlay))
-                    if (first || frameIndex > result.lastIndex) {
+                    if (first || position.value > result.lastIndex) {
                         // Arranca en la hora actual.
                         val now = System.currentTimeMillis() / 1000
-                        frameIndex = result.indexOfLast { it.epochSeconds <= now }.coerceAtLeast(0)
-                        previousIndex = frameIndex
+                        position.snapTo(result.indexOfLast { it.epochSeconds <= now }.coerceAtLeast(0).toFloat())
                     }
                 }
                 .onFailure { failure ->
@@ -314,8 +325,12 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                         drawImage(overlay, dstOffset = dstOffset, dstSize = dstSize, alpha = alpha, filterQuality = FilterQuality.High)
                     }
                 }
-                if (previousIndex != frameIndex) rainLayer(previousIndex, 1f - fade.value)
-                rainLayer(frameIndex, fade.value)
+                // Entre dos horas se mezclan las dos (raíz cuadrada: no se apaga en el medio).
+                val pos = position.value.coerceIn(0f, (a.overlays.size - 1).coerceAtLeast(0).toFloat())
+                val i0 = floor(pos).toInt()
+                val t = pos - i0
+                rainLayer(i0, sqrt(1f - t))
+                if (t > 0.01f) rainLayer((i0 + 1).coerceAtMost(a.overlays.lastIndex), sqrt(t))
             }
 
             // Tus ciudades con su nombre, y donde estás con el color de la app.
@@ -356,6 +371,29 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             }
         }
 
+        // Acercar y alejar flotando al costado, como en los mapas.
+        Column(
+            Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilledTonalIconButton(onClick = {
+                if (zoom < RainMap.MAX_ZOOM) {
+                    zoom++; centerX *= 2; centerY *= 2
+                }
+            }) {
+                Icon(Icons.Rounded.Add, contentDescription = tr("Acercar", "Zoom in"))
+            }
+            FilledTonalIconButton(onClick = {
+                if (zoom > RainMap.MIN_ZOOM) {
+                    zoom--; centerX /= 2; centerY /= 2
+                }
+            }) {
+                Text("−", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = tr("Alejar", "Zoom out") })
+            }
+        }
+
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f),
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -372,11 +410,14 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(tr("Mapa de lluvia", "Rain map"), style = MaterialTheme.typography.titleMedium)
+                        // La hora que se ve, grande; abajo, lo tocado o el error.
+                        Text(
+                            frame?.let { frameLabel(it, zone) } ?: tr("Mapa de lluvia", "Rain map"),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
                         Text(
                             error ?: probe?.second?.let { tr("Acá: ", "Here: ") + it }
-                                ?: frame?.let { frameLabel(it, zone) }
-                                ?: tr("Cargando…", "Loading…"),
+                                ?: if (frame == null) tr("Cargando…", "Loading…") else tr("Tocá el mapa para ver cuánto llueve", "Tap the map to see how much it rains"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -387,28 +428,15 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                         Text(tr("Actualizando…", "Updating…"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.width(8.dp))
                     }
-                    FilledTonalButton(
-                        onClick = {
-                            if (zoom > RainMap.MIN_ZOOM) {
-                                zoom--; centerX /= 2; centerY /= 2
-                            }
-                        },
-                        modifier = Modifier.semantics { contentDescription = tr("Alejar", "Zoom out") },
-                    ) { Text("−") }
-                    Spacer(Modifier.width(4.dp))
-                    FilledTonalIconButton(onClick = {
-                        if (zoom < RainMap.MAX_ZOOM) {
-                            zoom++; centerX *= 2; centerY *= 2
-                        }
-                    }) {
-                        Icon(Icons.Rounded.Add, contentDescription = tr("Acercar", "Zoom in"))
+                    // "Ahora" solo si la línea de tiempo no está ya en la hora actual.
+                    val nowIndex = frames.indexOfLast { it.epochSeconds <= System.currentTimeMillis() / 1000 }
+                    if (frames.size > 1 && nowIndex >= 0 && frameIndex != nowIndex) {
+                        TextButton(onClick = { scrub(nowIndex.toFloat()) }) { Text(tr("Ahora", "Now")) }
                     }
                 }
                 if (frames.size > 1) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         FilledTonalIconButton(onClick = { playing = !playing }) {
                             if (playing) {
                                 Text("❚❚", style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { contentDescription = tr("Pausar", "Pause") })
@@ -416,29 +444,24 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                                 Icon(Icons.Rounded.PlayArrow, contentDescription = tr("Reproducir", "Play"))
                             }
                         }
-                        Column(Modifier.weight(1f)) {
-                            Slider(
-                                value = frameIndex.toFloat(),
-                                onValueChange = {
-                                    playing = false
-                                    probe = null
-                                    frameIndex = it.roundToInt()
-                                },
-                                valueRange = 0f..frames.lastIndex.toFloat(),
-                                steps = (frames.size - 2).coerceAtLeast(0),
-                            )
-                            // Comienzo, ahora y final de la línea de tiempo.
-                            Row(Modifier.fillMaxWidth()) {
-                                Text(timeOf(frames.first(), zone), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.weight(1f))
-                                Text(timeOf(frames.last(), zone), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                        Spacer(Modifier.width(12.dp))
+                        // Lluvia en el centro del mapa, hora por hora: se ve de un vistazo cuándo llueve.
+                        val centerRain = remember(area, zoom, (centerX * 4).roundToInt(), (centerY * 4).roundToInt()) {
+                            area?.let { a ->
+                                val f = 2.0.pow(zoom - a.zoom)
+                                val col = ((centerX / f - a.x0) / (a.x1 - a.x0) * RainMap.COLUMNS).toInt().coerceIn(0, RainMap.COLUMNS - 1)
+                                val row = ((centerY / f - a.y0) / (a.y1 - a.y0) * RainMap.ROWS).toInt().coerceIn(0, RainMap.ROWS - 1)
+                                a.frames.map { it.values.getOrElse(row * RainMap.COLUMNS + col) { 0f } }
+                            }.orEmpty()
                         }
-                        TextButton(onClick = {
-                            playing = false
-                            val now = System.currentTimeMillis() / 1000
-                            frameIndex = frames.indexOfLast { it.epochSeconds <= now }.coerceAtLeast(0)
-                        }) { Text(tr("Ahora", "Now")) }
+                        RainTimeline(
+                            frames = frames,
+                            rain = centerRain,
+                            position = { position.value },
+                            zone = zone,
+                            onScrub = scrub,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -455,6 +478,96 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * Línea de tiempo propia: una barra por hora con la lluvia en el centro del mapa (del color de su
+ * intensidad), una marca en la hora actual y el cursor que se arrastra o se toca. El cursor se
+ * mueve parejo, sin saltos de hora en hora.
+ */
+@Composable
+private fun RainTimeline(
+    frames: List<RainFrame>,
+    rain: List<Float>,
+    position: () -> Float,
+    zone: ZoneId,
+    onScrub: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val nowIndex = frames.indexOfLast { it.epochSeconds <= System.currentTimeMillis() / 1000 }
+    val last = frames.lastIndex.toFloat()
+    Column(modifier) {
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .semantics { contentDescription = tr("Línea de tiempo de la lluvia", "Rain timeline") }
+                .pointerInput(frames.size) {
+                    detectTapGestures { onScrub(it.x / size.width * frames.size - 0.5f) }
+                }
+                .pointerInput(frames.size) {
+                    detectHorizontalDragGestures { change, _ ->
+                        change.consume()
+                        onScrub((change.position.x / size.width * frames.size - 0.5f).coerceIn(0f, last))
+                    }
+                },
+        ) {
+            val slot = size.width / frames.size
+            val barWidth = slot * 0.56f
+            val maxBar = size.height - 10.dp.toPx()
+            frames.indices.forEach { i ->
+                val mm = rain.getOrElse(i) { 0f }
+                val h = if (mm < 0.1f) 3.dp.toPx() else (maxBar * (mm / 6f).coerceIn(0.18f, 1f))
+                val color = if (mm < 0.1f) colors.onSurface.copy(alpha = 0.14f) else Color(rainColorOf(mm))
+                // Las horas que ya pasaron, más tenues.
+                val alpha = if (nowIndex >= 0 && i < nowIndex) 0.55f else 1f
+                drawRoundRect(
+                    color.copy(alpha = color.alpha * alpha),
+                    topLeft = Offset(slot * i + (slot - barWidth) / 2, size.height - h),
+                    size = androidx.compose.ui.geometry.Size(barWidth, h),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2),
+                )
+            }
+            if (nowIndex >= 0) {
+                val x = slot * nowIndex + slot / 2
+                drawLine(colors.onSurfaceVariant.copy(alpha = 0.6f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+            }
+            // Cursor: se lee la posición al dibujar, así moverse no recompone nada.
+            val x = slot * position() + slot / 2
+            drawLine(colors.primary, Offset(x, 4.dp.toPx()), Offset(x, size.height), strokeWidth = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawCircle(colors.primary, radius = 6.dp.toPx(), center = Offset(x, 6.dp.toPx()))
+            drawCircle(colors.surface, radius = 2.5.dp.toPx(), center = Offset(x, 6.dp.toPx()))
+        }
+        // Horas cada 3 y "Ahora" en su lugar.
+        Row(Modifier.fillMaxWidth()) {
+            frames.indices.forEach { i ->
+                val label = when {
+                    i == nowIndex -> tr("Ahora", "Now")
+                    i % 3 == 0 && kotlin.math.abs(i - nowIndex) > 1 -> timeOf(frames[i], zone)
+                    else -> ""
+                }
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (i == nowIndex) colors.primary else colors.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.weight(1f).wrapContentWidth(unbounded = true),
+                )
+            }
+        }
+    }
+}
+
+/** Mismo color que la lluvia del mapa, opaco, para las barras de la línea de tiempo. */
+private fun rainColorOf(mm: Float): Long = when {
+    mm < 0.5f -> 0xFF81D4FA
+    mm < 1.5f -> 0xFF42A5F5
+    mm < 4f -> 0xFF1E88E5
+    mm < 8f -> 0xFFFFC107
+    else -> 0xFFE53935
 }
 
 /** Qué colores son qué lluvia, en mm por hora. */
