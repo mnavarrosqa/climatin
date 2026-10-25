@@ -199,7 +199,7 @@ fun WallpaperSettingsScreen(onBack: () -> Unit) {
                 FilterChip(
                     selected = settings.placeId == CURRENT_PLACE_ID,
                     onClick = { update(settings.copy(placeId = CURRENT_PLACE_ID)) },
-                    label = { Text(tr("Donde estoy", "My location")) },
+                    label = { Text(tr("Mi ubicación", "My location")) },
                 )
                 places.forEach { place ->
                     FilterChip(

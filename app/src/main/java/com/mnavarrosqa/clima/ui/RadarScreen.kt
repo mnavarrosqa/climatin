@@ -38,6 +38,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.TextButton
+import kotlin.math.abs
+import com.mnavarrosqa.clima.data.WeatherRepository
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -77,6 +81,16 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
     var frameIndex by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Sube para volver a intentar después de un error.
+    var attempt by remember { mutableIntStateOf(0) }
+    // Las horas del mapa en la zona del lugar que se mira, no en la del teléfono.
+    val context = LocalContext.current
+    val zone = remember(latitude, longitude) {
+        WeatherRepository.get(context).allCached()
+            .firstOrNull { abs(it.latitude - latitude) < 0.01 && abs(it.longitude - longitude) < 0.01 }
+            ?.timezone?.let { runCatching { ZoneId.of(it) }.getOrNull() }
+            ?: ZoneId.systemDefault()
+    }
     val images = remember { mutableStateMapOf<String, ImageBitmap>() }
 
     // Fundido entre horas para que la lluvia se mueva sin saltos.
@@ -133,7 +147,7 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
         val x1 = centerX + halfW + 0.25
         val y0 = centerY - halfH - 0.25
         val y1 = centerY + halfH + 0.25
-        LaunchedEffect(zoom, widthPx, heightPx) {
+        LaunchedEffect(zoom, widthPx, heightPx, attempt) {
             error = null
             runCatching { RainMap.load(x0, y0, x1, y1, zoom) }
                 .onSuccess { loaded ->
@@ -215,12 +229,18 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text(tr("Mapa de lluvia", "Rain map"), style = MaterialTheme.typography.titleMedium)
                         Text(
-                            error ?: frame?.let { frameLabel(it) } ?: tr("Cargando…", "Loading…"),
+                            error ?: frame?.let { frameLabel(it, zone) } ?: tr("Cargando…", "Loading…"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    FilledTonalButton(onClick = { if (zoom > RainMap.MIN_ZOOM) zoom-- }) { Text("−") }
+                    if (error != null) {
+                        TextButton(onClick = { attempt++ }) { Text(tr("Reintentar", "Retry")) }
+                    }
+                    FilledTonalButton(
+                        onClick = { if (zoom > RainMap.MIN_ZOOM) zoom-- },
+                        modifier = Modifier.semantics { contentDescription = tr("Alejar", "Zoom out") },
+                    ) { Text("−") }
                     FilledTonalIconButton(onClick = { if (zoom < RainMap.MAX_ZOOM) zoom++ }) {
                         Icon(Icons.Rounded.Add, contentDescription = tr("Acercar", "Zoom in"))
                     }
@@ -232,10 +252,10 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                     ) {
                         FilledTonalButton(onClick = { playing = !playing }) {
                             if (playing) {
-                                Text(tr("Pausa", "Pause"))
+                                Text(tr("Pausar", "Pause"))
                             } else {
                                 Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                                Text(tr("Animar", "Play"))
+                                Text(tr("Reproducir", "Play"))
                             }
                         }
                         Slider(
@@ -263,8 +283,8 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
     }
 }
 
-private fun frameLabel(frame: RainFrame): String {
-    val time = LocalDateTime.ofInstant(Instant.ofEpochSecond(frame.epochSeconds), ZoneId.systemDefault())
+private fun frameLabel(frame: RainFrame, zone: ZoneId): String {
+    val time = Instant.ofEpochSecond(frame.epochSeconds).atZone(zone).toLocalDateTime()
     val hours = ((frame.epochSeconds - System.currentTimeMillis() / 1000) / 3600.0).roundToInt()
     val relative = when {
         hours == 0 -> tr("ahora", "now")

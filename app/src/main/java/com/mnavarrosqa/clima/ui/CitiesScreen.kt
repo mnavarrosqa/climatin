@@ -278,7 +278,7 @@ fun CitiesScreen(
                     action = if (hasLocation) null else {
                         {
                             FilledTonalButton(onClick = {
-                                locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                                LocationAsk.request(context, locationLauncher)
                             }) { Text(tr("Permitir", "Allow")) }
                         }
                     },

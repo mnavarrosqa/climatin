@@ -62,7 +62,17 @@ class InsightsTest {
             Hour(hour.plusHours(i.toLong()).toString(), 18.0, if (i < 3) 63 else 3, if (i < 3) 90 else 10, true)
         }
         val text = Insights.headline(snapshot(code = 63, precipitation = 1.5, hours = hours))
-        assertEquals("Para de llover cerca de las ${shortHour(hour.plusHours(3))}", text)
+        // El valor de las +3 es de la hora anterior: deja de llover a las +2.
+        assertEquals("Para de llover cerca de las ${shortHour(hour.plusHours(2))}", text)
+    }
+
+    @Test
+    fun cuandoParaDeNevar() {
+        val hours = (0..8).map { i ->
+            Hour(hour.plusHours(i.toLong()).toString(), -2.0, if (i < 3) 73 else 3, if (i < 3) 90 else 10, true)
+        }
+        val text = Insights.headline(snapshot(code = 73, precipitation = 1.0, hours = hours))
+        assertEquals("Para de nevar cerca de las ${shortHour(hour.plusHours(2))}", text)
     }
 
     @Test

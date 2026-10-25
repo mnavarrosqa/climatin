@@ -10,6 +10,7 @@ import com.mnavarrosqa.clima.work.SummaryNotifier
 import com.mnavarrosqa.clima.work.RainNotifier
 import com.mnavarrosqa.clima.work.TemperatureNotifier
 import com.mnavarrosqa.clima.work.WeatherWorker
+import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.work.SunNotifier
 import com.mnavarrosqa.clima.work.Outing
 import com.mnavarrosqa.clima.data.tr
@@ -35,9 +36,15 @@ class ClimaApp : Application() {
         Notify.createChannels(this)
         SunNotifier.createChannel(this)
         Outing.createChannel(this)
-        addOutingShortcut()
-        WeatherWorker.schedule(this)
-        SummaryNotifier.schedule(this, ExistingWorkPolicy.KEEP)
+        // Fuera del hilo principal: leer los ajustes y los pronósticos guardados, agendar los
+        // trabajos y el acceso directo no tienen que demorar la primera pantalla. Los pronósticos
+        // quedan decodificados en memoria para cuando la pantalla los pida.
+        scope.launch {
+            runCatching { WeatherRepository.get(this@ClimaApp).allCached() }
+            runCatching { addOutingShortcut() }
+            runCatching { WeatherWorker.schedule(this@ClimaApp) }
+            runCatching { SummaryNotifier.schedule(this@ClimaApp, ExistingWorkPolicy.KEEP) }
+        }
     }
 
     /** "Salgo ahora" al mantener apretado el ícono de la app. */

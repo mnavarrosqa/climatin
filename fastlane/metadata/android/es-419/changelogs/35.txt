@@ -1,0 +1,1 @@
+Abre más rápido y gasta menos datos (todas las ciudades en un solo pedido). Avisa cuando los datos son viejos o no hay conexión, con "Reintentar". La hora de cada ciudad sigue bien con el horario de verano. Avisos de lluvia y nieve más precisos y textos más claros.

@@ -7,7 +7,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -15,6 +14,13 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlin.math.abs
@@ -22,8 +28,9 @@ import kotlin.math.abs
 class NoLocationException : Exception(tr("Todavía no tengo tu ubicación", "I don't have your location yet"))
 
 /**
- * Fuente única para la app y los widgets. Guarda las ciudades y el último pronóstico de cada
- * lugar ("current" es donde estás) en SharedPreferences.
+ * Fuente única para la app y los widgets. Guarda las ciudades y los ajustes en SharedPreferences,
+ * y el último pronóstico de cada lugar ("current" es donde estás) en un archivo propio: así abrir
+ * la app no lee todos los pronósticos juntos (antes iban en el mismo archivo que los ajustes).
  */
 class WeatherRepository private constructor(private val context: Context) {
 
@@ -67,16 +74,15 @@ class WeatherRepository private constructor(private val context: Context) {
         val list = places().map { if (it.id == id) it.copy(nickname = clean?.takeIf { name -> name != it.name }) else it }
         val place = list.firstOrNull { it.id == id } ?: return
         savePlaces(list)
-        cached(id)?.let { snapshot ->
-            prefs.edit()
-                .putString(snapshotKey(id), json.encodeToString(WeatherSnapshot.serializer(), snapshot.copy(place = place.shownName)))
-                .apply()
-        }
+        cached(id)?.let { snapshot -> writeSnapshot(id, snapshot.copy(place = place.shownName)) }
     }
 
     fun removePlace(id: String) {
         savePlaces(places().filterNot { it.id == id })
+        file(id).delete()
+        decoded.remove(id)
         prefs.edit().remove(snapshotKey(id)).apply()
+        changes.tryEmit(id)
     }
 
     fun movePlace(id: String, offset: Int) {
@@ -98,20 +104,55 @@ class WeatherRepository private constructor(private val context: Context) {
 
     // --- Pronósticos ---
 
-    // Los widgets leen la caché a cada rato: se guarda decodificada mientras el texto no cambie.
-    private val decoded = java.util.concurrent.ConcurrentHashMap<String, Pair<String, WeatherSnapshot>>()
+    private val snapshotDir = File(context.filesDir, "pronosticos")
+
+    private fun file(placeId: String) = File(snapshotDir, placeId.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".json")
+
+    /** Avisa qué lugar cambió, para los que observan su pronóstico. */
+    private val changes = MutableSharedFlow<String>(extraBufferCapacity = 64)
+
+    // Los widgets leen la caché a cada rato: se guarda decodificada mientras el archivo no cambie.
+    private val decoded = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, WeatherSnapshot>>()
 
     fun cached(placeId: String = CURRENT_PLACE_ID): WeatherSnapshot? {
-        val raw = prefs.getString(snapshotKey(placeId), null) ?: return null
-        decoded[placeId]?.let { (text, snapshot) -> if (text == raw) return snapshot }
-        val snapshot = runCatching { json.decodeFromString(WeatherSnapshot.serializer(), raw) }.getOrNull() ?: return null
-        decoded[placeId] = raw to snapshot
+        val file = file(placeId)
+        if (!file.exists()) return migrate(placeId)
+        val stamp = file.lastModified()
+        decoded[placeId]?.let { (at, snapshot) -> if (at == stamp) return snapshot }
+        val snapshot = runCatching { json.decodeFromString(WeatherSnapshot.serializer(), file.readText()) }.getOrNull() ?: return null
+        decoded[placeId] = stamp to snapshot
         return snapshot
     }
 
-    /** Emite la caché del lugar y cada vez que cambia. */
-    fun snapshots(placeId: String = CURRENT_PLACE_ID): Flow<WeatherSnapshot?> =
-        prefsFlow(snapshotKey(placeId)) { cached(placeId) }
+    /** Versiones anteriores guardaban el pronóstico en las preferencias: se pasa a su archivo una vez. */
+    private fun migrate(placeId: String): WeatherSnapshot? {
+        val raw = prefs.getString(snapshotKey(placeId), null) ?: return null
+        val snapshot = runCatching { json.decodeFromString(WeatherSnapshot.serializer(), raw) }.getOrNull()
+        snapshot?.let { writeSnapshot(placeId, it, notify = false) }
+        prefs.edit().remove(snapshotKey(placeId)).apply()
+        return snapshot
+    }
+
+    /** Escribe en un archivo aparte y lo renombra: un corte a mitad de camino no deja uno roto. */
+    @Synchronized
+    private fun writeSnapshot(placeId: String, snapshot: WeatherSnapshot, notify: Boolean = true) {
+        snapshotDir.mkdirs()
+        val target = file(placeId)
+        val temp = File(snapshotDir, target.name + ".tmp")
+        temp.writeText(json.encodeToString(WeatherSnapshot.serializer(), snapshot))
+        if (!temp.renameTo(target)) {
+            target.delete()
+            temp.renameTo(target)
+        }
+        decoded[placeId] = target.lastModified() to snapshot
+        if (notify) changes.tryEmit(placeId)
+    }
+
+    /** Emite la caché del lugar y cada vez que cambia. Lee el archivo fuera del hilo principal. */
+    fun snapshots(placeId: String = CURRENT_PLACE_ID): Flow<WeatherSnapshot?> = flow {
+        emit(cached(placeId))
+        changes.filter { it == placeId }.collect { emit(cached(placeId)) }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
 
     /** "Donde estoy" y todas las ciudades guardadas que tengan pronóstico, en orden. */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -141,18 +182,15 @@ class WeatherRepository private constructor(private val context: Context) {
         // Si otra actualización terminó mientras esta esperaba, ya está todo fresco (aunque sea forzada).
         if (lastRefreshAt >= requestedAt) return null
         if (!force && System.currentTimeMillis() - lastRefreshAt < 60_000) return null
-        val (current, others) = coroutineScope {
-            val currentJob = async { refreshCurrent() }
-            val placeJobs = places().map { place -> async { refreshPlace(place) } }
-            currentJob.await() to placeJobs.awaitAll()
-        }
-        val firstError = (listOf(current.exceptionOrNull()?.takeIf { it !is NoLocationException }) +
-            others.map { it.exceptionOrNull() }).firstOrNull { it != null }
-            ?: current.exceptionOrNull()?.takeIf { others.isEmpty() }
-        // Con que un lugar haya andado, se respeta el minuto de espera: si no, una ciudad que falla
-        // siempre hace que cada reintento vuelva a bajar todas.
-        val anyOk = current.isSuccess || others.any { it.isSuccess }
-        if (firstError == null || anyOk) lastRefreshAt = System.currentTimeMillis()
+        // Todos los lugares en un solo pedido a Open-Meteo (acepta varias coordenadas): con cinco
+        // ciudades, 2 pedidos por actualización en vez de 12.
+        val here = runCatchingCancellable { currentTarget() }
+        val targets = listOfNotNull(here.getOrNull()) + places().map { Target(it.id, it.shownName, it.latitude, it.longitude) }
+        if (targets.isEmpty()) return here.exceptionOrNull()
+        val result = runCatchingCancellable { fetchAll(targets) }
+        val firstError = result.exceptionOrNull()
+            ?: here.exceptionOrNull()?.takeIf { it !is NoLocationException }
+        if (result.isSuccess) lastRefreshAt = System.currentTimeMillis()
         return firstError
     }
 
@@ -170,7 +208,15 @@ class WeatherRepository private constructor(private val context: Context) {
         alerts
     }
 
+    /** Un lugar para pedir: id, nombre a mostrar y coordenadas. */
+    private data class Target(val id: String, val name: String?, val latitude: Double, val longitude: Double)
+
     suspend fun refreshCurrent(): Result<WeatherSnapshot> = runCatchingCancellable {
+        fetchAll(listOf(currentTarget())).first()
+    }
+
+    /** Dónde estás ahora (o la última ubicación conocida), con su nombre. */
+    private suspend fun currentTarget(): Target {
         val previous = cached(CURRENT_PLACE_ID)
         val coordinates = LocationProvider.current(context)
             ?: previous?.let { Coordinates(it.latitude, it.longitude) }
@@ -182,48 +228,54 @@ class WeatherRepository private constructor(private val context: Context) {
         // Mismo lugar con nombre conocido: no hace falta volver a preguntarle al geocodificador.
         val name = previous?.place?.takeIf { samePlace }
             ?: LocationProvider.placeName(context, coordinates)
-        fetch(CURRENT_PLACE_ID, name, coordinates.latitude, coordinates.longitude)
+        return Target(CURRENT_PLACE_ID, name, coordinates.latitude, coordinates.longitude)
     }
 
     suspend fun refreshPlace(place: Place): Result<WeatherSnapshot> = runCatchingCancellable {
-        fetch(place.id, place.shownName, place.latitude, place.longitude)
+        fetchAll(listOf(Target(place.id, place.shownName, place.latitude, place.longitude))).first()
     }
 
-    private suspend fun fetch(placeId: String, name: String?, latitude: Double, longitude: Double): WeatherSnapshot {
-        val (forecast, air, alerts) = coroutineScope {
-            val forecast = async { OpenMeteo.forecast(latitude, longitude) }
-            val air = async { OpenMeteo.airQuality(latitude, longitude) }
+    /** Pronóstico, aire y alertas de varios lugares a la vez; guarda cada uno en su archivo. */
+    private suspend fun fetchAll(targets: List<Target>): List<WeatherSnapshot> = withContext(Dispatchers.IO) {
+        val points = targets.map { it.latitude to it.longitude }
+        val (forecasts, airs, alerts) = coroutineScope {
+            val forecasts = async { OpenMeteo.forecasts(points) }
+            val airs = async { OpenMeteo.airQualities(points) }
             val alerts = async {
-                if (Geo.isInArgentina(latitude, longitude)) {
-                    // Si el SMN falla, se mantienen las alertas de la última vez: si no, una alerta
-                    // vigente "terminaría" y volvería a sonar como nueva en la siguiente corrida.
-                    capAlerts()?.filter { it.covers(latitude, longitude) }?.map { it.alert }
-                        ?: cached(placeId)?.alerts.orEmpty().filterNot { it.isExpired() }
-                } else {
-                    emptyList()
+                val inArgentina = targets.filter { Geo.isInArgentina(it.latitude, it.longitude) }
+                // Si el SMN falla, se mantienen las alertas de la última vez: si no, una alerta
+                // vigente "terminaría" y volvería a sonar como nueva en la siguiente corrida.
+                val cap = if (inArgentina.isEmpty()) emptyList() else capAlerts()
+                targets.map { t ->
+                    when {
+                        !Geo.isInArgentina(t.latitude, t.longitude) -> emptyList()
+                        cap != null -> cap.filter { it.covers(t.latitude, t.longitude) }.map { it.alert }
+                        else -> cached(t.id)?.alerts.orEmpty().filterNot { it.isExpired() }
+                    }
                 }
             }
-            Triple(forecast.await(), air.await(), alerts.await())
+            Triple(forecasts.await(), airs.await(), alerts.await())
         }
-        val snapshot = OpenMeteo.toSnapshot(
-            forecast = forecast,
-            placeId = placeId,
-            place = name,
-            latitude = latitude,
-            longitude = longitude,
-            airQuality = air,
-            fetchedAt = System.currentTimeMillis(),
-        ).copy(alerts = alerts)
-        // Mientras bajaba, la ciudad pudo cambiar de apodo o quitarse: se guarda con el nombre de
-        // ahora, y si ya no está, no se guarda (quedaría un pronóstico huérfano).
-        val shown = if (placeId == CURRENT_PLACE_ID) snapshot else {
-            val place = places().firstOrNull { it.id == placeId } ?: return snapshot
-            snapshot.copy(place = place.shownName)
+        val now = System.currentTimeMillis()
+        targets.mapIndexedNotNull { i, t ->
+            val snapshot = OpenMeteo.toSnapshot(
+                forecast = forecasts[i],
+                placeId = t.id,
+                place = t.name,
+                latitude = t.latitude,
+                longitude = t.longitude,
+                airQuality = airs.getOrNull(i),
+                fetchedAt = now,
+            ).copy(alerts = alerts[i])
+            // Mientras bajaba, la ciudad pudo cambiar de apodo o quitarse: se guarda con el nombre
+            // de ahora, y si ya no está, no se guarda (quedaría un pronóstico huérfano).
+            val shown = if (t.id == CURRENT_PLACE_ID) snapshot else {
+                val place = places().firstOrNull { it.id == t.id } ?: return@mapIndexedNotNull snapshot
+                snapshot.copy(place = place.shownName)
+            }
+            writeSnapshot(t.id, shown)
+            shown
         }
-        prefs.edit()
-            .putString(snapshotKey(placeId), json.encodeToString(WeatherSnapshot.serializer(), shown))
-            .apply()
-        return shown
     }
 
     // --- Ajustes ---

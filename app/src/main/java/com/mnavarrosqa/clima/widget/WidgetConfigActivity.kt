@@ -330,7 +330,7 @@ private fun ConfigScreen(
             }
             item {
                 Text(
-                    tr("No todos los widgets tienen todas las partes: cada uno oculta las que muestra.", "Not every widget has every part: each one hides the ones it shows."),
+                    tr("No todos los widgets tienen todas las partes: cada uno ignora las que no muestra.", "Not every widget has every part: each one ignores the ones it doesn't show."),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 4.dp, top = 6.dp),
@@ -345,7 +345,7 @@ private fun ConfigScreen(
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val here = snapshots.firstOrNull { it.placeId == CURRENT_PLACE_ID }
                     CityOption(
-                        title = tr("Donde estoy", "My location"),
+                        title = tr("Mi ubicación", "My location"),
                         snapshot = here,
                         icon = true,
                         selected = config.placeId == CURRENT_PLACE_ID,

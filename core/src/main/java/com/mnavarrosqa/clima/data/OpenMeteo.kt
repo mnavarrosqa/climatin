@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.net.URL
@@ -18,38 +19,40 @@ object OpenMeteo {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun forecast(latitude: Double, longitude: Double): Forecast = get(
-        String.format(
-            Locale.US,
-            "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f" +
-                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,is_day," +
-                "weather_code,wind_speed_10m,wind_direction_10m,precipitation,surface_pressure,visibility,uv_index" +
-                "&hourly=temperature_2m,weather_code,precipitation_probability,is_day," +
-                "apparent_temperature,wind_speed_10m,precipitation" +
-                "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset," +
-                "uv_index_max,precipitation_probability_max,precipitation_sum,wind_speed_10m_max" +
-                "&minutely_15=precipitation&forecast_minutely_15=8" +
-                "&timezone=auto&forecast_days=14&past_days=1",
-            latitude,
-            longitude,
-        ),
-        Forecast.serializer(),
-    )
+    private const val FORECAST_FIELDS =
+        "&current=temperature_2m,apparent_temperature,relative_humidity_2m,is_day," +
+            "weather_code,wind_speed_10m,wind_direction_10m,precipitation,surface_pressure,visibility,uv_index" +
+            "&hourly=temperature_2m,weather_code,precipitation_probability,is_day," +
+            "apparent_temperature,wind_speed_10m,precipitation" +
+            "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset," +
+            "uv_index_max,precipitation_probability_max,precipitation_sum,wind_speed_10m_max" +
+            "&minutely_15=precipitation&forecast_minutely_15=8" +
+            "&timezone=auto&past_days=1"
+
+    private fun coordinates(points: List<Pair<Double, Double>>): String =
+        "latitude=" + points.joinToString(",") { String.format(Locale.US, "%.4f", it.first) } +
+            "&longitude=" + points.joinToString(",") { String.format(Locale.US, "%.4f", it.second) }
+
+    suspend fun forecast(latitude: Double, longitude: Double, days: Int = 14): Forecast =
+        forecasts(listOf(latitude to longitude), days).first()
+
+    /**
+     * Varios lugares en un solo pedido (Open-Meteo acepta listas de coordenadas y responde una
+     * lista, en el mismo orden). Con un solo lugar responde un objeto.
+     */
+    suspend fun forecasts(points: List<Pair<Double, Double>>, days: Int = 14): List<Forecast> {
+        val url = "https://api.open-meteo.com/v1/forecast?" + coordinates(points) + FORECAST_FIELDS + "&forecast_days=$days"
+        return if (points.size == 1) listOf(get(url, Forecast.serializer())) else get(url, ListSerializer(Forecast.serializer()))
+    }
 
     /** Calidad del aire. Es opcional: si falla, se muestra el resto igual. */
-    suspend fun airQuality(latitude: Double, longitude: Double): AirQuality? = runCatching {
-        val response = get(
-            String.format(
-                Locale.US,
-                "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%.4f&longitude=%.4f" +
-                    "&current=european_aqi,pm2_5&timezone=auto",
-                latitude,
-                longitude,
-            ),
-            AirQualityResponse.serializer(),
-        )
-        AirQuality(europeanAqi = response.current.europeanAqi, pm25 = response.current.pm25)
-    }.getOrNull()
+    suspend fun airQuality(latitude: Double, longitude: Double): AirQuality? = airQualities(listOf(latitude to longitude)).first()
+
+    suspend fun airQualities(points: List<Pair<Double, Double>>): List<AirQuality?> = runCatching {
+        val url = "https://air-quality-api.open-meteo.com/v1/air-quality?" + coordinates(points) + "&current=european_aqi,pm2_5&timezone=auto"
+        val responses = if (points.size == 1) listOf(get(url, AirQualityResponse.serializer())) else get(url, ListSerializer(AirQualityResponse.serializer()))
+        responses.map { AirQuality(europeanAqi = it.current.europeanAqi, pm25 = it.current.pm25) }
+    }.getOrNull()?.takeIf { it.size == points.size } ?: List(points.size) { null }
 
     suspend fun searchCities(query: String): List<Place> {
         val response = get(
@@ -136,6 +139,7 @@ object OpenMeteo {
             latitude = latitude,
             longitude = longitude,
             utcOffsetSeconds = forecast.utcOffsetSeconds,
+            timezone = forecast.timezone,
             fetchedAt = fetchedAt,
             current = Current(
                 time = c.time,
@@ -162,6 +166,8 @@ object OpenMeteo {
 @Serializable
 data class Forecast(
     @SerialName("utc_offset_seconds") val utcOffsetSeconds: Int = 0,
+    /** Zona IANA ("America/Santiago"): con ella la hora del lugar sigue bien aunque cambie el horario de verano. */
+    val timezone: String? = null,
     val current: CurrentDto,
     val hourly: HourlyDto,
     val daily: DailyDto,

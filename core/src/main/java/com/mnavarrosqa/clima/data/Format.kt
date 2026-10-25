@@ -36,9 +36,23 @@ fun longDate(date: LocalDate): String =
 
 fun rainSoonText(minutes: Int): String = when {
     minutes <= 20 -> tr("Lluvia en unos minutos", "Rain in a few minutes")
-    minutes < 60 -> tr("Lluvia en unos ${(minutes + 4) / 5 * 5} min", "Rain in about ${(minutes + 4) / 5 * 5} min")
+    minutes < 55 -> tr("Lluvia en unos ${(minutes + 4) / 5 * 5} min", "Rain in about ${(minutes + 4) / 5 * 5} min")
     minutes < 90 -> tr("Lluvia en la próxima hora", "Rain within the hour")
     else -> tr("Lluvia en menos de 2 horas", "Rain in under 2 hours")
+}
+
+/** Cuánto hace que se bajó el pronóstico: "recién", "hace 12 min", "hace 3 h" o "el 23/10". */
+fun ageText(epochMillis: Long, now: Long = System.currentTimeMillis()): String {
+    val minutes = (now - epochMillis) / 60_000
+    return when {
+        minutes < 1 -> tr("recién", "just now")
+        minutes < 60 -> tr("hace $minutes min", "$minutes min ago")
+        minutes < 24 * 60 -> tr("hace ${minutes / 60} h", "${minutes / 60} h ago")
+        else -> {
+            val date = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+            tr("el ${date.dayOfMonth}/${date.monthValue}", "on ${date.monthValue}/${date.dayOfMonth}")
+        }
+    }
 }
 
 fun updatedAt(epochMillis: Long): String =

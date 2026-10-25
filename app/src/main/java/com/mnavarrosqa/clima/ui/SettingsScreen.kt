@@ -309,7 +309,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
         tr("Cambios", "Changes").takeIf { NotifyPrefs.settings.changes },
     ).joinToString(" · ").ifEmpty { tr("Apagadas", "Off") }
     val location = when {
-        !hasLocation -> tr("Sin permiso: usás solo ciudades guardadas", "No permission: saved cities only")
+        !hasLocation -> tr("Sin permiso: solo ves tus ciudades guardadas", "No permission: saved cities only")
         hasBackground -> tr("Aproximada, todo el tiempo", "Approximate, all the time")
         else -> tr("Aproximada, solo con la app abierta", "Approximate, only while open")
     }
@@ -379,7 +379,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
             Rows {
                 SettingRow(
                     tr("Fondo de pantalla", "Wallpaper"),
-                    if (wallpaperActive) tr("Puesto · tocá para cambiar diseño y opciones", "In use · tap to change design and options") else tr("Cielo, paisaje, formas u oscuro", "Sky, landscape, shapes or dark"),
+                    if (wallpaperActive) tr("Activo · tocá para cambiar diseño y opciones", "In use · tap to change design and options") else tr("Cielo, paisaje, formas u oscuro", "Sky, landscape, shapes or dark"),
                     icon = {
                         CategoryIcon(Color(0xFF7E57C2)) {
                             Image(painterResource(WeatherCodes.icon(2)), contentDescription = null, modifier = Modifier.size(28.dp))
@@ -1090,7 +1090,7 @@ private fun LocationPage(onBack: () -> Unit, onLocationPermission: (Boolean) -> 
                     tr("Ubicación aproximada", "Approximate location"),
                     if (hasLocation) tr("Permitida: el pronóstico sigue donde estás", "Allowed: the forecast follows you") else tr("Sin permiso: solo ves tus ciudades guardadas", "Not allowed: you only see saved cities"),
                     trailing = if (hasLocation) null else {
-                        { FilledTonalButton(onClick = { locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }) { Text(tr("Permitir", "Allow")) } }
+                        { FilledTonalButton(onClick = { LocationAsk.request(context, locationLauncher) }) { Text(tr("Permitir", "Allow")) } }
                     },
                 )
                 SettingRow(

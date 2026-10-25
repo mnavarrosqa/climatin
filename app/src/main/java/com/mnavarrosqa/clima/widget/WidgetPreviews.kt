@@ -32,7 +32,7 @@ object WidgetPreviews {
         val today = snapshot.today()
         val icon = WeatherCodes.icon(current.code, current.isDay)
         val description = WeatherCodes.description(current.code)
-        val place = snapshot.place ?: tr("Tu ubicación", "Your location")
+        val place = snapshot.place ?: tr("Mi ubicación", "My location")
         val minMax = today?.let { tr("Máx", "High") + " ${it.max.degrees()} · " + tr("Mín", "Low") + " ${it.min.degrees()}" } ?: ""
 
         val clima = RemoteViews(context.packageName, R.layout.widget_preview_clima).apply {

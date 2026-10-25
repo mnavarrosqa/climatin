@@ -65,6 +65,31 @@ class WeatherSnapshotTest {
     }
 
     @Test
+    fun noUsaLaHoraSiLos15MinutosDicenSeco() {
+        val hour = now.truncatedTo(ChronoUnit.HOURS)
+        val minutely = (0..7).map { i -> Minutely(now.plusMinutes(15L * i).toString(), 0.0) }
+        val hours = (0..3).map { i -> Hour(hour.plusHours(i.toLong()).toString(), 20.0, 2, if (i == 2) 80 else 0, true) }
+        assertNull(snapshot(minutely = minutely, hours = hours).minutesUntilRain())
+    }
+
+    @Test
+    fun usaLaZonaHorariaDelLugar() {
+        // Con zona IANA manda la zona (con su horario de verano), no el desfase guardado.
+        val snapshot = snapshot().copy(utcOffsetSeconds = 0, timezone = "Asia/Tokyo")
+        val tokyo = LocalDateTime.now(java.time.ZoneId.of("Asia/Tokyo"))
+        assertTrue(java.time.Duration.between(snapshot.nowAtPlace(), tokyo).abs().seconds < 5)
+        // Una zona inválida cae al desfase fijo.
+        val broken = snapshot().copy(utcOffsetSeconds = 0, timezone = "No/Existe")
+        assertTrue(java.time.Duration.between(broken.nowAtPlace(), LocalDateTime.now(ZoneOffset.UTC)).abs().seconds < 5)
+    }
+
+    @Test
+    fun textoDeLluviaCercaDeLaHora() {
+        assertEquals("Lluvia en la próxima hora", rainSoonText(58))
+        assertEquals("Lluvia en unos 50 min", rainSoonText(48))
+    }
+
+    @Test
     fun recortaLasHorasPasadas() {
         val hour = now.truncatedTo(ChronoUnit.HOURS)
         val hours = (-3..5).map { i -> Hour(hour.plusHours(i.toLong()).toString(), i.toDouble(), 0, 0, true) }

@@ -145,6 +145,7 @@ import com.mnavarrosqa.clima.data.dayLabel
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.longDate
 import com.mnavarrosqa.clima.data.updatedAt
+import com.mnavarrosqa.clima.data.ageText
 import kotlin.math.roundToInt
 
 private val OnSky = Color.White
@@ -282,7 +283,7 @@ fun WeatherRoute(
                 },
             )
             "permiso" -> PermissionScreen(
-                onAllow = { launcher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
+                onAllow = { LocationAsk.request(context, launcher) },
                 onPickCity = { showCities = true },
             )
             // Al cambiar las unidades se rearma el pronóstico para que todos los textos se reformateen.
@@ -536,7 +537,7 @@ private fun CompactHeader(snapshot: WeatherSnapshot?, modifier: Modifier = Modif
     if (snapshot == null) return
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(
-            snapshot.place ?: tr("Tu ubicación", "Your location"),
+            snapshot.place ?: tr("Mi ubicación", "My location"),
             style = MaterialTheme.typography.titleMedium.onSky(),
             color = OnSky,
             maxLines = 1,
@@ -593,6 +594,7 @@ private fun WeatherPage(
         onCollapsedChange = onCollapsedChange,
         cards = cards,
         openAlert = openAlert,
+        onRetry = viewModel::refresh,
     )
 }
 
@@ -616,10 +618,13 @@ fun ForecastContent(
     onCollapsedChange: (Boolean) -> Unit = {},
     cards: List<ForecastCard> = ForecastCard.entries,
     openAlert: String? = null,
+    onRetry: () -> Unit = {},
 ) {
     // La lista del resumen (la única en pantallas angostas) decide si el encabezado se achica.
     val summaryState = rememberLazyListState()
-    val heroIndex = listOfNotNull(banner, error).size
+    // Datos de hace más de 2 horas: se avisa arriba, no solo en la letra chica del final.
+    val stale = snapshot != null && System.currentTimeMillis() - snapshot.fetchedAt > 2 * 60 * 60_000L
+    val heroIndex = listOfNotNull(banner, error ?: if (stale) "" else null).size
     val collapseAt = with(LocalDensity.current) { 180.dp.roundToPx() }
     val isCollapsed by remember(heroIndex) {
         derivedStateOf {
@@ -640,9 +645,18 @@ fun ForecastContent(
     // Cada bloque es una función que agrega ítems a una lista; así se reparten entre uno o dos paneles.
     val summary: LazyListScope.() -> Unit = {
         if (banner != null) item { banner() }
-        if (error != null) item { ErrorBanner(error) }
+        if (error != null || stale) {
+            item {
+                ErrorBanner(
+                    message = error,
+                    age = snapshot?.let { tr("Mostrando datos de ", "Showing data from ") + ageText(it.fetchedAt) },
+                    onRetry = onRetry,
+                )
+            }
+        }
         if (snapshot == null) {
-            item { ForecastSkeleton() }
+            // Con error y nada guardado no tiene sentido el esqueleto animado para siempre.
+            if (error == null) item { ForecastSkeleton() }
         } else {
             item {
                 Box(
@@ -698,7 +712,7 @@ fun ForecastContent(
             cards.filter { !twoPane || !it.leftPane }.forEachIndexed { i, which -> card(which, 2 + i) }
             item {
                 Text(
-                    tr("Actualizado a las", "Updated at") + " ${updatedAt(snapshot.fetchedAt)} · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
+                    tr("Actualizado", "Updated") + " ${ageText(snapshot.fetchedAt)} (${updatedAt(snapshot.fetchedAt)}) · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
                     style = MaterialTheme.typography.labelMedium.onSky(),
                     color = OnSkyVariant,
                     textAlign = TextAlign.Center,
@@ -833,15 +847,30 @@ private fun UpdateBanner(release: AppRelease, progressFlow: StateFlow<Float?>, o
     }
 }
 
+/**
+ * No se pudo actualizar, o lo que se ve es viejo: qué pasó, de cuándo son los datos que se ven y
+ * un botón para reintentar. TalkBack lo anuncia al aparecer.
+ */
 @Composable
-private fun ErrorBanner(message: String) {
+private fun ErrorBanner(message: String?, age: String?, onRetry: () -> Unit) {
+    val isError = message != null
     Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
         shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
-        Text(message, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (isError) Icons.Rounded.Warning else Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                age?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+            }
+            TextButton(onClick = onRetry) { Text(tr("Reintentar", "Retry")) }
+        }
     }
 }
 
@@ -859,14 +888,14 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
             if (isCurrentLocation) {
                 Icon(
                     Icons.Rounded.LocationOn,
-                    contentDescription = tr("Tu ubicación", "Your location"),
+                    contentDescription = tr("Mi ubicación", "My location"),
                     tint = OnSky,
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(4.dp))
             }
             Text(
-                snapshot.place ?: tr("Tu ubicación", "Your location"),
+                snapshot.place ?: tr("Mi ubicación", "My location"),
                 style = MaterialTheme.typography.headlineSmall.onSky(),
                 color = OnSky,
             )

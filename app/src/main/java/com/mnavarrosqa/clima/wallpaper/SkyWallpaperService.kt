@@ -226,7 +226,7 @@ fun wallpaperScene(snapshot: WeatherSnapshot?, settings: WallpaperSettings, fall
         southern = (snapshot?.latitude ?: 0.0) < 0,
         temperature = current?.temperature?.degrees()?.takeIf { showWeather },
         caption = if (showWeather) {
-            listOfNotNull(snapshot?.place ?: tr("Tu ubicación", "Your location"), current?.code?.let(WeatherCodes::description))
+            listOfNotNull(snapshot?.place ?: tr("Mi ubicación", "My location"), current?.code?.let(WeatherCodes::description))
                 .joinToString(" · ")
         } else {
             null

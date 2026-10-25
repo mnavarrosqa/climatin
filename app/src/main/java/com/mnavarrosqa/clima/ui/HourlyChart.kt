@@ -195,7 +195,9 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
         Row {
             hours.forEachIndexed { index, hour ->
                 val label = labels[index]
-                val probability = hour.precipitationProbability ?: 0
+                // En Open-Meteo la lluvia de cada hora es la de la hora anterior: la columna de las 16
+                // muestra la de las 17 (de 16 a 17), igual que el aviso "lluvia a las 16".
+                val probability = rainAfter(hours, index).first ?: 0
                 val time = label
                 Column(
                     // La temperatura está dibujada en el gráfico: TalkBack la lee desde acá.
@@ -248,21 +250,27 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically(),
     ) {
-        selected?.let { hours.getOrNull(it) }?.let { hour -> HourDetail(hour, isNow = selected == 0) }
+        selected?.let { index -> hours.getOrNull(index)?.let { hour -> HourDetail(hour, rainAfter(hours, index), isNow = index == 0) } }
     }
     }
 }
 
+/** Probabilidad y milímetros de lluvia de la hora que empieza en [index] (vienen en la siguiente). */
+private fun rainAfter(hours: List<Hour>, index: Int): Pair<Int?, Double?> {
+    val source = hours.getOrNull(index + 1) ?: hours[index]
+    return source.precipitationProbability to source.precipitation
+}
+
 /** Lo que pasa en la hora tocada: estado, sensación térmica, viento y lluvia. */
 @Composable
-private fun HourDetail(hour: Hour, isNow: Boolean) {
+private fun HourDetail(hour: Hour, rain: Pair<Int?, Double?>, isNow: Boolean) {
     val colors = MaterialTheme.colorScheme
     val time = if (isNow) tr("Ahora", "Now") else shortHour(hour.dateTime)
     val facts = listOfNotNull(
         hour.feelsLike?.let { tr("Sensación", "Feels like") + " ${it.degrees()}" },
         hour.windSpeed?.let { tr("Viento", "Wind") + " ${windText(it)}" },
-        hour.precipitationProbability?.takeIf { it > 0 }?.let { tr("Lluvia", "Rain") + " $it%" },
-        hour.precipitation?.takeIf { it > 0 }?.let { "${"%.1f".format(it)} mm" },
+        rain.first?.takeIf { it > 0 }?.let { tr("Lluvia", "Rain") + " $it%" },
+        rain.second?.takeIf { it > 0 }?.let { "${"%.1f".format(it)} mm" },
     )
     Surface(
         color = colors.secondaryContainer,

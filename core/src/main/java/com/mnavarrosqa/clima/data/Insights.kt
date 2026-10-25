@@ -36,8 +36,7 @@ object Insights {
         }
     }
 
-    private fun isWet(code: Int) = WeatherCodes.kind(code) in
-        setOf(WeatherKind.DRIZZLE, WeatherKind.RAIN, WeatherKind.STORM, WeatherKind.SNOW)
+    private fun isWet(code: Int) = WeatherCodes.kind(code).isWet
 
     /** Si ahora llueve, a qué hora se espera que pare (dentro de 6 horas). */
     private fun rainStops(snapshot: WeatherSnapshot, now: LocalDateTime): String? {
@@ -45,7 +44,13 @@ object Insights {
         val dry = snapshot.upcomingHours(7).drop(1).firstOrNull {
             !isWet(it.code) && (it.precipitationProbability ?: 0) < 30
         } ?: return null
-        return tr("Para de llover cerca de las", "Rain stops around") + " ${shortHour(dry.dateTime)}"
+        // El valor de cada hora es de la hora anterior: el rato seco empieza una hora antes.
+        val stopsAt = shortHour(dry.dateTime.minusHours(1))
+        return if (WeatherCodes.kind(snapshot.current.code) == WeatherKind.SNOW) {
+            tr("Para de nevar cerca de las", "Snow stops around") + " $stopsAt"
+        } else {
+            tr("Para de llover cerca de las", "Rain stops around") + " $stopsAt"
+        }
     }
 
     /** Lluvia probable más tarde hoy (en las próximas 12 horas). */

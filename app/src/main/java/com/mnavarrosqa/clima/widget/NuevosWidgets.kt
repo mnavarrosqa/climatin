@@ -147,7 +147,7 @@ private fun CiudadesContent(all: List<WeatherSnapshot>) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (snapshot.placeId == CURRENT_PLACE_ID) "📍 ${snapshot.place ?: tr("Donde estoy", "My location")}" else snapshot.place ?: "",
+                        if (snapshot.placeId == CURRENT_PLACE_ID) "📍 ${snapshot.place ?: tr("Mi ubicación", "My location")}" else snapshot.place ?: "",
                         maxLines = 1,
                         modifier = GlanceModifier.defaultWeight(),
                         style = TextStyle(color = colors.text, fontSize = 14.sp),

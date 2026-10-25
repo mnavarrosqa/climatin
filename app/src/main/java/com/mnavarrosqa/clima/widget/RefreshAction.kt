@@ -102,7 +102,7 @@ fun PlaceLabel(
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (refreshing || showPlace) {
             Text(
-                if (refreshing) tr("Actualizando…", "Updating…") else snapshot.place ?: tr("Tu ubicación", "Your location"),
+                if (refreshing) tr("Actualizando…", "Updating…") else snapshot.place ?: tr("Mi ubicación", "My location"),
                 maxLines = 1,
                 style = TextStyle(color = colors.textVariant, fontSize = fontSize, fontWeight = fontWeight),
             )

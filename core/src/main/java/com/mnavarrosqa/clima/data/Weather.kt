@@ -22,10 +22,17 @@ data class WeatherSnapshot(
     val minutely: List<Minutely> = emptyList(),
     val airQuality: AirQuality? = null,
     val alerts: List<WeatherAlert> = emptyList(),
+    /** Zona horaria IANA del lugar; null en pronósticos guardados por versiones anteriores. */
+    val timezone: String? = null,
 ) {
-    /** Hora actual en el lugar del pronóstico, no en el teléfono. */
-    fun nowAtPlace(): LocalDateTime =
-        LocalDateTime.now(ZoneOffset.ofTotalSeconds(utcOffsetSeconds))
+    /**
+     * Hora actual en el lugar del pronóstico, no en el teléfono. Con la zona IANA sigue bien
+     * aunque cambie el horario de verano después de bajar el pronóstico; si no, el desfase fijo.
+     */
+    fun nowAtPlace(): LocalDateTime {
+        val zone = timezone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() } ?: ZoneOffset.ofTotalSeconds(utcOffsetSeconds)
+        return LocalDateTime.now(zone)
+    }
 
     /** Horas desde la actual. La caché puede tener un rato, así que se recorta al mostrar. */
     fun upcomingHours(count: Int): List<Hour> {
@@ -67,15 +74,16 @@ data class WeatherSnapshot(
         if (fromMinutely != null) {
             return Duration.between(now, fromMinutely.dateTime.minusMinutes(15)).toMinutes().toInt().coerceAtLeast(5)
         }
+        // La probabilidad por hora solo si no hay detalle cada 15 minutos: si lo hay y dice seco,
+        // no se contradice con "lluvia en la próxima hora".
+        if (minutely.isNotEmpty()) return null
         val fromHourly = upcomingHours(4).drop(1).firstOrNull {
             (it.precipitationProbability ?: 0) >= 60 && it.dateTime.minusHours(1).isBefore(limit)
         } ?: return null
         return Duration.between(now, fromHourly.dateTime.minusHours(1)).toMinutes().toInt().coerceAtLeast(5)
     }
 
-    private fun isRainy(code: Int) = WeatherCodes.kind(code).let {
-        it == WeatherKind.RAIN || it == WeatherKind.STORM || it == WeatherKind.SNOW
-    }
+    private fun isRainy(code: Int) = WeatherCodes.kind(code).isWet
 }
 
 @Serializable
@@ -131,3 +139,7 @@ data class Minutely(val time: String, val precipitation: Double) {
 
 @Serializable
 data class AirQuality(val europeanAqi: Int?, val pm25: Double?)
+
+/** Si llueve, llovizna, hay tormenta o nieva: la misma idea de "mojado" en todos los avisos. */
+val WeatherKind.isWet: Boolean
+    get() = this == WeatherKind.DRIZZLE || this == WeatherKind.RAIN || this == WeatherKind.STORM || this == WeatherKind.SNOW
