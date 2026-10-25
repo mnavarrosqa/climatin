@@ -22,7 +22,10 @@ data class AppRelease(val versionName: String, val versionCode: Long, val apkUrl
  */
 object Updates {
     private const val REPO = "mnavarrosqa/climatin-releases"
-    private const val CHECK_EVERY_MS = 3 * 60 * 60_000L
+    // Las versiones salen seguido: consultar cada 3 horas hacía que el aviso casi nunca apareciera.
+    // Con ETag, si no cambió nada GitHub responde 304 y no cuenta para su límite de pedidos.
+    private const val CHECK_EVERY_MS = 10 * 60_000L
+    private const val KEY_ETAG = "updates_etag"
     private const val KEY_LATEST = "updates_latest"
     private const val KEY_DISMISSED = "updates_dismissed"
     private val json = Json { ignoreUnknownKeys = true }
@@ -44,7 +47,7 @@ object Updates {
     }.getOrDefault(false)
 
     /**
-     * Devuelve la versión nueva si hay una. Sin [force], consulta GitHub como mucho cada 3 horas y
+     * Devuelve la versión nueva si hay una. Sin [force], consulta GitHub como mucho cada 10 minutos y
      * mientras tanto responde con la última que encontró (antes devolvía nada y el aviso se
      * perdía al volver a abrir la app). Los errores de red se ignoran (no es algo urgente).
      */
@@ -57,10 +60,15 @@ object Updates {
         if (!force && now - prefs.getLong("updates_checked_at", 0L) < CHECK_EVERY_MS) {
             return known?.takeIf { it.versionCode > installed }
         }
-        val latest = runCatching { latest() }.getOrNull() ?: return known?.takeIf { it.versionCode > installed }
+        val etag = prefs.getString(KEY_ETAG, null)?.takeIf { known != null }
+        val response = runCatching { latest(etag) }.getOrNull() ?: return known?.takeIf { it.versionCode > installed }
+        val latest = response.first ?: known ?: return null
         prefs.edit()
             .putLong("updates_checked_at", now)
             .putString(KEY_LATEST, json.encodeToString(AppRelease.serializer(), latest))
+            .apply {
+                response.second?.let { putString(KEY_ETAG, it) }
+            }
             .apply()
         return latest.takeIf { it.versionCode > installed }
     }
@@ -75,19 +83,26 @@ object Updates {
 
     private fun prefs(context: Context) = context.getSharedPreferences("clima", Context.MODE_PRIVATE)
 
-    private suspend fun latest(): AppRelease? = withContext(Dispatchers.IO) {
+    /**
+     * La última versión publicada y el ETag de la respuesta. Con [etag] y sin cambios, GitHub
+     * responde 304: la versión vuelve null (se usa la guardada). Null entero si falló.
+     */
+    private suspend fun latest(etag: String?): Pair<AppRelease?, String?>? = withContext(Dispatchers.IO) {
         val connection = URL("https://api.github.com/repos/$REPO/releases/latest").openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 15_000
             connection.readTimeout = 15_000
             connection.setRequestProperty("Accept", "application/vnd.github+json")
             connection.setRequestProperty("User-Agent", "Climatin (Android)")
-            if (connection.responseCode !in 200..299) return@withContext null
+            etag?.let { connection.setRequestProperty("If-None-Match", it) }
+            val code = connection.responseCode
+            if (code == HttpURLConnection.HTTP_NOT_MODIFIED) return@withContext null to etag
+            if (code !in 200..299) return@withContext null
             val release = json.decodeFromString(GitHubRelease.serializer(), connection.inputStream.bufferedReader().use { it.readText() })
             val asset = release.assets.firstNotNullOfOrNull { asset ->
                 apkName.matchEntire(asset.name)?.let { it.groupValues[1].toLong() to asset.url }
             } ?: return@withContext null
-            AppRelease(release.tag.removePrefix("v"), asset.first, asset.second, release.body?.trim())
+            AppRelease(release.tag.removePrefix("v"), asset.first, asset.second, release.body?.trim()) to connection.getHeaderField("ETag")
         } finally {
             connection.disconnect()
         }

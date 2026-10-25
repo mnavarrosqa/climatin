@@ -148,8 +148,8 @@ import com.mnavarrosqa.clima.data.updatedAt
 import com.mnavarrosqa.clima.data.ageText
 import kotlin.math.roundToInt
 
-private val OnSky = Color.White
-private val OnSkyVariant = Color.White.copy(alpha = 0.9f)
+internal val OnSky = Color.White
+internal val OnSkyVariant = Color.White.copy(alpha = 0.9f)
 
 /** Sombra suave para que el texto blanco se lea sobre un cielo claro, como en el Clima de Apple. */
 private val SkyShadow = Shadow(Color.Black.copy(alpha = 0.4f), Offset(0f, 2f), 16f)
@@ -171,6 +171,10 @@ fun WeatherRoute(
     var hasPermission by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var showCities by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    // Bienvenida: la primera vez (sin permiso de ubicación ni ciudades) o desde Ajustes → Acerca de.
+    var showWelcome by rememberSaveable {
+        mutableStateOf(!Welcome.seen(context) && !LocationProvider.hasPermission(context) && viewModel.places.value.isEmpty())
+    }
     // Ciudad tocada en la lista: el pronóstico se abre en esa página.
     var cityTarget by remember { mutableStateOf<DeepLinkTarget?>(null) }
     // "lat,lon" del radar abierto, o null.
@@ -202,10 +206,13 @@ fun WeatherRoute(
     }
     // Gesto "atrás" predictivo: mientras se desliza, la pantalla se achica y deja ver que vuelve.
     var backProgress by remember { mutableFloatStateOf(0f) }
-    PredictiveBackHandler(enabled = showCities || showSettings || radarAt != null) { events ->
+    // La bienvenida abierta desde Ajustes vuelve a Ajustes con "atrás"; la primera vez, "atrás" sale de la app.
+    val welcomeFromSettings = showWelcome && Welcome.seen(context)
+    PredictiveBackHandler(enabled = showCities || showSettings || radarAt != null || welcomeFromSettings) { events ->
         try {
             events.collect { backProgress = it.progress }
             when {
+                welcomeFromSettings -> showWelcome = false
                 radarAt != null -> radarAt = null
                 showSettings -> showSettings = false
                 else -> showCities = false
@@ -226,6 +233,7 @@ fun WeatherRoute(
 
     val radar = radarAt?.split(',')?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 2 }
     val screen = when {
+        showWelcome -> "bienvenida"
         radar != null -> "radar"
         showSettings -> "ajustes"
         showCities -> "ciudades"
@@ -236,7 +244,7 @@ fun WeatherRoute(
     // según el tema (lo que pone ClimaTheme).
     val rootView = LocalView.current
     val darkTheme = LocalDarkTheme.current
-    val overSky = screen == "clima" || screen == "permiso"
+    val overSky = screen == "clima" || screen == "permiso" || screen == "bienvenida"
     SideEffect {
         (rootView.context as? Activity)?.window?.let { window ->
             WindowCompat.getInsetsController(window, rootView).apply {
@@ -261,6 +269,14 @@ fun WeatherRoute(
         label = "pantalla",
     ) { target ->
         when (target) {
+            "bienvenida" -> WelcomeScreen(
+                viewModel = viewModel,
+                onAllowLocation = { LocationAsk.request(context, launcher) },
+                onFinish = {
+                    Welcome.markSeen(context)
+                    showWelcome = false
+                },
+            )
             "radar" -> radar?.let { RadarScreen(it[0], it[1], onBack = { radarAt = null }) }
             "ciudades" -> CitiesScreen(
                 viewModel = viewModel,
@@ -277,6 +293,7 @@ fun WeatherRoute(
             "ajustes" -> SettingsScreen(
                 viewModel = viewModel,
                 onBack = { showSettings = false },
+                onShowWelcome = { showWelcome = true },
                 onLocationPermission = { granted ->
                     hasPermission = granted
                     if (granted) viewModel.refresh()

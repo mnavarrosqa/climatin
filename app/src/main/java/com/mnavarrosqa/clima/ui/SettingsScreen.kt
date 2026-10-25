@@ -141,6 +141,7 @@ fun SettingsScreen(
     viewModel: WeatherViewModel,
     onBack: () -> Unit,
     onLocationPermission: (Boolean) -> Unit,
+    onShowWelcome: () -> Unit = {},
 ) {
     var page by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
     // Atrás desde una página vuelve a la lista de categorías, no al pronóstico.
@@ -161,7 +162,7 @@ fun SettingsScreen(
             SettingsPage.UNITS -> SettingsScaffold(tr("Unidades", "Units"), onBack = { page = null }) { unitsPage(viewModel) }
             SettingsPage.NOTIFICATIONS -> NotificationsPage(viewModel, onBack = { page = null })
             SettingsPage.LOCATION -> LocationPage(onBack = { page = null }, onLocationPermission = onLocationPermission)
-            SettingsPage.ABOUT -> SettingsScaffold(tr("Acerca de", "About"), onBack = { page = null }) { aboutPage(viewModel) }
+            SettingsPage.ABOUT -> SettingsScaffold(tr("Acerca de", "About"), onBack = { page = null }) { aboutPage(viewModel, onShowWelcome) }
         }
     }
 }
@@ -1134,7 +1135,7 @@ private fun LocationPage(onBack: () -> Unit, onLocationPermission: (Boolean) -> 
 
 // --- Acerca de ---
 
-private fun LazyListScope.aboutPage(viewModel: WeatherViewModel) {
+private fun LazyListScope.aboutPage(viewModel: WeatherViewModel, onShowWelcome: () -> Unit) {
     item {
         val context = LocalContext.current
         val update by viewModel.update.collectAsStateWithLifecycle()
@@ -1168,6 +1169,17 @@ private fun LazyListScope.aboutPage(viewModel: WeatherViewModel) {
                     }
                 }
             }
+        }
+    }
+    item { SectionTitle(tr("Ayuda", "Help")) }
+    item {
+        Rows {
+            SettingRow(
+                tr("Ver la bienvenida", "Show the welcome"),
+                tr("Los primeros pasos y los gestos de la app", "First steps and the app's gestures"),
+                onClick = onShowWelcome,
+                trailing = Chevron,
+            )
         }
     }
     item { SectionTitle(tr("Datos", "Data")) }

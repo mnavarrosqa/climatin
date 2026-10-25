@@ -101,7 +101,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _updateMessage.value = tr("Buscando…", "Checking…")
             val release = Updates.check(getApplication<Application>(), force = true)
-            _update.value = release
+            publishUpdate(release)
             _updateMessage.value = if (release != null) {
                 tr("Hay una versión nueva: ${release.versionName}", "New version available: ${release.versionName}")
             } else {

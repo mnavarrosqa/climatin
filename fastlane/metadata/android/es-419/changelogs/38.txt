@@ -1,0 +1,1 @@
+Bienvenida para empezar: ubicación, avisos y los gestos de la app (también en Ajustes → Acerca de). El aviso de versión nueva aparece enseguida (antes podía tardar horas).
