@@ -113,7 +113,9 @@ class SkyWallpaperService : WallpaperService() {
         @RequiresApi(Build.VERSION_CODES.O_MR1)
         override fun onComputeColors(): WallpaperColors {
             // Le dice al sistema qué colores tiene el fondo para armar la paleta de Material You.
-            val colors = scene.colors
+            // Los colores base del clima, sin el tinte de la hora: si no, al amanecer y al atardecer
+            // el sistema rearmaba la paleta de Material You cada minuto.
+            val colors = skyColors(scene.kind, scene.isDay).toGradient()
             return WallpaperColors(
                 android.graphics.Color.valueOf(colors.middle),
                 android.graphics.Color.valueOf(colors.top),
@@ -146,7 +148,7 @@ class SkyWallpaperService : WallpaperService() {
             val repository = WeatherRepository.get(applicationContext)
             val snapshot = repository.cached(settings.placeId) ?: repository.cached()
             val updated = wallpaperScene(snapshot, settings)
-            val colorsChanged = updated.colors != scene.colors
+            val colorsChanged = updated.kind != scene.kind || updated.isDay != scene.isDay
             scene = updated
             if (colorsChanged && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) notifyColorsChanged()
         }

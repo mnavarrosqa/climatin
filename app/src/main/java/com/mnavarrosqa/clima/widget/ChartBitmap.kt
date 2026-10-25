@@ -10,6 +10,8 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
 import android.os.Build
+import android.util.LruCache
+import com.mnavarrosqa.clima.data.Units
 import androidx.compose.ui.graphics.toArgb
 import com.mnavarrosqa.clima.data.Hour
 import com.mnavarrosqa.clima.data.degrees
@@ -40,7 +42,34 @@ object ChartBitmap {
         }
     }
 
-    fun render(context: Context, hours: List<Hour>, widthPx: Int, heightPx: Int, onTransparent: Boolean = false, accent: Int? = null): Bitmap {
+    /**
+     * Las imágenes ya dibujadas, por todo lo que cambia el dibujo (datos, tamaño, colores, tema,
+     * unidades e idioma). Cada actualización repinta los widgets dos veces y casi siempre con lo
+     * mismo: así no se arma de nuevo una imagen de hasta 1,5 MB.
+     */
+    private val cache = object : LruCache<String, Bitmap>(6 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
+
+    private fun cached(context: Context, key: String, draw: () -> Bitmap): Bitmap {
+        val config = context.resources.configuration
+        val full = listOf(
+            key,
+            config.uiMode and Configuration.UI_MODE_NIGHT_MASK,
+            config.fontScale,
+            Units.current.hashCode(),
+            java.util.Locale.getDefault().language,
+        ).joinToString("|")
+        cache.get(full)?.let { return it }
+        return draw().also { cache.put(full, it) }
+    }
+
+    fun render(context: Context, hours: List<Hour>, widthPx: Int, heightPx: Int, onTransparent: Boolean = false, accent: Int? = null): Bitmap =
+        cached(context, "horas|${hours.joinToString(",")}|$widthPx|$heightPx|$onTransparent|$accent") {
+            drawHours(context, hours, widthPx, heightPx, onTransparent, accent)
+        }
+
+    private fun drawHours(context: Context, hours: List<Hour>, widthPx: Int, heightPx: Int, onTransparent: Boolean, accent: Int?): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         if (hours.size < 2) return bitmap
         val canvas = Canvas(bitmap)
@@ -144,7 +173,13 @@ object ChartBitmap {
      * Arco del sol de amanecer a atardecer con la posición actual. [progress] va de 0 (amanecer)
      * a 1 (atardecer); fuera de ese rango es de noche y el sol no se dibuja.
      */
-    fun renderSunArc(context: Context, progress: Float, widthPx: Int, heightPx: Int, onTransparent: Boolean = false, accent: Int? = null): Bitmap {
+    fun renderSunArc(context: Context, progress: Float, widthPx: Int, heightPx: Int, onTransparent: Boolean = false, accent: Int? = null): Bitmap =
+        // El sol avanza de a poco: con dos decimales alcanza y la imagen se reusa varios minutos.
+        cached(context, "sol|${"%.2f".format(java.util.Locale.ROOT, progress)}|$widthPx|$heightPx|$onTransparent|$accent") {
+            drawSunArc(context, progress, widthPx, heightPx, onTransparent, accent)
+        }
+
+    private fun drawSunArc(context: Context, progress: Float, widthPx: Int, heightPx: Int, onTransparent: Boolean, accent: Int?): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val colors = palette(context, onTransparent, accent)
@@ -194,6 +229,17 @@ object ChartBitmap {
         heightPx: Int,
         onTransparent: Boolean,
         accent: Int? = null,
+    ): Bitmap = cached(context, "lluvia|${values.joinToString(",") { it.first + "=" + it.second }}|$widthPx|$heightPx|$onTransparent|$accent") {
+        drawRainBars(context, values, widthPx, heightPx, onTransparent, accent)
+    }
+
+    private fun drawRainBars(
+        context: Context,
+        values: List<Pair<String, Float>>,
+        widthPx: Int,
+        heightPx: Int,
+        onTransparent: Boolean,
+        accent: Int?,
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         if (values.isEmpty()) return bitmap

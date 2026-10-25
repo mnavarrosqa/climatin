@@ -6,10 +6,14 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 - **Cielo animado** detrás del pronóstico: sol, nubes, lluvia, nieve, niebla, estrellas o relámpagos según el clima.
 - **Varias ciudades**: buscador, se desliza entre ellas. En *Ciudades* (ícono de lista, arriba a la izquierda) son tarjetas con su cielo y temperatura: se quitan deslizando (con deshacer) y se reordenan manteniéndolas apretadas.
 - **Ajustes ordenados por categoría** (engranaje, arriba a la derecha): pantalla del clima, unidades, notificaciones, ubicación, fondo de pantalla, widgets y acerca de, cada una con un resumen de cómo está.
-- **Claro y oscuro**: tema del sistema, claro u oscuro, y colores del fondo de pantalla (Material You) a elección en *Ajustes → Apariencia*. Sobre el cielo, los íconos del sistema van siempre claros.
+- **Claro y oscuro**: tema del sistema, claro u oscuro, y color de acento (del fondo de pantalla con Material You, azul, verde, naranja, rosa o violeta) en *Ajustes → Apariencia*. Sobre el cielo, los íconos del sistema van siempre claros.
+- **Ícono de la app** a elección (Monograma, Noche, Atardecer o Claro), con `activity-alias`: la actividad real es `ClimaActivity` y el alias del ícono de siempre conserva el nombre `.MainActivity` para no romper los accesos de la pantalla de inicio.
+- **Pantalla del clima a medida** (*Ajustes → Pantalla del clima*): tamaño de la temperatura y qué datos van debajo, pronóstico compacto, cielo animado, reducido o quieto, y orden de las tarjetas.
+- **Apodos para las ciudades** (deslizar a la derecha en *Ciudades*): se ven en el pronóstico, los widgets y los avisos.
 - **Datos**: temperatura por hora en gráfico (tocá una hora para ver sensación térmica, viento y lluvia), humedad, viento, UV, calidad del aire, presión, visibilidad, amanecer/atardecer y fase lunar, con medidores, brújula, arco del sol y dibujo de la luna.
 - **Diseño Material 3 Expressive**: tipografía Google Sans Flex (descargable, con Roboto Flex de respaldo), encabezado que se achica al bajar, carga con esqueleto animado, vibración leve y gesto "atrás" predictivo.
-- **Notificaciones** (*Ajustes → Notificaciones*): lluvia que empieza (con 15, 30 o 60 min de anticipación, duración e intensidad) o que para, revisando cada 15 minutos; alertas del SMN con nivel amarillo, naranja o rojo y aviso cuando terminan; resumen diario a la hora elegida; cambios bruscos (temperatura, heladas, viento, UV); botones "Ver mapa de lluvia" y "No avisar más hoy"; horario de silencio (las alertas rojas pasan igual); temperatura en la barra de estado con las próximas horas al expandirla; y avisos de prueba.
+- **Notificaciones** (*Ajustes → Notificaciones*): lluvia que empieza (con 15, 30 o 60 min de anticipación, duración e intensidad) o que para, revisando cada 15 minutos; alertas del SMN con nivel amarillo, naranja o rojo y aviso cuando terminan; resumen diario a la hora elegida; cambios bruscos (temperatura, heladas, viento, UV); botones "Ver mapa de lluvia" y "No avisar más hoy"; horario de silencio (las alertas rojas pasan igual); temperatura en la barra de estado con las próximas horas al expandirla; hora dorada antes del amanecer y del atardecer; y avisos de prueba.
+- **En vivo (Android 16, Live Updates)**: la lluvia que viene con cuenta regresiva y "Para en…" mientras llueve, alertas naranjas y rojas hasta que terminan, la temperatura como chip y **Salgo ahora** (dos horas de clima en vivo, desde ajustes rápidos, el acceso directo del ícono o Ajustes). Barra `ProgressStyle` y pedido de promoción; el sistema decide si los muestra como chip.
 - **Widgets con Glance** (cada uno elige ciudad y estilo al agregarlo o con el lápiz):
   - **Clima ahora**: responsive, de 1x1 (ícono y temperatura) a 4x2 (ciudad, máx/mín y próximas horas).
   - **Pronóstico**: estado actual y próximos días; si lo agrandás, también las próximas horas.
@@ -30,7 +34,7 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 - **Alertas del SMN** para lugares en Argentina, en la app y como notificación opcional.
 - **Detalle por día** (curva por hora, lluvia total, viento máximo, UV) y pronóstico de **14 días**.
 - **Unidades**: °C/°F, km/h, m/s, mph o nudos, hPa, inHg o mmHg, y 12/24 h.
-- **Fondo de pantalla animado** con cuatro diseños (Cielo, Paisaje con sierras, Formas de Material 3 y Oscuro para pantallas OLED). Se corre al pasar de pantalla, deja una onda al tocar, entibia los colores al amanecer y al atardecer, puede mostrar la temperatura y tiene modos Fluida, Ahorro y Quieta. Se configura con vista previa en vivo desde la app o desde el selector de fondos.
+- **Fondo de pantalla animado** con cuatro diseños (Cielo, Paisaje con sierras, Formas de Material 3 y Oscuro para pantallas OLED). Se corre al pasar de pantalla, entibia los colores al amanecer y al atardecer, puede mostrar la temperatura y tiene modos Fluida, Ahorro y Quieta. Se configura con vista previa en vivo desde la app o desde el selector de fondos.
 - **Botón de ajustes rápidos** con el clima.
 - **Wear OS** (módulo `wear`): tarjeta y complicación con el clima del reloj.
 - **Plegables y tablets**: en pantallas anchas el pronóstico va en dos paneles.
@@ -42,7 +46,7 @@ App Android de clima con widgets Material You, al estilo de los Pixel.
 
 ## Actualizaciones
 
-Cada versión nueva (cuando cambia `versionName`) se publica sola en [climatin-releases](https://github.com/mnavarrosqa/climatin-releases/releases), un repo público que solo tiene los APK. La app consulta ahí cada 12 horas y avisa; al tocar Actualizar la baja sola (con barra de avance) y abre el instalador de Android (la primera vez pide permitir "Instalar apps desconocidas"); también se puede buscar a mano en *Ajustes → Acerca de y actualizaciones*. La app tiene dos variantes: `github` (la que se instala a mano, con esta actualización) y `play` (para la tienda, sin el permiso de instalar apps; ahí actualiza Play).
+Cada versión nueva (cuando cambia `versionName`) se publica sola en [climatin-releases](https://github.com/mnavarrosqa/climatin-releases/releases), un repo público que solo tiene los APK. La app consulta ahí cada 3 horas como mucho (y al volver a abrirla) y avisa con una notificación dentro de la app; al tocar Actualizar la baja sola (con barra de avance) y abre el instalador de Android (la primera vez pide permitir "Instalar apps desconocidas"); también se puede buscar a mano en *Ajustes → Acerca de y actualizaciones*. La app tiene dos variantes: `github` (la que se instala a mano, con esta actualización) y `play` (para la tienda, sin el permiso de instalar apps; ahí actualiza Play).
 
 Para que funcione, el repo `climatin` necesita el secreto `RELEASES_TOKEN`: un token de GitHub con permiso de escritura de contenido (*Contents: Read and write*) solo sobre `climatin-releases`.
 
@@ -64,7 +68,7 @@ Con Android Studio (Ladybug o posterior) abrí la carpeta y dale Run. Por consol
 ./gradlew assembleDebug
 ```
 
-Requiere JDK 17 y el SDK de Android 35.
+Requiere JDK 17 y el SDK de Android 36.
 
 ## Estructura
 

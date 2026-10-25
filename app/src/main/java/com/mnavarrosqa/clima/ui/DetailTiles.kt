@@ -22,6 +22,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -179,12 +181,15 @@ private fun DetailTile(detail: Detail, modifier: Modifier) {
     }
 }
 
-/** Avance de 0 a 1 que crece una vez al aparecer el dibujo. */
+/**
+ * Avance de 0 a 1 que crece una vez al aparecer el dibujo. Es un estado que se lee dentro del
+ * Canvas (con `by`): así la animación solo redibuja, sin recomponer la tarjeta en cada cuadro.
+ */
 @Composable
-private fun growth(): Float {
+private fun growth(): State<Float> {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) { progress.animateTo(1f, tween(900, delayMillis = 200, easing = EaseOutCubic)) }
-    return progress.value
+    return progress.asState()
 }
 
 /** Barra con la escala de colores y un punto en el valor actual. */
@@ -192,7 +197,7 @@ private fun growth(): Float {
 private fun ScaleBar(fraction: Float, colors: List<Color>) {
     val track = MaterialTheme.colorScheme.surfaceContainerHigh
     val knob = MaterialTheme.colorScheme.onSurface
-    val grow = growth()
+    val grow by growth()
     Canvas(
         Modifier
             .fillMaxWidth()
@@ -212,7 +217,7 @@ private fun ScaleBar(fraction: Float, colors: List<Color>) {
 @Composable
 private fun RingGauge(fraction: Float, color: Color = MaterialTheme.colorScheme.primary) {
     val track = MaterialTheme.colorScheme.surfaceContainerHigh
-    val grow = growth()
+    val grow by growth()
     Canvas(Modifier.size(56.dp)) {
         val stroke = 7.dp.toPx()
         val inset = stroke / 2
@@ -234,7 +239,7 @@ private fun RingGauge(fraction: Float, color: Color = MaterialTheme.colorScheme.
 @Composable
 private fun WindCompass(fromDegrees: Float) {
     val colors = MaterialTheme.colorScheme
-    val grow = growth()
+    val grow by growth()
     Canvas(Modifier.size(56.dp)) {
         val radius = size.minDimension / 2
         val center = Offset(size.width / 2, size.height / 2)
@@ -300,13 +305,13 @@ private fun MoonPhase(age: Float, southern: Boolean) {
 @Composable
 private fun SunArc(sunrise: String, sunset: String, now: LocalDateTime) {
     val colors = MaterialTheme.colorScheme
-    val start = LocalDateTime.parse(sunrise)
-    val end = LocalDateTime.parse(sunset)
+    val start = remember(sunrise) { LocalDateTime.parse(sunrise) }
+    val end = remember(sunset) { LocalDateTime.parse(sunset) }
     val total = Duration.between(start, end).toMinutes().coerceAtLeast(1)
     val elapsed = Duration.between(start, now).toMinutes()
     val fraction = (elapsed.toFloat() / total).coerceIn(0f, 1f)
     val isDay = elapsed in 0..total
-    val grow = growth()
+    val grow by growth()
     val darkTheme = LocalDarkTheme.current
     Row(verticalAlignment = Alignment.Bottom) {
         Canvas(

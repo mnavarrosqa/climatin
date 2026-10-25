@@ -16,6 +16,12 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.shortHour
 import com.mnavarrosqa.clima.data.tr
 import com.mnavarrosqa.clima.work.LiveUpdate.requestLive
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.Worker
+import androidx.work.WorkerParameters
+import java.util.concurrent.TimeUnit
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -55,10 +61,12 @@ object SunNotifier {
     fun check(context: Context) {
         if (!NotifyPrefs.get(context).goldenHour || !RainNotifier.canNotify(context)) {
             if (LiveUpdate.isShowing(context, ID)) NotificationManagerCompat.from(context).cancel(ID)
+            WorkManager.getInstance(context).cancelUniqueWork(WORK)
             return
         }
         val snapshot = WeatherRepository.get(context).cached() ?: return
         val now = System.currentTimeMillis()
+        scheduleNext(context, snapshot, now)
         val showing = LiveUpdate.isShowing(context, ID)
         val shownFor = NotifyPrefs.time(context, "sol_evento")
         // Ya avisado: se actualiza la barra hasta que pasa.
@@ -74,6 +82,21 @@ object SunNotifier {
         NotifyPrefs.setTime(context, "sol_amanecer", if (sunrise) 1L else 0L)
         NotifyPrefs.setTime(context, "sol_origen", now)
         show(context, event, sunrise, snapshot.place, update = false)
+    }
+
+    private const val WORK = "hora-dorada"
+
+    /**
+     * Agenda una revisión media hora antes del próximo amanecer o atardecer, sin pedir conexión
+     * (las horas ya están guardadas): el trabajo periódico puede atrasarse o no correr sin internet.
+     */
+    private fun scheduleNext(context: Context, snapshot: WeatherSnapshot, now: Long) {
+        val shownFor = NotifyPrefs.time(context, "sol_evento")
+        val (event, _) = nextEvent(snapshot, maxOf(now, shownFor)) ?: return
+        val delay = event - 30 * 60_000L - now
+        if (delay < 60_000L) return
+        val request = OneTimeWorkRequestBuilder<SunWorker>().setInitialDelay(delay, TimeUnit.MILLISECONDS).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(WORK, ExistingWorkPolicy.REPLACE, request)
     }
 
     fun test(context: Context) {
@@ -131,5 +154,13 @@ object SunNotifier {
             .addProgressPoint(LiveUpdate.point(untilEvent, 0xFFFF7043.toInt()))
             .setProgress(((now - origin) / 60_000).toInt())
         return LiveUpdate.withProgress(context, notification, style)
+    }
+}
+
+/** Revisión puntual de la hora dorada (la agenda [SunNotifier]). */
+class SunWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
+    override fun doWork(): Result {
+        runCatching { SunNotifier.check(applicationContext) }
+        return Result.success()
     }
 }

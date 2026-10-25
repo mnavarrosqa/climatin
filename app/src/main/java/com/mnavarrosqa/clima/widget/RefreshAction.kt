@@ -2,6 +2,12 @@ package com.mnavarrosqa.clima.widget
 
 import com.mnavarrosqa.clima.data.tr
 import android.content.Context
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import java.util.concurrent.TimeUnit
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -37,6 +43,13 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 class RefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         updateAppWidgetState(context, glanceId) { it[WidgetPrefs.REFRESHING_AT] = System.currentTimeMillis() }
+        // Por si Android cierra el proceso a mitad de camino: un repintado en 2 minutos saca
+        // "Actualizando…" (el cartel vence a los 90 s, pero nadie volvería a dibujar el widget).
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "widgets-repintar",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<WidgetRedrawWorker>().setInitialDelay(2, TimeUnit.MINUTES).build(),
+        )
         // Solo este widget, para mostrar "Actualizando…"; al final se actualizan todos.
         updateOne(context, glanceId)
         try {
@@ -61,6 +74,14 @@ class NextCityAction : ActionCallback {
         }
         // Cambió un solo widget: no hace falta actualizar los once tipos.
         updateOne(context, glanceId)
+    }
+}
+
+/** Vuelve a dibujar los widgets con lo guardado, sin descargar nada. */
+class WidgetRedrawWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        runCatching { updateWeatherWidgets(applicationContext) }
+        return Result.success()
     }
 }
 

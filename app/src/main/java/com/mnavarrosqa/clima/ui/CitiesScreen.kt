@@ -153,6 +153,28 @@ fun CitiesScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     // Ciudad a la que se le está poniendo apodo.
+    /** Quita la ciudad con "Deshacer", igual al deslizar que desde TalkBack. */
+    fun removeWithUndo(id: String) {
+        // Se lee la lista actual (el estado de deslizar se recuerda entre composiciones).
+        val current = viewModel.places.value
+        val place = current.firstOrNull { it.id == id } ?: return
+        val index = current.indexOf(place)
+        val remaining = current.size - 1
+        viewModel.removePlace(id)
+        scope.launch {
+            val result = snackbar.showSnackbar(
+                tr("Quitaste ${place.shownName}", "Removed ${place.shownName}"),
+                actionLabel = tr("Deshacer", "Undo"),
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.addPlace(place)
+                // Vuelve al final: se lo sube al lugar que tenía.
+                viewModel.movePlace(id, index - remaining)
+            }
+        }
+    }
+
     // Se guarda el id (no la ciudad) para que el diálogo sobreviva a girar la pantalla.
     var renamingId by rememberSaveable { mutableStateOf<String?>(null) }
     val renaming = renamingId?.let { id -> places.firstOrNull { it.id == id } }
@@ -276,23 +298,7 @@ fun CitiesScreen(
                             renamingId = id
                             false
                         } else if (value != SwipeToDismissBoxValue.Settled) {
-                            // El estado se recuerda entre composiciones: se lee la lista actual.
-                            val current = viewModel.places.value
-                            val index = current.indexOfFirst { it.id == id }
-                            val remaining = current.size - 1
-                            viewModel.removePlace(id)
-                            scope.launch {
-                                val result = snackbar.showSnackbar(
-                                    tr("Quitaste ${place.shownName}", "Removed ${place.shownName}"),
-                                    actionLabel = tr("Deshacer", "Undo"),
-                                    duration = SnackbarDuration.Short,
-                                )
-                                if (result == SnackbarResult.ActionPerformed) {
-                                    viewModel.addPlace(place)
-                                    // Vuelve al final: se lo sube al lugar que tenía.
-                                    viewModel.movePlace(id, index - remaining)
-                                }
-                            }
+                            removeWithUndo(id)
                             true
                         } else {
                             true
@@ -370,7 +376,7 @@ fun CitiesScreen(
                                     CustomAccessibilityAction(tr("Subir", "Move up")) { viewModel.movePlace(id, -1); true },
                                     CustomAccessibilityAction(tr("Bajar", "Move down")) { viewModel.movePlace(id, 1); true },
                                     CustomAccessibilityAction(tr("Cambiar nombre", "Rename")) { renamingId = id; true },
-                                    CustomAccessibilityAction(tr("Quitar", "Remove")) { viewModel.removePlace(id); true },
+                                    CustomAccessibilityAction(tr("Quitar", "Remove")) { removeWithUndo(id); true },
                                 )
                             },
                     )

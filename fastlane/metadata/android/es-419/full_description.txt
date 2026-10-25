@@ -1,16 +1,20 @@
-Climatin es una app de clima pensada para verse como el resto de tu Android: usa los colores de tu fondo de pantalla (Material You) en la app y en los widgets.
+Climatin es una app de clima pensada para verse como el resto de tu Android: usa los colores de tu fondo de pantalla (Material You) en la app y en los widgets, o el color que elijas.
 
 Lo que tiene:
 • Pronóstico por hora en gráfico y de 14 días, con detalle al tocar cada día.
-• Cielo animado según el clima: sol, nubes, lluvia, nieve, niebla, tormenta y estrellas de noche.
-• Aviso de "lluvia en X minutos" y notificación opcional.
+• Cielo animado según el clima: sol, nubes, lluvia, nieve, niebla, tormenta, estrellas y la luna con su fase de hoy.
+• Aviso de lluvia: cuándo empieza, cuánto dura, qué tan fuerte es y cuándo para.
+• En vivo en Android 16: la lluvia que viene con cuenta regresiva en la barra de estado, las alertas naranjas y rojas hasta que terminan y la temperatura como chip.
+• Salgo ahora: dos horas de clima en vivo de donde estás, desde los ajustes rápidos o el ícono.
+• Hora dorada: aviso antes del amanecer y del atardecer.
 • Alertas oficiales del Servicio Meteorológico Nacional para lugares en Argentina.
+• Resumen diario y aviso de cambios bruscos (temperatura, heladas, viento fuerte, UV alto), con horario de silencio.
 • Mapa de lluvia animado.
 • Calidad del aire, índice UV, presión, visibilidad, viento, amanecer, atardecer y fase lunar.
-• Varias ciudades: buscalas, ordenalas y deslizá entre ellas.
-• Ocho widgets (Clima ahora, Pronóstico, De un vistazo, Gráfico, Burbuja, Píldora, Semana y Sol) con tres estilos: Sistema, Color o Transparente. Cada uno elige su ciudad.
-• Fondo de pantalla animado con el cielo del clima real.
-• Botón en los ajustes rápidos.
+• Varias ciudades: buscalas, ordenalas, poneles un apodo y deslizá entre ellas.
+• Once widgets personalizables (estilo, color, opacidad, esquinas, qué muestran y qué hacen al tocarlos), con vista previa real.
+• Fondo de pantalla animado con el cielo del clima real, en cuatro diseños.
+• Personalización: tema claro u oscuro, color de acento, ícono de la app, tamaño de la temperatura y qué datos van debajo, pronóstico compacto y cielo animado, reducido o quieto.
 • App para Wear OS con tarjeta y complicación.
 • Unidades a elección: °C/°F, km/h, m/s, mph o nudos, hPa, inHg o mmHg, y 12 o 24 horas.
 

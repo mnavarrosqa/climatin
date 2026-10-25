@@ -1,12 +1,12 @@
 # Política de privacidad de Climatin
 
-Última actualización: 24 de octubre de 2026.
+Última actualización: 25 de octubre de 2026.
 
 Climatin no tiene cuentas, publicidad ni analíticas, y no guarda datos tuyos en servidores propios.
 
 ## Ubicación
 
-La app usa tu **ubicación aproximada** para mostrar el clima de donde estás. Si lo permitís, también la usa **con la app cerrada** para que los widgets, el fondo de pantalla animado y los avisos sigan tu ubicación.
+La app usa tu **ubicación aproximada** para mostrar el clima de donde estás. Si lo permitís, también la usa **con la app cerrada** para que los widgets, el fondo de pantalla animado y los avisos sigan tu ubicación. Si empezás **Salgo ahora**, la consulta cada 15 minutos durante las dos horas que dura, y deja de hacerlo al terminar.
 
 Las coordenadas (redondeadas a unos 10 metros) se envían a:
 
@@ -21,7 +21,11 @@ Las ciudades que agregás, el último pronóstico y tus ajustes quedan solo en t
 
 ## Notificaciones
 
-Los avisos de lluvia y las alertas del SMN son opcionales y se generan en el teléfono.
+Todos los avisos (lluvia, alertas del SMN, resumen diario, cambios bruscos, hora dorada, Salgo ahora y temperatura en la barra de estado) son opcionales y se generan en el teléfono con el pronóstico ya descargado. En Android 16 algunos pueden mostrarse "en vivo" en la barra de estado; eso tampoco envía datos a ningún lado.
+
+## Actualizaciones
+
+La versión que se instala desde fuera de la tienda consulta cada pocas horas la lista pública de versiones en GitHub para avisar si hay una nueva. Esa consulta no incluye tu ubicación ni ningún dato tuyo. La versión de Google Play no hace esta consulta: ahí actualiza la tienda.
 
 ## Contacto
 

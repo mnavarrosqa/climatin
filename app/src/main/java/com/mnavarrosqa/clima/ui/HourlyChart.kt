@@ -2,7 +2,6 @@ package com.mnavarrosqa.clima.ui
 
 import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
 import com.mnavarrosqa.clima.data.tr
-import androidx.compose.foundation.Canvas
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -55,6 +54,7 @@ import androidx.compose.ui.semantics.contentDescription
 import java.time.LocalDateTime
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
@@ -119,78 +119,79 @@ fun HourlyChart(hours: List<Hour>, modifier: Modifier = Modifier, sunEvents: Lis
             .horizontalScroll(scroll)
             .padding(horizontal = 8.dp),
     ) {
-        Canvas(
+        // La curva, el relleno, los puntos y los textos se arman una vez por tamaño y datos; en cada
+        // cuadro de la animación (o al tocar una hora) solo se dibujan.
+        Spacer(
             Modifier
                 .width(SLOT * hours.size)
                 .height(84.dp)
                 .pointerInput(hours.size) {
                     detectTapGestures { tap -> select((tap.x / (size.width / hours.size)).toInt().coerceIn(0, hours.lastIndex)) }
-                },
-        ) {
-            val slot = size.width / hours.size
-            selected?.let { index ->
-                // La columna de la hora tocada se resalta; abajo sigue en la fila de íconos.
-                val corner = CornerRadius(16.dp.toPx())
-                drawPath(
-                    Path().apply {
-                        addRoundRect(
-                            RoundRect(
-                                Rect(slot * index + 4.dp.toPx(), 0f, slot * (index + 1) - 4.dp.toPx(), size.height),
-                                topLeft = corner,
-                                topRight = corner,
-                            ),
-                        )
-                    },
-                    highlight,
-                )
-            }
-            val top = 30.dp.toPx()
-            val bottom = size.height - 8.dp.toPx()
-            val points = hours.mapIndexed { i, h ->
-                val fraction = ((h.temperature - min) / span).toFloat()
-                Offset(slot * i + slot / 2, bottom - fraction * (bottom - top))
-            }
-            val line = Path().apply {
-                moveTo(points.first().x, points.first().y)
-                for (i in 1 until points.size) {
-                    val prev = points[i - 1]
-                    val cur = points[i]
-                    val midX = (prev.x + cur.x) / 2
-                    cubicTo(midX, prev.y, midX, cur.y, cur.x, cur.y)
                 }
-            }
-            val fill = Path().apply {
-                addPath(line)
-                lineTo(points.last().x, size.height)
-                lineTo(points.first().x, size.height)
-                close()
-            }
-            val visibleWidth = size.width * reveal.value
-            clipRect(right = visibleWidth) {
-                drawPath(
-                    fill,
-                    Brush.verticalGradient(listOf(colors.primary.copy(alpha = 0.35f), colors.primary.copy(alpha = 0f))),
-                )
-                // La curva cambia de color con la temperatura, como en Mercury Weather.
-                drawPath(
-                    line,
-                    Brush.horizontalGradient(lineColors, startX = points.first().x, endX = points.last().x),
-                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
-                )
-            }
-            points.forEachIndexed { i, p ->
-                // Cada punto aparece cuando la curva llega hasta él.
-                if (p.x > visibleWidth + slot / 2) return@forEachIndexed
-                val big = i == selected
-                drawCircle(colors.surface, radius = (if (big) 7f else 5f).dp.toPx(), center = p)
-                drawCircle(lineColors[i], radius = (if (big) 5f else 3.5f).dp.toPx(), center = p)
-                val text = measurer.measure(hours[i].temperature.degrees(), labelStyle)
-                drawText(
-                    text,
-                    topLeft = Offset(p.x - text.size.width / 2f, p.y - text.size.height - 6.dp.toPx()),
-                )
-            }
-        }
+                .drawWithCache {
+                    val slot = size.width / hours.size
+                    val top = 30.dp.toPx()
+                    val bottom = size.height - 8.dp.toPx()
+                    val points = hours.mapIndexed { i, h ->
+                        val fraction = ((h.temperature - min) / span).toFloat()
+                        Offset(slot * i + slot / 2, bottom - fraction * (bottom - top))
+                    }
+                    val line = Path().apply {
+                        moveTo(points.first().x, points.first().y)
+                        for (i in 1 until points.size) {
+                            val prev = points[i - 1]
+                            val cur = points[i]
+                            val midX = (prev.x + cur.x) / 2
+                            cubicTo(midX, prev.y, midX, cur.y, cur.x, cur.y)
+                        }
+                    }
+                    val fill = Path().apply {
+                        addPath(line)
+                        lineTo(points.last().x, size.height)
+                        lineTo(points.first().x, size.height)
+                        close()
+                    }
+                    val fillBrush = Brush.verticalGradient(listOf(colors.primary.copy(alpha = 0.35f), colors.primary.copy(alpha = 0f)))
+                    val lineBrush = Brush.horizontalGradient(lineColors, startX = points.first().x, endX = points.last().x)
+                    val stroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                    val texts = hours.map { measurer.measure(it.temperature.degrees(), labelStyle) }
+                    val corner = CornerRadius(16.dp.toPx())
+                    val gap = 4.dp.toPx()
+                    val labelGap = 6.dp.toPx()
+                    onDrawBehind {
+                        selected?.let { index ->
+                            // La columna de la hora tocada se resalta; abajo sigue en la fila de íconos.
+                            drawPath(
+                                Path().apply {
+                                    addRoundRect(
+                                        RoundRect(
+                                            Rect(slot * index + gap, 0f, slot * (index + 1) - gap, size.height),
+                                            topLeft = corner,
+                                            topRight = corner,
+                                        ),
+                                    )
+                                },
+                                highlight,
+                            )
+                        }
+                        val visibleWidth = size.width * reveal.value
+                        clipRect(right = visibleWidth) {
+                            drawPath(fill, fillBrush)
+                            // La curva cambia de color con la temperatura, como en Mercury Weather.
+                            drawPath(line, lineBrush, style = stroke)
+                        }
+                        points.forEachIndexed { i, p ->
+                            // Cada punto aparece cuando la curva llega hasta él.
+                            if (p.x > visibleWidth + slot / 2) return@forEachIndexed
+                            val big = i == selected
+                            drawCircle(colors.surface, radius = (if (big) 7f else 5f).dp.toPx(), center = p)
+                            drawCircle(lineColors[i], radius = (if (big) 5f else 3.5f).dp.toPx(), center = p)
+                            val text = texts[i]
+                            drawText(text, topLeft = Offset(p.x - text.size.width / 2f, p.y - text.size.height - labelGap))
+                        }
+                    }
+                },
+        )
         Row {
             hours.forEachIndexed { index, hour ->
                 val label = labels[index]
