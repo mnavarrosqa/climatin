@@ -24,7 +24,7 @@ data class WeatherSnapshot(
     val alerts: List<WeatherAlert> = emptyList(),
     /** Zona horaria IANA del lugar; null en pronósticos guardados por versiones anteriores. */
     val timezone: String? = null,
-    /** Horas que ya pasaron desde ayer a las 0 (solo temperatura), para comparar con ayer. */
+    /** Horas que ya pasaron desde ayer a las 0 (temperatura, presión y lluvia), para comparar con ayer. */
     val pastHours: List<Hour> = emptyList(),
 ) {
     /** Temperatura de ayer a la misma hora de cada una de [hours] (null si no se sabe). */

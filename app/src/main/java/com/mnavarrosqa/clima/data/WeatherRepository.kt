@@ -343,6 +343,91 @@ class WeatherRepository private constructor(private val context: Context) {
         }
     }
 
+    // --- Lo normal para la época y la lluvia caída ---
+
+    // Las tarjetas lo piden al mostrarse (no va en el trabajo cada 15 minutos). En dos paneles lo
+    // piden las dos mitades a la vez: con el candado, la segunda usa lo que bajó la primera.
+    private val pastLock = Mutex()
+    private val climateDir = File(context.filesDir, "clima")
+    /** Días de otros años ya leídos del disco, por lugar redondeado. */
+    private val climateMemory = java.util.concurrent.ConcurrentHashMap<String, ClimateCache>()
+    /** Cuándo falló el último pedido de cada cosa: sin red no se reintenta cada vez que se abre la tarjeta. */
+    private val pastFailedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val weekRainMemory = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<ClimateDay>>>()
+
+    /** Lo normal para estos días en el lugar del pronóstico y la lluvia de la última semana. */
+    suspend fun pastWeather(snapshot: WeatherSnapshot): PastWeather = withContext(Dispatchers.IO) {
+        val latitude = snapshot.latitude
+        val longitude = snapshot.longitude
+        val today = snapshot.nowAtPlace().toLocalDate()
+        pastLock.withLock {
+            coroutineScope {
+                val days = async { runCatchingCancellable { climateDays(latitude, longitude, today) }.getOrNull() }
+                val week = async { runCatchingCancellable { recentRain(latitude, longitude) }.getOrNull() }
+                PastWeather(
+                    normal = days.await()?.let { normalFor(it, today) },
+                    weekRain = week.await()?.let { weekRain(it, today) },
+                )
+            }
+        }
+    }
+
+    /**
+     * Días de los últimos diez años alrededor de esta fecha. El promedio casi no cambia de un día
+     * al otro: se guarda 30 días por lugar (redondeado a 0,1°, unos 11 km; el reanálisis tiene
+     * celdas de unos 25 km), y solo los días que sirven para ese mes, no los diez años.
+     */
+    private suspend fun climateDays(latitude: Double, longitude: Double, today: java.time.LocalDate): List<ClimateDay>? {
+        val lat = kotlin.math.round(latitude * 10) / 10
+        val lon = kotlin.math.round(longitude * 10) / 10
+        val key = String.format(java.util.Locale.US, "%.1f_%.1f", lat, lon)
+        val file = File(climateDir, key.replace(Regex("[^A-Za-z0-9_.-]"), "_") + ".json")
+        val stored = climateMemory[key]
+            ?: runCatching { json.decodeFromString(ClimateCache.serializer(), file.readText()) }.getOrNull()?.also { climateMemory[key] = it }
+        val storedOn = stored?.let { runCatching { java.time.LocalDate.parse(it.fetchedOn) }.getOrNull() }
+        if (stored != null && storedOn != null && !today.isBefore(storedOn) && today.isBefore(storedOn.plusDays(30))) return stored.days
+        if (System.currentTimeMillis() - (pastFailedAt["clima:$key"] ?: 0L) < 15 * 60_000L) return stored?.days
+        val fetched = try {
+            // Desde la ventana de hace diez años hasta la del año pasado (más el margen de la
+            // caché): el archivo llega con días de atraso, así que este año no se pide.
+            OpenMeteo.archiveDays(lat, lon, today.minusYears(10).minusDays(8), today.minusYears(1).plusDays(38))
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            pastFailedAt["clima:$key"] = System.currentTimeMillis()
+            // Mejor la de antes, aunque sea vieja: si ya no cubre estos días, el promedio queda sin datos.
+            return stored?.days
+        }
+        val cache = ClimateCache(lat, lon, today.toString(), keepForCache(fetched, today))
+        climateMemory[key] = cache
+        runCatching {
+            climateDir.mkdirs()
+            val temp = File(climateDir, file.name + ".tmp")
+            temp.writeText(json.encodeToString(ClimateCache.serializer(), cache))
+            if (!temp.renameTo(file)) {
+                file.delete()
+                temp.renameTo(file)
+            }
+        }
+        return cache.days
+    }
+
+    /** Lluvia de los últimos 7 días; se guarda una hora en memoria (es un pedido chico). */
+    private suspend fun recentRain(latitude: Double, longitude: Double): List<ClimateDay>? {
+        val key = String.format(java.util.Locale.US, "%.2f_%.2f", latitude, longitude)
+        val now = System.currentTimeMillis()
+        weekRainMemory[key]?.let { (at, days) -> if (now - at < 60 * 60_000L) return days }
+        if (now - (pastFailedAt["lluvia:$key"] ?: 0L) < 15 * 60_000L) return weekRainMemory[key]?.second
+        return try {
+            OpenMeteo.pastWeekRain(latitude, longitude).also { weekRainMemory[key] = now to it }
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            pastFailedAt["lluvia:$key"] = now
+            weekRainMemory[key]?.second
+        }
+    }
+
     // --- Ajustes ---
 
     var rainAlertsEnabled: Boolean

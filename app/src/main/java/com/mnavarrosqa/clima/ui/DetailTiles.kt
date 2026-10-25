@@ -75,6 +75,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.geometry.CornerRadius
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
+import com.mnavarrosqa.clima.data.PastWeather
+import com.mnavarrosqa.clima.data.WeatherRepository
+import com.mnavarrosqa.clima.data.mmText
+import com.mnavarrosqa.clima.data.rainSoFarToday
+import com.mnavarrosqa.clima.data.rainfallText
+import com.mnavarrosqa.clima.data.seasonText
+import androidx.compose.ui.platform.LocalContext
 import com.mnavarrosqa.clima.data.pressureText
 import com.mnavarrosqa.clima.data.windFrom
 import com.mnavarrosqa.clima.data.windText
@@ -129,6 +136,18 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
         }
     }
     val tick = minute ?: ownMinute
+    // Lo normal para la época y la lluvia de la semana se piden aparte, al mostrar los detalles:
+    // mientras tanto (o sin red) esas tarjetas no aparecen.
+    val context = LocalContext.current
+    val past by produceState<PastWeather?>(
+        null,
+        snapshot.placeId,
+        (snapshot.latitude * 100).roundToInt(),
+        (snapshot.longitude * 100).roundToInt(),
+        date,
+    ) {
+        value = WeatherRepository.get(context).pastWeather(snapshot)
+    }
     val sky = remember(snapshot, tick) { skyDetail(snapshot) }
     val night = sky?.second == true
     val details = buildList {
@@ -253,6 +272,20 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
                 },
             )
         }
+        // La máxima de hoy contra la normal de estos días en los últimos años.
+        val normal = past?.normal
+        val todayMax = today?.max
+        if (normal != null && todayMax != null) {
+            val season = seasonText(todayMax, normal, date)
+            add(
+                Detail(tr("Para la época", "For the season"), season.value, season.note).apply {
+                    info = tr(
+                        "La máxima de hoy (${todayMax.degrees()}) contra el promedio de las máximas de estos mismos días, una semana antes y una después, en los últimos ${normal.years} años. Lo normal: máxima ${normal.max.degrees()} y mínima ${normal.min.degrees()}. Con menos de 2° de diferencia se considera normal.",
+                        "Today's high (${todayMax.degrees()}) against the average high for these same days, a week before and after, over the last ${normal.years} years. Normal: high ${normal.max.degrees()} and low ${normal.min.degrees()}. Within 2° it counts as normal.",
+                    )
+                },
+            )
+        }
         val dew = dewPoint(current.temperature, current.humidity)
         val dewTonight = snapshot.dewTonight()
         add(
@@ -340,6 +373,19 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
                 )
             },
         )
+        // Lo que ya llovió: ayer, en la semana y hoy hasta ahora.
+        val weekRain = past?.weekRain
+        rainfallText(snapshot.yesterday()?.precipitationSum, weekRain, snapshot.rainSoFarToday())?.let { rainfall ->
+            val usualWeek = normal?.precipitationPerDay?.let { perDay -> perDay * 7 }
+            add(
+                Detail(tr("Lluvia caída", "Rainfall"), rainfall.value, rainfall.note).apply {
+                    info = tr(
+                        "Lo que llovió (no lo que se pronostica): ayer, los 7 días anteriores a hoy y lo que va de hoy. Son estimaciones del modelo para la zona, no de un pluviómetro. 1 mm es un litro por metro cuadrado.",
+                        "Rain that already fell (not the forecast): yesterday, the 7 days before today and so far today. These are model estimates for the area, not a rain gauge. 1 mm is one liter per square meter.",
+                    ) + (usualWeek?.let { mm -> tr(" En una semana de esta época lo normal es ${mmText(mm)}.", " A normal week this time of year brings ${mmText(mm)}.") } ?: "")
+                },
+            )
+        }
         if (!night) add(
             Detail(tr("Luna", "Moon"), Moon.phaseName(date)) { MoonPhase(Moon.age(date).toFloat(), southern = snapshot.latitude < 0) }.apply {
                 val age = Moon.age(date)

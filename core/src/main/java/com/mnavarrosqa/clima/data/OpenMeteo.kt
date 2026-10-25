@@ -96,6 +96,32 @@ object OpenMeteo {
         )
     }
 
+    /**
+     * Días pasados del archivo histórico (reanálisis ERA5, gratis y sin clave), para "lo normal
+     * para la época". Formato:
+     * https://archive-api.open-meteo.com/v1/archive?latitude=-31.4&longitude=-64.2
+     *   &start_date=2016-09-10&end_date=2025-12-09
+     *   &daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto
+     * Un solo pedido por varios años (unas 3300 filas): uno por año eran diez pedidos. El archivo
+     * llega con unos días de atraso, así que [to] tiene que ser de hace más de una semana.
+     */
+    suspend fun archiveDays(latitude: Double, longitude: Double, from: java.time.LocalDate, to: java.time.LocalDate): List<ClimateDay> {
+        val url = "https://archive-api.open-meteo.com/v1/archive?" + coordinates(listOf(latitude to longitude)) +
+            "&start_date=$from&end_date=$to&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto"
+        return get(url, ArchiveResponse.serializer()).toClimateDays()
+    }
+
+    /**
+     * Lluvia de los últimos 7 días, aparte del pronóstico: past_days=7 ahí agrandaba cada
+     * actualización (y el trabajo cada 15 minutos) por un dato que solo mira la tarjeta. El archivo
+     * histórico no sirve para esto porque llega con días de atraso.
+     */
+    suspend fun pastWeekRain(latitude: Double, longitude: Double): List<ClimateDay> {
+        val url = "https://api.open-meteo.com/v1/forecast?" + coordinates(listOf(latitude to longitude)) +
+            "&daily=precipitation_sum&past_days=7&forecast_days=1&timezone=auto"
+        return get(url, ArchiveResponse.serializer()).toClimateDays()
+    }
+
     suspend fun searchCities(query: String): List<Place> {
         val response = get(
             "https://geocoding-api.open-meteo.com/v1/search?count=10&format=json&language=" + (if (Lang.isSpanish) "es" else "en") + "&name=" +
@@ -209,8 +235,9 @@ object OpenMeteo {
                 windGusts = c.windGusts,
             ),
             hours = hours,
-            // De las que pasaron alcanza con la temperatura y la presión (para ver si sube o baja).
-            pastHours = pastHours.map { Hour(it.time, it.temperature, it.code, null, it.isDay, pressure = it.pressure) },
+            // De las que pasaron alcanza con la temperatura, la presión (para ver si sube o baja) y
+            // la lluvia (cuánto lleva caído hoy).
+            pastHours = pastHours.map { Hour(it.time, it.temperature, it.code, null, it.isDay, precipitation = it.precipitation, pressure = it.pressure) },
             days = days,
             minutely = minutely,
             airQuality = airQuality,
