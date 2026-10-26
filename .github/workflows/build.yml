@@ -3,6 +3,8 @@ name: Build APK
 on:
   push:
     branches: [main]
+    # La app de iPhone tiene su propia compilación (ios.yml): sus cambios no publican un APK.
+    paths-ignore: ['ios/**', '.github/workflows/ios.yml']
   pull_request:
   workflow_dispatch:
 

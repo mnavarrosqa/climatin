@@ -1,0 +1,66 @@
+# Proyecto de Xcode generado con XcodeGen: `xcodegen generate` dentro de ios/.
+# El .xcodeproj no se versiona; este archivo es la fuente.
+name: Climatin
+options:
+  bundleIdPrefix: com.mnavarrosqa
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: es
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    # Para TestFlight: completar con el Team ID (o pasarlo por línea de comandos en CI).
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  Climatin:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Climatin
+      - path: Shared
+    dependencies:
+      - target: ClimatinWidget
+        embed: true
+    settings:
+      base:
+        PRODUCT_NAME: Climatin
+        PRODUCT_BUNDLE_IDENTIFIER: com.mnavarrosqa.climatin
+        INFOPLIST_FILE: Config/Climatin-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/Climatin.entitlements
+        ENABLE_PREVIEWS: YES
+
+  ClimatinWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ClimatinWidget
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: ClimatinWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.mnavarrosqa.climatin.widget
+        INFOPLIST_FILE: Config/ClimatinWidget-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/ClimatinWidget.entitlements
+        SKIP_INSTALL: YES
+        ENABLE_PREVIEWS: YES
+
+schemes:
+  Climatin:
+    build:
+      targets:
+        Climatin: all
+        ClimatinWidget: all
+    run:
+      config: Debug
+    archive:
+      config: Release
