@@ -509,6 +509,7 @@ private fun WeatherPager(
             southern = (skySnapshot?.latitude ?: 0.0) < 0,
             // El ícono grande del pronóstico ya es el sol (o la luna): sin esto se veían dos.
             sunMoon = false,
+            snapshot = skySnapshot,
         )
         val pullState = rememberPullToRefreshState()
         PullToRefreshBox(

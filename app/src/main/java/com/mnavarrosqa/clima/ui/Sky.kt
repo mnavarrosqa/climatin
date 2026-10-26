@@ -1,5 +1,7 @@
 package com.mnavarrosqa.clima.ui
 
+import com.mnavarrosqa.clima.data.WeatherSnapshot
+import androidx.compose.runtime.produceState
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import android.os.PowerManager
@@ -53,7 +55,22 @@ const val SKY_CYCLE_MS = 60_000
  * se funden en vez de saltar.
  */
 @Composable
-fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier, southern: Boolean = false, sunMoon: Boolean = true) {
+fun AnimatedSky(
+    kind: WeatherKind,
+    isDay: Boolean,
+    modifier: Modifier = Modifier,
+    southern: Boolean = false,
+    sunMoon: Boolean = true,
+    /** Con el pronóstico, el cielo toma los colores del amanecer y del atardecer del lugar. */
+    snapshot: WeatherSnapshot? = null,
+) {
+    // Los colores de la hora cambian despacio: se revisan una vez por minuto.
+    val minute by produceState(0L, snapshot) {
+        while (true) {
+            value = System.currentTimeMillis() / 60_000
+            kotlinx.coroutines.delay(60_000)
+        }
+    }
     // Ajustes → Pantalla del clima: quieto no anima nada (se dibuja una vez); reducido va a un
     // tercio de la velocidad, para quien se marea o prefiere algo más tranquilo.
     val motion = Appearance.skyMotion
@@ -84,7 +101,7 @@ fun AnimatedSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier
         read
     }
     Crossfade(targetState = kind to isDay, animationSpec = tween(1200), modifier = modifier, label = "clima") { (k, day) ->
-        val colors = skyColors(k, day)
+        val colors = remember(k, day, snapshot, minute) { SkyTime.colors(k, day, snapshot) }
         val top by animateColorAsState(colors[0], tween(1200), label = "arriba")
         val middle by animateColorAsState(colors[1], tween(1200), label = "medio")
         val bottom by animateColorAsState(colors[2], tween(1200), label = "abajo")
