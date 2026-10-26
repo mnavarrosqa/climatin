@@ -1,0 +1,1 @@
+• Indicador: nuevo dato "Ir rotando", que muestra uno distinto cada media hora (UV, aire, humedad, viento…)

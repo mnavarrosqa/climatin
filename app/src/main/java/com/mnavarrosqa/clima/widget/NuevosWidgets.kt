@@ -267,6 +267,8 @@ enum class Metric(private val es: String, private val en: String, private val sh
     RAIN("Lluvia hoy", "Rain today", "Lluvia", "Rain"),
     PRESSURE("Presión", "Pressure", "Presión", "Pressure"),
     DEW("Punto de rocío", "Dew point", "Rocío", "Dew point"),
+    /** No es un dato: va mostrando uno distinto cada media hora. */
+    ROTATE("Ir rotando", "Rotate", "", ""),
     ;
 
     val label: String get() = tr(es, en)
@@ -276,6 +278,16 @@ enum class Metric(private val es: String, private val en: String, private val sh
 
     companion object {
         fun from(name: String?) = entries.firstOrNull { it.name == name } ?: UV
+
+        /**
+         * El dato que toca mostrar en un Indicador que rota: cambia cada media hora, con la misma
+         * cuenta que las ciudades que rotan. Sin calidad del aire, ese se saltea.
+         */
+        fun rotating(hasAir: Boolean): Metric {
+            val shown = entries.filter { it != ROTATE && (hasAir || it != AIR) }
+            val slot = System.currentTimeMillis() / 60_000 / ROTATE_MINUTES
+            return shown[(slot % shown.size).toInt()]
+        }
     }
 }
 
@@ -285,7 +297,8 @@ class IndicadorWidget : SimpleWeatherWidget() {
         val colors = widgetColors(snapshot)
         val context = LocalContext.current
         val size = LocalSize.current
-        val metric = Metric.from(currentState(WidgetPrefs.METRIC))
+        val chosen = Metric.from(currentState(WidgetPrefs.METRIC))
+        val metric = if (chosen == Metric.ROTATE) Metric.rotating(snapshot.airQuality?.europeanAqi != null) else chosen
         val current = snapshot.current
         val diameter = (minOf(size.width, size.height) - 20.dp).coerceAtLeast(48.dp)
         val px = (diameter.value * context.resources.displayMetrics.density).roundToInt()
@@ -293,7 +306,8 @@ class IndicadorWidget : SimpleWeatherWidget() {
         val uv = current.uvIndex ?: snapshot.today()?.uvIndex ?: 0.0
         val aqi = snapshot.airQuality?.europeanAqi
         val (value, caption, bitmap) = when (metric) {
-            Metric.UV -> Triple(
+            // ROTATE ya se resolvió arriba a un dato; queda acá solo para que el when sea completo.
+            Metric.UV, Metric.ROTATE -> Triple(
                 "${uv.roundToInt()}",
                 WeatherCodes.uvLabel(uv).replaceFirstChar { it.uppercase() },
                 ChartBitmap.renderGauge(context, (uv / 11).toFloat(), uvColor(uv), px, colors.transparent),

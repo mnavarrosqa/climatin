@@ -31,8 +31,8 @@ object WidgetOptionKeys {
 /** Ciudad especial: el widget pasa por todas tus ciudades, una por cada actualización. */
 const val ROTATE_PLACE_ID = "rotar"
 
-/** Cada cuánto cambia de ciudad un widget que rota (coincide con la actualización automática). */
-private const val ROTATE_MINUTES = 30L
+/** Cada cuánto cambia de ciudad (o de dato, en el Indicador) un widget que rota (coincide con la actualización automática). */
+internal const val ROTATE_MINUTES = 30L
 
 /** Color del widget: el del fondo de pantalla (Material You) o uno fijo. */
 enum class WidgetAccent(val hue: Float?, private val es: String, private val en: String) {
