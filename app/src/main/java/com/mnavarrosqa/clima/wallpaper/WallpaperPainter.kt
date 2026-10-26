@@ -82,7 +82,7 @@ class WallpaperPainter {
         val extra = width * 0.15f
         canvas.save()
         canvas.translate(-extra * parallax, 0f)
-        sky.draw(canvas, width + extra, height, density, clock, scene.kind, scene.isDay, scene.colors)
+        sky.draw(canvas, width + extra, height, density, clock, scene.kind, scene.isDay, scene.colors, parallax = parallax)
         canvas.restore()
     }
 

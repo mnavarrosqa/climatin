@@ -34,7 +34,8 @@ class SkyPainter {
 
     private class Particle(val x: Float, val y: Float, val size: Float, val speed: Float, val phase: Float)
 
-    private class Puff(val dx: Float, val dy: Float, val radius: Float)
+    /** Un círculo de nube: posición y radio en anchos de nube; [top] es cuánto está en la cima (0 a 1). */
+    private class Puff(val dx: Float, val dy: Float, val radius: Float, val top: Float)
 
     private fun particles(count: Int, seed: Int): List<Particle> {
         val random = Random(seed)
@@ -43,25 +44,29 @@ class SkyPainter {
         }
     }
 
-    private val stars = particles(90, 1)
-    private val farDrops = particles(70, 2)
-    private val nearDrops = particles(50, 5)
-    private val flakes = particles(80, 3)
-    private val clouds = particles(6, 4)
+    private val stars = particles(150, 1)
+    private val farDrops = particles(90, 2)
+    private val midDrops = particles(60, 6)
+    private val nearDrops = particles(36, 5)
+    private val flakes = particles(110, 3)
+    private val clouds = particles(9, 4)
 
-    /** Cada nube son seis puffs en arco, un poco al azar. */
+    /**
+     * Cada nube son 16 círculos suaves dentro de una cúpula (base ancha y plana, cima redonda),
+     * de abajo hacia arriba: superpuestos se ven como una nube con volumen y no como burbujas.
+     */
     private val cloudShapes = clouds.indices.map { i ->
         val random = Random(10 + i)
-        List(6) { k ->
-            val t = k / 5f
-            val arc = sin(t * PI.toFloat())
-            Puff(
-                dx = (t - 0.5f) * 0.9f + (random.nextFloat() - 0.5f) * 0.1f,
-                dy = -arc * 0.28f + (random.nextFloat() - 0.5f) * 0.06f,
-                radius = 0.22f + 0.18f * arc + random.nextFloat() * 0.05f,
-            )
-        }
+        List(16) {
+            val u = random.nextFloat() * 2 - 1
+            val dome = kotlin.math.sqrt((1 - u * u).coerceAtLeast(0f))
+            val v = random.nextFloat()
+            Puff(dx = u * 0.42f, dy = -v * dome * 0.26f + 0.04f, radius = 0.12f + 0.1f * dome + random.nextFloat() * 0.06f, top = v * dome)
+        }.sortedByDescending { it.dy }
     }
+
+    /** El techo de nubes de los días cubiertos: círculos anchos y chatos a lo largo de arriba. */
+    private val blanket = particles(16, 77)
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
@@ -69,6 +74,7 @@ class SkyPainter {
 
     /** Degradados radiales de radio 1 por color; se escalan con el canvas en vez de crear uno por puff. */
     private val puffShaders = HashMap<Int, Shader>()
+    private val softShaders = HashMap<Int, Shader>()
 
     private fun puffShader(rgb: Int): Shader = puffShaders.getOrPut(rgb) {
         val solid = rgb or 0xFF000000.toInt()
@@ -77,11 +83,22 @@ class SkyPainter {
         RadialGradient(0f, 0f, 1f, intArrayOf(solid, half, clear), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
     }
 
-    private val rayShader = LinearGradient(0f, 0f, 1f, 0f, 0x14FFF5D2, 0x00FFF5D2, Shader.TileMode.CLAMP)
+    /** Más difuso hacia el borde: para nubes y copos cercanos, sin el canto marcado de un círculo. */
+    private fun softShader(rgb: Int): Shader = softShaders.getOrPut(rgb) {
+        val base = rgb and 0x00FFFFFF
+        RadialGradient(
+            0f, 0f, 1f,
+            intArrayOf(base or 0xFF000000.toInt(), base or 0xBF000000.toInt(), base or 0x40000000, base),
+            floatArrayOf(0f, 0.35f, 0.7f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+    }
+
+    private val rayShader = LinearGradient(0f, 0f, 1f, 0f, 0x29FFF5D2, 0x00FFF5D2, Shader.TileMode.CLAMP)
     private val rayPath = Path().apply {
         moveTo(0f, 0f)
-        lineTo(1f, -0.067f)
-        lineTo(1f, 0.067f)
+        lineTo(1f, -0.05f)
+        lineTo(1f, 0.05f)
         close()
     }
 
@@ -104,9 +121,9 @@ class SkyPainter {
         }
     }
 
-    private fun puff(canvas: Canvas, x: Float, y: Float, radiusX: Float, radiusY: Float, alpha: Float, rgb: Int) {
+    private fun puff(canvas: Canvas, x: Float, y: Float, radiusX: Float, radiusY: Float, alpha: Float, rgb: Int, soft: Boolean = false) {
         if (alpha <= 0f || radiusX <= 0f || radiusY <= 0f) return
-        paint.shader = puffShader(rgb)
+        paint.shader = if (soft) softShader(rgb) else puffShader(rgb)
         paint.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
         canvas.save()
         canvas.translate(x, y)
@@ -119,7 +136,7 @@ class SkyPainter {
 
     /**
      * Si se dibujan el sol y la luna. En el pronóstico van apagados: el ícono grande del estado
-     * ya los muestra y se veían dos soles. Las estrellas y las nubes quedan igual.
+     * ya los muestra y se veían dos soles. Queda el resplandor, las estrellas y las nubes.
      */
     var showSunMoon = true
 
@@ -135,6 +152,7 @@ class SkyPainter {
         background: Boolean = true,
         celestial: Boolean = true,
         cloudAlpha: Float = 1f,
+        parallax: Float = 0f,
     ) {
         // Con tamaño 0 (al armar la pantalla o en una animación) los degradados redondos tiran error.
         if (width <= 0f || height <= 0f) return
@@ -150,41 +168,52 @@ class SkyPainter {
 
         val clearish = kind == WeatherKind.CLEAR || kind == WeatherKind.PARTLY
         if (clearish && celestial) {
-            if (isDay) {
-                if (showSunMoon) drawSun(canvas, width, height, clock)
-            } else {
-                drawNight(canvas, width, height, density, clock)
-            }
+            if (isDay) drawSun(canvas, width, height, clock) else drawNight(canvas, width, height, density, clock)
         }
-        if (kind != WeatherKind.CLEAR && cloudAlpha > 0f) drawClouds(canvas, width, height, clock, kind, isDay, cloudAlpha)
+        if (kind != WeatherKind.CLEAR && cloudAlpha > 0f) drawClouds(canvas, width, height, clock, kind, isDay, cloudAlpha, parallax)
         when (kind) {
-            WeatherKind.DRIZZLE -> drawRain(canvas, width, height, density, clock, farDrops, 12f, 0.35f, 40, 1f)
+            WeatherKind.DRIZZLE -> {
+                drawRain(canvas, width, height, density, clock, farDrops, 14f, 0.35f, 30, 0.8f, 0.08f)
+                drawRain(canvas, width, height, density, clock, midDrops, 18f, 0.4f, 36, 1f, 0.08f)
+            }
             WeatherKind.RAIN, WeatherKind.STORM -> {
-                drawRain(canvas, width, height, density, clock, farDrops, 16f, 0.35f, 50, 1f)
-                drawRain(canvas, width, height, density, clock, nearDrops, 30f, 0.6f, 70, 1.6f)
+                // Tres capas de gotas: las lejanas finas y cortas, las cercanas largas y marcadas.
+                val slant = if (kind == WeatherKind.STORM) 0.18f else 0.1f
+                drawRain(canvas, width, height, density, clock, farDrops, 16f, 0.3f, 40, 0.8f, slant)
+                drawRain(canvas, width, height, density, clock, midDrops, 24f, 0.45f, 50, 1.1f, slant)
+                drawRain(canvas, width, height, density, clock, nearDrops, 40f, 0.55f, 62, 1.6f, slant)
+                // Bruma de la lluvia abajo.
+                puff(canvas, width / 2, height, width * 0.9f, height * 0.25f, 0.18f, 0xC9D4E2)
             }
             WeatherKind.SNOW -> drawSnow(canvas, width, height, density, clock)
             WeatherKind.FOG -> drawFog(canvas, width, height, clock)
             else -> Unit
         }
-        if (kind == WeatherKind.STORM) drawLightning(canvas, width, height, clock)
+        if (kind == WeatherKind.STORM) drawLightning(canvas, width, height, density, clock)
     }
 
-    /** Sol con brillo que respira y rayos suaves que giran una vuelta por minuto. */
+    /**
+     * Sol con un resplandor grande y cálido, rayos suaves que giran lento y destellos de lente
+     * hacia el centro, como el cielo despejado del Clima de Apple. Sin [showSunMoon] queda solo
+     * el resplandor.
+     */
     private fun drawSun(canvas: Canvas, width: Float, height: Float, clock: Float) {
-        val cx = width * 0.8f
-        val cy = height * 0.1f
+        val cx = width * 0.78f
+        val cy = height * 0.09f
         val base = min(width, height)
-        val breathe = 1f + 0.05f * sin(clock * tau * 3)
-        puff(canvas, cx, cy, base * 0.9f * breathe, base * 0.9f * breathe, 0.30f, 0xFFECAA)
+        val breathe = 1f + 0.04f * sin(clock * tau * 3)
+        puff(canvas, cx, cy, base * 1.3f * breathe, base * 1.1f * breathe, 0.28f, 0xFFE9B0)
+        puff(canvas, cx, cy, base * 0.55f, base * 0.55f, 0.35f, 0xFFF4D6)
+        if (!showSunMoon) return
 
         paint.shader = rayShader
         canvas.save()
         canvas.translate(cx, cy)
-        canvas.rotate(clock * 360f)
-        val length = base * 0.75f
-        repeat(12) {
-            canvas.rotate(30f)
+        canvas.rotate(clock * 180f)
+        repeat(14) { i ->
+            canvas.rotate(360f / 14)
+            // Largos distintos: menos geométrico que doce rayos iguales.
+            val length = base * (0.55f + 0.25f * ((i * 7) % 5) / 5f)
             canvas.save()
             canvas.scale(length, length)
             canvas.drawPath(rayPath, paint)
@@ -193,16 +222,43 @@ class SkyPainter {
         canvas.restore()
         paint.shader = null
 
-        puff(canvas, cx, cy, base * 0.16f, base * 0.16f, 0.95f, 0xFFFAE1)
+        puff(canvas, cx, cy, base * 0.2f, base * 0.2f, 0.9f, 0xFFF6DC)
+        paint.color = Color.rgb(255, 252, 240)
+        canvas.drawCircle(cx, cy, base * 0.07f, paint)
+        paint.color = Color.BLACK
+        // Destellos de lente: círculos tenues sobre la línea del sol hacia el centro.
+        flares.forEach { (t, r, a, rgb) ->
+            val x = cx + (width * 0.35f - cx) * t * 1.6f
+            val y = cy + (height * 0.42f - cy) * t * 1.6f
+            puff(canvas, x, y, base * r, base * r, a * (0.85f + 0.15f * sin(clock * tau * 2 + t * 5)), rgb)
+        }
     }
 
-    /** Estrellas que titilan a distinto ritmo, una estrella fugaz por minuto y la luna con halo. */
+    private data class Flare(val t: Float, val radius: Float, val alpha: Float, val rgb: Int)
+
+    private val flares = listOf(
+        Flare(0.35f, 0.035f, 0.12f, 0xFFFFFF),
+        Flare(0.55f, 0.06f, 0.08f, 0xBFE3FF),
+        Flare(0.72f, 0.022f, 0.14f, 0xFFE0B0),
+        Flare(0.9f, 0.09f, 0.05f, 0xCDE8FF),
+    )
+
+    /** Estrellas que titilan (las más brillantes con una cruz), una fugaz por minuto y la luna con halo. */
     private fun drawNight(canvas: Canvas, width: Float, height: Float, density: Float, clock: Float) {
         stars.forEach { s ->
             val speed = 2 + (s.speed * 4).toInt()
-            val twinkle = 0.25f + 0.75f * (sin((clock * speed + s.phase) * tau) + 1f) / 2f
-            paint.color = Color.argb((255 * 0.85f * twinkle * (0.4f + 0.6f * s.size)).toInt(), 255, 255, 255)
-            canvas.drawCircle(s.x * width, s.y * height * 0.65f, (0.6f + s.size * 1.1f) * density, paint)
+            val twinkle = 0.3f + 0.7f * (sin((clock * speed + s.phase) * tau) + 1f) / 2f
+            val x = s.x * width
+            val y = s.y * height * 0.7f
+            paint.color = Color.argb((255 * 0.9f * twinkle * (0.35f + 0.65f * s.size)).toInt(), 255, 255, 255)
+            canvas.drawCircle(x, y, (0.5f + s.size * s.size * 1.6f) * density, paint)
+            if (s.size > 0.93f) {
+                val arm = 6f * density * twinkle
+                linePaint.color = Color.argb((255 * 0.35f * twinkle).toInt(), 255, 255, 255)
+                linePaint.strokeWidth = 0.8f * density
+                canvas.drawLine(x - arm, y, x + arm, y, linePaint)
+                canvas.drawLine(x, y - arm, x, y + arm, linePaint)
+            }
         }
 
         val t = (clock - 0.42f) / 0.03f
@@ -222,10 +278,11 @@ class SkyPainter {
         }
 
         if (!showSunMoon) return
-        val mx = width * 0.78f
-        val my = height * 0.13f
+        val mx = width * 0.76f
+        val my = height * 0.11f
         val mr = min(width, height) * 0.07f
-        puff(canvas, mx, my, mr * 4, mr * 4, 0.18f, 0xC8D7FF)
+        puff(canvas, mx, my, mr * 6, mr * 6, 0.14f, 0xC8D7FF)
+        puff(canvas, mx, my, mr * 2.2f, mr * 2.2f, 0.25f, 0xDCE6FF)
         drawMoon(canvas, mx, my, mr)
     }
 
@@ -294,31 +351,75 @@ class SkyPainter {
         paint.color = Color.BLACK
     }
 
-    /** Dos capas de nubes: las de atrás más grandes, tenues y lentas. */
-    private fun drawClouds(canvas: Canvas, width: Float, height: Float, clock: Float, kind: WeatherKind, isDay: Boolean, strength: Float) {
-        val dark = kind == WeatherKind.STORM || !isDay
-        val rgb = if (dark) 0x96A2B6 else 0xFFFFFF
-        val layerAlpha = when (kind) {
-            WeatherKind.PARTLY -> 0.75f
-            WeatherKind.FOG -> 0.45f
-            else -> 0.6f
+    /** Colores de las nubes: cuerpo, base en sombra y brillo de la cima. */
+    private fun cloudPalette(kind: WeatherKind, isDay: Boolean): IntArray = when (kind) {
+        WeatherKind.STORM -> if (isDay) intArrayOf(0x6B7486, 0x2F3646, 0x98A3B6) else intArrayOf(0x2E3545, 0x12161F, 0x4A5468)
+        WeatherKind.RAIN, WeatherKind.DRIZZLE -> if (isDay) intArrayOf(0x9AA6B6, 0x5A6577, 0xC9D2DE) else intArrayOf(0x2F3A4E, 0x161C28, 0x4B5872)
+        WeatherKind.CLOUDY, WeatherKind.FOG -> if (isDay) intArrayOf(0xE3E9F0, 0x9AA8BA, 0xFFFFFF) else intArrayOf(0x39445C, 0x1D2436, 0x5A6886)
+        WeatherKind.SNOW -> if (isDay) intArrayOf(0xEEF2F7, 0xAEBACB, 0xFFFFFF) else intArrayOf(0x3E4A62, 0x20283A, 0x63718F)
+        else -> if (isDay) intArrayOf(0xFFFFFF, 0xB9CCE4, 0xFFFFFF) else intArrayOf(0x3A4766, 0x1C2440, 0x6D7FA8)
+    }
+
+    /**
+     * Nubes en tres capas de profundidad (lejos chicas, tenues y lentas; cerca grandes y más
+     * rápidas). Con cielo cubierto, lluvia, nieve o tormenta, además un techo de nubes arriba.
+     */
+    private fun drawClouds(canvas: Canvas, width: Float, height: Float, clock: Float, kind: WeatherKind, isDay: Boolean, strength: Float, parallax: Float) {
+        val palette = cloudPalette(kind, isDay)
+        val count = when (kind) {
+            WeatherKind.PARTLY -> 4
+            WeatherKind.FOG -> 3
+            WeatherKind.CLOUDY -> 9
+            WeatherKind.STORM -> 8
+            else -> 7
         }
-        clouds.forEachIndexed { i, c ->
-            val far = i < 3
-            val laps = if (far) 1 else 2
-            val cloudWidth = width * (if (far) 0.75f else 0.6f) * (0.8f + 0.4f * c.size)
-            val travel = width + cloudWidth * 1.2f
-            val x = ((c.x + clock * laps) % 1f) * travel - cloudWidth * 0.6f
-            val y = height * (if (far) 0.06f + 0.12f * c.y else 0.16f + 0.2f * c.y)
-            val alpha = layerAlpha * strength * if (far) 0.55f else 0.9f
-            cloudShapes[i].forEach { p ->
-                val r = p.radius * cloudWidth
-                puff(canvas, x + p.dx * cloudWidth, y + p.dy * cloudWidth, r, r, alpha, rgb)
+        val heavy = kind != WeatherKind.PARTLY
+        if (heavy && kind != WeatherKind.FOG) {
+            blanket.forEachIndexed { i, b ->
+                val x = i / 15f * width * 1.2f - width * 0.1f + sin((clock + b.y) * tau) * width * 0.02f
+                puff(canvas, x, -height * 0.04f + b.y * height * 0.07f, width * (0.5f + b.size * 0.3f) * 0.5f, height * 0.16f, 0.85f * strength, palette[1])
+                puff(canvas, x, -height * 0.07f + b.y * height * 0.06f, width * (0.5f + b.size * 0.3f) * 0.48f, height * 0.13f, 0.9f * strength, palette[0])
             }
+        }
+        for (i in 0 until count) {
+            val c = clouds[i]
+            val layer = i % 3
+            val cloudWidth = width * LAYER_SCALE[layer] * (0.85f + 0.3f * c.size)
+            val travel = width + cloudWidth * 1.4f
+            val laps = if (layer == 2) 2 else 1
+            // En el fondo de pantalla, al pasar de página las nubes cercanas se corren más que las
+            // lejanas: da profundidad.
+            val x = ((c.x + 0.15f * i + clock * laps * (0.6f + 0.4f * c.speed)) % 1f) * travel - cloudWidth * 0.7f -
+                width * 0.05f * layer * parallax
+            // Con cielo cubierto bajan más: llenan la parte de arriba de la pantalla.
+            val spread = if (kind == WeatherKind.CLOUDY) 0.2f else 0.08f
+            val y = height * ((if (heavy) 0.08f else 0.05f) + LAYER_TOP[layer] + spread * c.y)
+            val alpha = strength * LAYER_ALPHA[layer] * if (kind == WeatherKind.PARTLY) 1f else 0.9f
+            drawCloud(canvas, cloudShapes[i], x, y, cloudWidth, alpha, palette)
         }
     }
 
-    /** Gotas en tres tramos de opacidad creciente: estela que se desvanece sin crear degradados. */
+    /** Una nube con volumen: la base en sombra, el cuerpo y un brillo suave solo en la cima. */
+    private fun drawCloud(canvas: Canvas, shape: List<Puff>, x: Float, y: Float, cloudWidth: Float, alpha: Float, palette: IntArray) {
+        shape.forEach { p ->
+            val r = p.radius * cloudWidth
+            puff(canvas, x + p.dx * cloudWidth, y + p.dy * cloudWidth + r * 0.25f, r * 1.05f, r * 0.8f, alpha * 0.7f, palette[1], soft = true)
+        }
+        shape.forEach { p ->
+            val r = p.radius * cloudWidth
+            puff(canvas, x + p.dx * cloudWidth, y + p.dy * cloudWidth, r, r, alpha * 0.85f, palette[0], soft = true)
+        }
+        shape.forEach { p ->
+            if (p.top < 0.45f) return@forEach
+            val r = p.radius * cloudWidth * 0.8f
+            puff(canvas, x + p.dx * cloudWidth - r * 0.1f, y + p.dy * cloudWidth - r * 0.25f, r, r * 0.8f, alpha * 0.45f, palette[2], soft = true)
+        }
+    }
+
+    /**
+     * Gotas inclinadas en tres tramos de opacidad creciente: una estela que se desvanece sin
+     * crear un degradado por gota en cada cuadro.
+     */
     private fun drawRain(
         canvas: Canvas,
         width: Float,
@@ -330,51 +431,141 @@ class SkyPainter {
         alpha: Float,
         falls: Int,
         strokeWidth: Float,
+        slant: Float,
     ) {
-        linePaint.strokeWidth = strokeWidth * density
         list.forEach { p ->
             val f = falls + (p.speed * falls * 0.5f).toInt()
-            val len = length * density * (0.7f + 0.6f * p.size)
-            val y = ((p.y + clock * f) % 1f) * (height + len) - len
-            val x = p.x * width
-            val dx = -0.18f * len
+            val len = length * density * (0.6f + 0.8f * p.size)
+            val progress = (p.y + clock * f) % 1f
+            val y = progress * (height + len * 2) - len
+            // Arrancan más a la derecha para que la inclinación no deje un hueco a un costado.
+            val x = p.x * (width + height * slant) - height * slant * progress
+            val dx = -slant * len
+            val strength = alpha * (0.6f + 0.4f * p.size)
+            linePaint.strokeWidth = strokeWidth * density * (0.7f + 0.6f * p.size)
             for (k in 0 until 3) {
-                linePaint.color = Color.argb((255 * alpha * (k + 1) / 3f).toInt(), 210, 228, 255)
+                linePaint.color = Color.argb((255 * strength * (k + 1) / 3f).toInt(), 220, 234, 255)
                 canvas.drawLine(x + dx * k / 3f, y + len * k / 3f, x + dx * (k + 1) / 3f, y + len * (k + 1) / 3f, linePaint)
             }
         }
     }
 
+    /** Nieve en tres capas: copos lejanos chicos y lentos, cercanos grandes, difusos y con más vaivén. */
     private fun drawSnow(canvas: Canvas, width: Float, height: Float, density: Float, clock: Float) {
         flakes.forEach { f ->
-            val near = f.size > 0.6f
-            val falls = if (near) 4 else 2
-            val y = ((f.y + clock * falls) % 1f) * (height + 20f) - 10f
-            val sway = sin((clock * 6 + f.phase) * tau) * 12f * density
-            val r = (if (near) 3.2f else 1.8f) * density * (0.8f + f.size * 0.6f)
-            puff(canvas, f.x * width + sway, y, r, r, if (near) 0.95f else 0.6f, 0xFFFFFF)
+            val layer = when {
+                f.size < 0.45f -> 0
+                f.size < 0.8f -> 1
+                else -> 2
+            }
+            val y = ((f.y + clock * (layer + 1)) % 1f) * (height + 40f) - 20f
+            val sway = sin((clock * (3 + layer) + f.phase) * tau) * SNOW_SWAY[layer] * density
+            val r = SNOW_SIZE[layer] * density * (0.8f + f.speed * 0.5f)
+            puff(canvas, f.x * width + sway, y, r * 1.6f, r * 1.6f, SNOW_ALPHA[layer], 0xFFFFFF, soft = layer == 2)
         }
     }
 
+    private var hazeKey = -1f
+    private var hazeShader: Shader? = null
+
+    /** Bancos de niebla que se cruzan a distinta velocidad y una bruma más densa abajo. */
     private fun drawFog(canvas: Canvas, width: Float, height: Float, clock: Float) {
-        repeat(5) { i ->
-            val y = height * (0.25f + i * 0.15f)
-            val shift = sin((clock * (1 + i % 2) + i * 0.2f) * tau) * width * 0.12f
-            puff(canvas, width / 2 + shift, y, width * 0.9f, height * 0.06f, 0.22f, 0xFFFFFF)
+        repeat(7) { i ->
+            val y = height * (0.2f + i * 0.11f)
+            val dir = if (i % 2 == 0) -1f else 1f
+            val raw = (clock * (1 + i % 3) * 0.5f * dir + i * 0.37f) % 1f
+            val shift = (if (raw < 0) raw + 1f else raw) * width * 1.6f - width * 0.3f
+            puff(canvas, shift, y, width * 0.9f, height * 0.07f, 0.26f, 0xFFFFFF)
+            puff(canvas, shift - width * 1.6f * dir, y, width * 0.9f, height * 0.07f, 0.26f, 0xFFFFFF)
         }
+        if (hazeKey != height || hazeShader == null) {
+            hazeKey = height
+            hazeShader = LinearGradient(0f, height * 0.5f, 0f, height, 0x00FFFFFF, 0x59FFFFFF, Shader.TileMode.CLAMP)
+        }
+        paint.shader = hazeShader
+        canvas.drawRect(0f, height * 0.5f, width, height, paint)
+        paint.shader = null
     }
 
-    /** Relámpago doble con caída exponencial, más natural que un destello parejo. */
-    private fun drawLightning(canvas: Canvas, width: Float, height: Float, clock: Float) {
-        val flash = listOf(0.3f, 0.315f, 0.72f).maxOf { start ->
+    // El rayo se arma una vez por destello y tamaño: en cada cuadro solo se dibuja.
+    private val boltPath = Path()
+    private val branchPath = Path()
+    private var boltKey = ""
+
+    /**
+     * Tormenta: relámpagos dobles con caída exponencial que iluminan las nubes por dentro, y en
+     * dos de ellos el rayo con su resplandor y una rama.
+     */
+    private fun drawLightning(canvas: Canvas, width: Float, height: Float, density: Float, clock: Float) {
+        var flash = 0f
+        var index = -1
+        FLASHES.forEachIndexed { i, start ->
             val t = clock - start
-            if (t in 0f..0.02f) exp(-t * 250f) else 0f
+            if (t in 0f..0.02f) {
+                val value = exp(-t * 250f)
+                if (value > flash) {
+                    flash = value
+                    index = i
+                }
+            }
         }
-        val alpha = flash * 0.55f
-        if (alpha > 0.01f) {
-            paint.color = Color.argb((255 * alpha).toInt(), 225, 232, 255)
-            canvas.drawRect(0f, 0f, width, height, paint)
+        if (flash < 0.01f) return
+        puff(canvas, width * 0.5f, height * 0.12f, width * 0.9f, height * 0.25f, flash * 0.5f, 0xDDE6FF)
+        paint.color = Color.argb((255 * flash * 0.25f).toInt(), 225, 232, 255)
+        canvas.drawRect(0f, 0f, width, height, paint)
+        paint.color = Color.BLACK
+        if (index == 1) return
+        val key = "$index|$width|$height"
+        if (key != boltKey) {
+            boltKey = key
+            val random = Random(index * 31 + 7)
+            var x = width * (0.25f + random.nextFloat() * 0.5f)
+            var y = height * 0.08f
+            boltPath.reset()
+            boltPath.moveTo(x, y)
+            var middle: Pair<Float, Float>? = null
+            var step = 0
+            while (y < height * 0.62f) {
+                y += height * (0.03f + random.nextFloat() * 0.04f)
+                x += (random.nextFloat() - 0.5f) * width * 0.09f
+                boltPath.lineTo(x, y)
+                if (++step == 5) middle = x to y
+            }
+            branchPath.reset()
+            middle?.let { (bx0, by0) ->
+                var bx = bx0
+                var by = by0
+                branchPath.moveTo(bx, by)
+                repeat(3) {
+                    by += height * 0.03f
+                    bx += width * 0.035f * if (random.nextBoolean()) 1f else -1f
+                    branchPath.lineTo(bx, by)
+                }
+            }
         }
+        val stroke = Paint.Style.STROKE
+        linePaint.style = stroke
+        linePaint.strokeJoin = Paint.Join.ROUND
+        linePaint.color = Color.argb((255 * flash * 0.35f).toInt(), 190, 205, 255)
+        linePaint.strokeWidth = 10f * density
+        canvas.drawPath(boltPath, linePaint)
+        linePaint.color = Color.argb((255 * flash).toInt(), 255, 255, 255)
+        linePaint.strokeWidth = 2.2f * density
+        canvas.drawPath(boltPath, linePaint)
+        linePaint.color = Color.argb((255 * flash * 0.7f).toInt(), 255, 255, 255)
+        linePaint.strokeWidth = 1.4f * density
+        canvas.drawPath(branchPath, linePaint)
+        linePaint.style = Paint.Style.FILL
+    }
+
+    private companion object {
+        val LAYER_SCALE = floatArrayOf(0.42f, 0.62f, 0.9f)
+        val LAYER_TOP = floatArrayOf(0.03f, 0.1f, 0.18f)
+        val LAYER_ALPHA = floatArrayOf(0.55f, 0.8f, 0.95f)
+        val SNOW_SIZE = floatArrayOf(1.4f, 2.4f, 4.2f)
+        val SNOW_SWAY = floatArrayOf(6f, 10f, 16f)
+        val SNOW_ALPHA = floatArrayOf(0.55f, 0.8f, 0.9f)
+        val FLASHES = floatArrayOf(0.3f, 0.315f, 0.72f)
     }
 }
 
