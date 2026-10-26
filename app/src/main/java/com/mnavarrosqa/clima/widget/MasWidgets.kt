@@ -88,50 +88,51 @@ class BurbujaWidget : SimpleWeatherWidget() {
         val diameter = minOf(size.width, size.height)
         val current = snapshot.current
         val today = snapshot.today()
-        // Forma "galletita" de Material 3 Expressive, dibujada como imagen.
+        // Forma "galletita" de Material 3 Expressive, dibujada como imagen. Va como imagen que
+        // llena el widget (ajustada para no deformarse): con un tamaño fijo, el que informa el
+        // launcher suele ser menor que el real y quedaba mucho borde vacío alrededor.
         val context = LocalContext.current
         val px = (diameter.value * context.resources.displayMetrics.density).toInt()
-        var circle = GlanceModifier.size(diameter)
-        when (colors.style) {
-            WidgetStyle.TRANSPARENT -> Unit
-            WidgetStyle.SKY -> {
-                val sky = skyColors(
-                    WeatherCodes.kind(current.code),
-                    current.isDay,
-                ).map { it.toArgb() }.toIntArray()
-                circle = circle.background(ImageProvider(WidgetBitmaps.cookie(px, sky)), ContentScale.FillBounds)
-            }
-            else -> circle = circle.background(
-                // El color ya trae el color fijo y la opacidad elegidos.
-                ImageProvider(WidgetBitmaps.cookie(px, intArrayOf(colors.background?.getColor(context)?.toArgb() ?: WidgetBitmaps.fill(context, colors.style)))),
-                ContentScale.FillBounds,
+        val cookie: android.graphics.Bitmap? = when (colors.style) {
+            WidgetStyle.TRANSPARENT -> null
+            WidgetStyle.SKY -> WidgetBitmaps.cookie(
+                px,
+                skyColors(WeatherCodes.kind(current.code), current.isDay).map { it.toArgb() }.toIntArray(),
             )
+            // El color ya trae el color fijo y la opacidad elegidos.
+            else -> WidgetBitmaps.cookie(px, intArrayOf(colors.background?.getColor(context)?.toArgb() ?: WidgetBitmaps.fill(context, colors.style)))
         }
         Box(
             modifier = GlanceModifier.fillMaxSize().clickable(widgetTapAction()),
             contentAlignment = Alignment.Center,
         ) {
-            Box(modifier = circle, contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Image(
-                        provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
-                        contentDescription = WeatherCodes.description(current.code),
-                        modifier = GlanceModifier.size(diameter * 0.34f),
-                    )
+            if (cookie != null) {
+                Image(
+                    provider = ImageProvider(cookie),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = GlanceModifier.fillMaxSize(),
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Image(
+                    provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
+                    contentDescription = WeatherCodes.description(current.code),
+                    modifier = GlanceModifier.size(diameter * 0.4f),
+                )
+                Text(
+                    current.temperature.degrees(),
+                    style = TextStyle(
+                        color = colors.text,
+                        fontSize = (diameter.value * 0.27f).sp,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                )
+                if (today != null && diameter >= 100.dp && widgetShows(WidgetPart.RANGE)) {
                     Text(
-                        current.temperature.degrees(),
-                        style = TextStyle(
-                            color = colors.text,
-                            fontSize = (diameter.value * 0.22f).sp,
-                            fontWeight = FontWeight.Medium,
-                        ),
+                        "${today.max.degrees()} / ${today.min.degrees()}",
+                        style = TextStyle(color = colors.textVariant, fontSize = (diameter.value * 0.09f).coerceIn(12f, 18f).sp),
                     )
-                    if (today != null && diameter >= 100.dp && widgetShows(WidgetPart.RANGE)) {
-                        Text(
-                            "${today.max.degrees()} / ${today.min.degrees()}",
-                            style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
-                        )
-                    }
                 }
             }
         }

@@ -1,0 +1,1 @@
+Widget Burbuja: la burbuja llena todo el lugar del widget, con el ícono y la temperatura más grandes.
