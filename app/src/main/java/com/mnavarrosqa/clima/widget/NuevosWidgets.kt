@@ -213,7 +213,7 @@ private fun CityRow(snapshot: WeatherSnapshot, colors: WidgetColors, height: and
     val today = snapshot.today()
     val image = colors.backgroundImage
     var modifier = GlanceModifier.fillMaxWidth().height(height)
-    if (image != null) modifier = modifier.cornerRadius(16.dp).background(image, ContentScale.FillBounds)
+    if (image != null) modifier = modifier.cornerRadius(16.dp).background(image, ContentScale.Crop)
     modifier = modifier.clickable(openPlace(snapshot.placeId)).padding(horizontal = if (image != null) 12.dp else 0.dp, vertical = 2.dp)
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = GlanceModifier.defaultWeight()) {

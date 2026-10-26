@@ -1,0 +1,2 @@
+• Widget Clima chico: ícono junto a la ciudad, temperatura más grande y, si es alto, las próximas horas
+• Las nubes del cielo en los widgets ya no se ven aplastadas

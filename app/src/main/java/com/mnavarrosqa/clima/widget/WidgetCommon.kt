@@ -265,7 +265,9 @@ fun WidgetSurface(
     var base = GlanceModifier.fillMaxSize().appWidgetBackground()
     if (colors.background != null) base = base.cornerRadius(radius).background(colors.background)
     if (colors.backgroundImage != null) {
-        base = base.cornerRadius(radius).background(colors.backgroundImage, ContentScale.FillBounds)
+        // Recortado, no estirado: el tamaño que informa el launcher no siempre es el real y,
+        // estirada, la imagen aplastaba las nubes.
+        base = base.cornerRadius(radius).background(colors.backgroundImage, ContentScale.Crop)
     }
     val placeId = widgetPlaceId()
     val tap = widgetTapAction(placeId)

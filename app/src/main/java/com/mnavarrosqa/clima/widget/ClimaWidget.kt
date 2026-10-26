@@ -17,6 +17,7 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
@@ -106,34 +107,49 @@ private fun TinyContent(snapshot: WeatherSnapshot) {
 }
 
 /**
- * Chico (2×2), como el del Clima de Apple: la ciudad y la temperatura grande arriba; abajo el
- * ícono, el estado y la máxima y mínima.
+ * Chico (2×2), como el del Clima de Apple: la ciudad con el ícono al lado, la temperatura grande
+ * (crece con el widget) y abajo el estado y la máxima y mínima. Si el widget es alto, también las
+ * próximas horas: antes ese espacio quedaba vacío en el medio.
  */
 @Composable
 private fun SquareContent(snapshot: WeatherSnapshot) {
     val colors = climaColors(snapshot)
     val current = snapshot.current
+    val size = LocalSize.current
+    val scale = fontScale()
+    val tall = size.height >= 200.dp * scale
+    // La temperatura toma un tercio del ancho; se divide por la letra del sistema para que no se salga.
+    val tempSize = ((size.width.value * 0.32f).coerceIn(40f, 64f) / scale).sp
     WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
         Column(modifier = GlanceModifier.fillMaxSize()) {
-            PlaceLabel(snapshot, colors, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = GlanceModifier.defaultWeight()) {
+                    PlaceLabel(snapshot, colors, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
+                Image(
+                    provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
+                    contentDescription = null,
+                    modifier = GlanceModifier.size(if (tall) 34.dp else 28.dp),
+                )
+            }
             Text(
                 current.temperature.degrees(),
                 maxLines = 1,
-                style = TextStyle(color = colors.text, fontSize = 40.sp),
+                style = TextStyle(color = colors.text, fontSize = tempSize),
             )
             Spacer(GlanceModifier.defaultWeight())
-            Image(
-                provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
-                contentDescription = null,
-                modifier = GlanceModifier.size(22.dp),
-            )
             Text(
                 WeatherCodes.description(current.code),
                 maxLines = 1,
                 style = TextStyle(color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium),
             )
             todayRangeText(snapshot)?.takeIf { widgetShows(WidgetPart.RANGE) }?.let {
-                Text(it, maxLines = 1, style = TextStyle(color = colors.text, fontSize = 12.sp))
+                Text(it, maxLines = 1, style = TextStyle(color = colors.textVariant, fontSize = 12.sp))
+            }
+            if (tall) {
+                Spacer(GlanceModifier.height(10.dp))
+                // Una hora cada unos 42 dp: en un 2×2 entran 3 o 4.
+                HoursRow(snapshot, count = ((size.width.value - 28f) / 42f).toInt().coerceIn(3, 5), colors = colors)
             }
         }
     }
