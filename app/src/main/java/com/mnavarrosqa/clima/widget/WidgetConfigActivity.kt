@@ -199,13 +199,16 @@ private fun ConfigScreen(
             )
         },
         bottomBar = {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(16.dp),
-            ) {
-                Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text(tr("Listo", "Done")) }
+            // Con fondo: sin él, las opciones pasaban por detrás del botón y se leían encimadas.
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(16.dp),
+                ) {
+                    Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text(tr("Listo", "Done")) }
+                }
             }
         },
     ) { padding ->
@@ -234,7 +237,9 @@ private fun ConfigScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     if (kind != null && sizes != null) {
-                        GlanceWidgetPreview(kind, sizes.all[sizeIndex], config)
+                        GlanceWidgetPreview(kind, sizes.all[sizeIndex], config) {
+                            StyleThumbnail(config.style, config.accent, config.opacity, previewSnapshot, selected = false, large = true)
+                        }
                     } else {
                         StyleThumbnail(config.style, config.accent, config.opacity, previewSnapshot, selected = false, large = true)
                     }
@@ -354,8 +359,10 @@ private fun ConfigScreen(
                     }
                 }
             }
-            item { SectionTitle(tr("Color", "Color")) }
-            item {
+            // Transparente y Cielo no tienen fondo de color: el color no cambiaba nada.
+            val tinted = config.style == WidgetStyle.SYSTEM || config.style == WidgetStyle.COLOR
+            if (tinted) item { SectionTitle(tr("Color", "Color")) }
+            if (tinted) item {
                 Row(
                     Modifier
                         .horizontalScroll(rememberScrollState())
@@ -378,8 +385,11 @@ private fun ConfigScreen(
                     )
                 }
             }
-            item { SectionTitle(tr("Esquinas", "Corners")) }
-            item { ChipRow(WidgetCorners.entries, config.corners, { it.label }) { onChange(config.copy(corners = it)) } }
+            // Sin fondo no hay esquinas que redondear, y la Burbuja tiene su propia forma.
+            if (config.style != WidgetStyle.TRANSPARENT && kind?.receiver != BurbujaWidgetReceiver::class.java) {
+                item { SectionTitle(tr("Esquinas", "Corners")) }
+                item { ChipRow(WidgetCorners.entries, config.corners, { it.label }) { onChange(config.copy(corners = it)) } }
+            }
 
             // --- Contenido y comportamiento ---
             // Solo las partes que este widget dibuja: las demás no cambiaban nada.

@@ -96,7 +96,8 @@ object NotifyPrefs {
             routineLeave = p.getInt("rutina_salida", d.routineLeave),
             routineBack = p.getInt("rutina_vuelta", d.routineBack),
             routineWeekdays = p.getBoolean("rutina_semana", d.routineWeekdays),
-            uvAlert = p.getBoolean("aviso_uv", d.uvAlert),
+            // Quien tenía el UV de "Cambios bruscos" (ya no existe) sigue recibiéndolo por este aviso.
+            uvAlert = p.getBoolean("aviso_uv", p.getBoolean("cambios", d.changes) && p.getBoolean("cambios_uv", d.changeUv)),
             airAlert = p.getBoolean("aviso_aire", d.airAlert),
         )
         loaded = true

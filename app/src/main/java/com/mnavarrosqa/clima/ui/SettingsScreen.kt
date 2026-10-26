@@ -1015,12 +1015,6 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                         checked = notify.changeWind,
                         onCheckedChange = { on -> change { it.copy(changeWind = on) } },
                     )
-                    SettingRow(
-                        tr("UV muy alto", "Very high UV"),
-                        tr("Índice 8 o más, avisado a la mañana", "Index 8 or more, in the morning"),
-                        checked = notify.changeUv,
-                        onCheckedChange = { on -> change { it.copy(changeUv = on) } },
-                    )
                 }
             }
         }

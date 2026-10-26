@@ -24,6 +24,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
 import androidx.glance.appwidget.GlanceRemoteViews
+import com.mnavarrosqa.clima.CrashLog
 import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.tr
 import com.mnavarrosqa.clima.ui.skyColors
@@ -34,22 +35,44 @@ import com.mnavarrosqa.clima.ui.skyColors
  */
 @OptIn(ExperimentalGlanceRemoteViewsApi::class)
 @Composable
-fun GlanceWidgetPreview(kind: WidgetKind, size: DpSize, config: WidgetConfig, modifier: Modifier = Modifier) {
+fun GlanceWidgetPreview(
+    kind: WidgetKind,
+    size: DpSize,
+    config: WidgetConfig,
+    modifier: Modifier = Modifier,
+    /** Lo que se muestra si el widget no se puede armar acá: nunca queda el recuadro vacío. */
+    fallback: @Composable () -> Unit = {},
+) {
     val context = LocalContext.current
     var views by remember { mutableStateOf<RemoteViews?>(null) }
+    var failed by remember { mutableStateOf(false) }
     LaunchedEffect(kind, size, config) {
         val state = mutablePreferencesOf().also { config.writeTo(it) }
         runCatching {
             GlanceRemoteViews().compose(context, size, state) { kind.widget().Body() }.remoteViews
-        }.onSuccess { views = it }
+        }.onSuccess {
+            views = it
+            failed = false
+        }.onFailure {
+            // Queda anotado en "Último error" para poder ver qué pasó.
+            CrashLog.recordCaught(context, it, "vista previa del widget")
+            failed = views == null
+        }
     }
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
-        views?.let { remote ->
+        val remote = views
+        if (remote == null || failed) {
+            fallback()
+        } else {
             AndroidView(
                 factory = { FrameLayout(it) },
                 update = { frame ->
                     frame.removeAllViews()
                     runCatching { frame.addView(remote.apply(frame.context, frame)) }
+                        .onFailure {
+                            CrashLog.recordCaught(frame.context, it, "vista previa del widget")
+                            failed = true
+                        }
                 },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -76,8 +99,11 @@ fun Modifier.backdrop(backdrop: PreviewBackdrop): Modifier = when (backdrop) {
     PreviewBackdrop.PHOTO -> drawBehind {
         // Un atardecer con montañas: colores fuertes y contraste, como una foto de fondo típica.
         drawRect(Brush.verticalGradient(listOf(Color(0xFF3A2C6B), Color(0xFFD9607A), Color(0xFFFFB067))))
+        // Las montañas se miden con el alto: en un recuadro ancho, medidas con el ancho tapaban
+        // todo el cielo y la "foto" quedaba violeta lisa.
+        val hill = size.height
         drawCircle(Color(0xFFFFE3A3), radius = size.minDimension * 0.16f, center = Offset(size.width * 0.7f, size.height * 0.55f))
-        drawCircle(Color(0xFF2B2350), radius = size.width * 0.55f, center = Offset(size.width * 0.15f, size.height * 1.25f))
-        drawCircle(Color(0xFF3B2E5E), radius = size.width * 0.6f, center = Offset(size.width * 0.95f, size.height * 1.35f))
+        drawCircle(Color(0xFF2B2350), radius = hill * 0.75f, center = Offset(size.width * 0.15f, size.height * 1.3f))
+        drawCircle(Color(0xFF3B2E5E), radius = hill * 0.8f, center = Offset(size.width * 0.9f, size.height * 1.4f))
     }
 }

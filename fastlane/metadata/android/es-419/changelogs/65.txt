@@ -1,0 +1,3 @@
+• Personalizar widget: la vista previa ya no queda vacía, el fondo "Foto" se ve bien y el botón Listo no tapa las opciones
+• Color y Esquinas aparecen solo cuando cambian algo
+• Un solo aviso de UV muy alto, con el horario (si tenías el de Cambios bruscos, pasa a este)
