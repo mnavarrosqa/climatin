@@ -118,10 +118,17 @@ fun mmText(mm: Double): String = when {
     else -> String.format(Locale.US, "%.1f", mm).removeSuffix(".0") + " mm"
 }
 
-/** Lo que llovió hoy hasta ahora, de las horas que ya pasaron (cada hora trae lo de la anterior). */
+/**
+ * Lo que llovió hoy hasta ahora. Cada hora de Open-Meteo trae lo de la hora anterior: la de las
+ * 14 ya tiene lo de 13 a 14 aunque esté en [WeatherSnapshot.hours]. Por eso cuentan todas hasta
+ * la hora actual inclusive, también las de [WeatherSnapshot.hours] que pasaron desde que se bajó.
+ */
 fun WeatherSnapshot.rainSoFarToday(): Double? {
-    val today = nowAtPlace().toLocalDate()
-    val values = pastHours.filter { it.dateTime.minusHours(1).toLocalDate() == today }.mapNotNull { it.precipitation }
+    val now = nowAtPlace().truncatedTo(ChronoUnit.HOURS)
+    val today = now.toLocalDate()
+    val values = (pastHours + hours).distinctBy { it.time }
+        .filter { !it.dateTime.isAfter(now) && it.dateTime.minusHours(1).toLocalDate() == today }
+        .mapNotNull { it.precipitation }
     return values.takeIf { it.isNotEmpty() }?.sum()
 }
 

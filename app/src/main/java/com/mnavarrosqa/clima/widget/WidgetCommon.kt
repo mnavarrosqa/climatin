@@ -2,7 +2,29 @@ package com.mnavarrosqa.clima.widget
 
 import androidx.glance.LocalSize
 import com.mnavarrosqa.clima.data.tr
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.glance.ColorFilter
+import androidx.glance.Image
+import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.state.getAppWidgetState
+import androidx.glance.layout.Column
+import androidx.glance.layout.Spacer
+import androidx.glance.layout.height
+import androidx.glance.layout.size
+import androidx.glance.state.PreferencesGlanceStateDefinition
+import androidx.glance.text.FontWeight
+import com.mnavarrosqa.clima.R
+import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
+import com.mnavarrosqa.clima.data.Lang
+import com.mnavarrosqa.clima.data.Units
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -14,7 +36,6 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.ImageProvider
@@ -29,7 +50,6 @@ import androidx.glance.action.actionStartActivity
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.cornerRadius
-import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -209,19 +229,28 @@ fun widgetColors(snapshot: WeatherSnapshot?, default: WidgetStyle = WidgetStyle.
         )
         WidgetStyle.TRANSPARENT -> WidgetColors(style, null, White, WhiteVariant, WhiteChip, White, transparent = true)
         // El fondo es el cielo del clima actual, como el widget del Pixel.
-        WidgetStyle.SKY -> {
-            val current = snapshot?.current
-            val kind = current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
-            WidgetColors(
-                style, null, White, WhiteVariant, WhiteChip, White,
-                transparent = true,
-                backgroundImage = ImageProvider(
-                    WidgetBitmaps.skyScene(snapshot, kind, current?.isDay ?: true, LocalSize.current.width.value, LocalSize.current.height.value),
-                ),
-            )
-        }
+        WidgetStyle.SKY -> skyWidgetColors(snapshot, LocalSize.current.width.value, LocalSize.current.height.value)
     }
 }
+
+/**
+ * Colores del estilo Cielo para un recuadro de [widthDp] × [heightDp]: el cielo de esa ciudad de
+ * fondo y texto blanco. Aparte de [widgetColors] para que Ciudades pinte cada fila con su cielo.
+ * Sin [snapshot], un cielo parcialmente nublado de día (el del widget vacío).
+ */
+fun skyWidgetColors(snapshot: WeatherSnapshot?, widthDp: Float, heightDp: Float): WidgetColors {
+    val current = snapshot?.current
+    val kind = current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
+    return WidgetColors(
+        WidgetStyle.SKY, null, White, WhiteVariant, WhiteChip, White,
+        transparent = true,
+        backgroundImage = ImageProvider(WidgetBitmaps.skyScene(snapshot, kind, current?.isDay ?: true, widthDp, heightDp)),
+    )
+}
+
+/** Texto claro sin fondo propio: para lo que va sobre recuadros de cielo (las filas de Ciudades). */
+fun overSkyColors(): WidgetColors =
+    WidgetColors(WidgetStyle.SKY, null, White, WhiteVariant, WhiteChip, White, transparent = true)
 
 /** Contenedor redondeado del widget; tocarlo abre la app. */
 @Composable
@@ -249,20 +278,53 @@ fun WidgetSurface(
     }
 }
 
+/**
+ * Widget sin pronóstico todavía, con el estilo por defecto de ese widget (el cielo, en los que lo
+ * usan) para que no aparezca primero con el del sistema. Dice por qué está vacío: si es "donde
+ * estoy" sin permiso de ubicación, pide elegir una ciudad (abre la app); si no, está cargando y
+ * tocarlo actualiza.
+ */
 @Composable
-fun EmptyWidget() {
-    val colors = widgetColors(null)
-    WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {
-        Text(
-            tr("Abrí Climatin para ver el pronóstico", "Open Climatin to see the forecast"),
-            style = TextStyle(
-                color = colors.text,
-                fontSize = 14.sp,
-                textAlign = TextAlign.Center,
-            ),
-        )
+fun EmptyWidget(default: WidgetStyle = WidgetStyle.SYSTEM) {
+    val context = LocalContext.current
+    val colors = widgetColors(null, default)
+    val placeId = widgetPlaceId()
+    val needsCity = placeId == CURRENT_PLACE_ID && !hasLocationPermission(context)
+    val small = LocalSize.current.height < 90.dp
+    val action = if (needsCity) openPlace(placeId) else actionRunCallback<RefreshAction>()
+    WidgetSurface(colors) {
+        Column(
+            modifier = GlanceModifier.fillMaxSize().clickable(action).padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (!small) {
+                Image(
+                    provider = ImageProvider(if (needsCity) R.drawable.ic_widget_location else R.drawable.ic_refresh),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(colors.text),
+                    modifier = GlanceModifier.size(28.dp),
+                )
+                Spacer(GlanceModifier.height(6.dp))
+            }
+            Text(
+                if (needsCity) tr("Tocá para elegir una ciudad", "Tap to choose a city") else tr("Cargando…", "Loading…"),
+                maxLines = 2,
+                style = TextStyle(
+                    color = colors.text,
+                    fontSize = WidgetType.rowLabel,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                ),
+            )
+        }
     }
 }
+
+/** Si la app puede usar la ubicación (aproximada alcanza). */
+private fun hasLocationPermission(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
 /** Tamaño de letra del sistema (1 = normal) para reservar el alto que ocupan los textos. */
 @Composable
@@ -313,18 +375,90 @@ fun widgetSnapshot(): WeatherSnapshot? {
     return snapshot?.withCurrentFromHours()
 }
 
-suspend fun updateWeatherWidgets(context: Context) {
-    runCatching { ClimaWidget().updateAll(context) }
-    runCatching { PronosticoWidget().updateAll(context) }
-    runCatching { VistazoWidget().updateAll(context) }
-    runCatching { GraficoWidget().updateAll(context) }
-    runCatching { BurbujaWidget().updateAll(context) }
-    runCatching { PildoraWidget().updateAll(context) }
-    runCatching { SemanaWidget().updateAll(context) }
-    runCatching { SolWidget().updateAll(context) }
-    runCatching { ProximaHoraWidget().updateAll(context) }
-    runCatching { CiudadesWidget().updateAll(context) }
-    runCatching { IndicadorWidget().updateAll(context) }
+/**
+ * Lo último que se dibujó en cada widget (por su id de Android), para no volver a dibujar los que
+ * no cambiaron. Vive en memoria: si el proceso muere, la próxima vez se dibujan todos.
+ */
+private val drawnSignatures = ConcurrentHashMap<Int, String>()
+
+/**
+ * Redibuja los widgets puestos, todos a la vez. Con [force] (lo seguro, y lo que hacen los
+ * cambios de unidades, tema, estilo o ciudades) se redibujan todos. Sin [force] (después de bajar
+ * el pronóstico) se saltean los que mostrarían lo mismo: misma ciudad y misma descarga
+ * (`fetchedAt`), mismos ajustes del widget y de la app, y dentro de la misma franja de tiempo
+ * (5 min en Sol y Próxima hora, que cambian minuto a minuto; 30 min en el resto, por la hora
+ * "Ahora" y la temperatura que sale del pronóstico por hora).
+ */
+suspend fun updateWeatherWidgets(context: Context, force: Boolean = true) {
+    val app = context.applicationContext
+    val manager = GlanceAppWidgetManager(app)
+    val repository = WeatherRepository.get(app)
+    val shared = runCatching { sharedSignature(app, repository) }.getOrNull()
+    coroutineScope {
+        WidgetCatalog.kinds.map { kind ->
+            async {
+                runCatching {
+                    val widget = kind.widget() as GlanceAppWidget
+                    manager.getGlanceIds(widget.javaClass).map { glanceId ->
+                        async {
+                            runCatching {
+                                val appWidgetId = manager.getAppWidgetId(glanceId)
+                                val signature = shared?.let { base ->
+                                    runCatching { widgetSignature(app, kind, glanceId, repository, base) }.getOrNull()
+                                }
+                                if (force || signature == null || drawnSignatures[appWidgetId] != signature) {
+                                    widget.update(app, glanceId)
+                                    if (signature != null) {
+                                        drawnSignatures[appWidgetId] = signature
+                                    } else {
+                                        drawnSignatures.remove(appWidgetId)
+                                    }
+                                }
+                                Unit
+                            }
+                        }
+                    }.awaitAll()
+                }
+            }
+        }.awaitAll()
+    }
     ClimaTileService.requestUpdate(context)
     WidgetPreviews.publish(context)
+}
+
+/** Lo que comparten todos los widgets: unidades, idioma, modo noche, letra y la lista de ciudades. */
+private fun sharedSignature(context: Context, repository: WeatherRepository): String {
+    val config = context.resources.configuration
+    val night = config.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+    return listOf(
+        Units.current.toString(),
+        Lang.locale.toLanguageTag(),
+        night.toString(),
+        config.fontScale.toString(),
+        repository.places().joinToString(";") { it.toString() },
+    ).joinToString("|")
+}
+
+/** Firma de lo que mostraría un widget ahora; si es igual a la última, se puede saltear. */
+private suspend fun widgetSignature(
+    context: Context,
+    kind: WidgetKind,
+    glanceId: androidx.glance.GlanceId,
+    repository: WeatherRepository,
+    shared: String,
+): String {
+    val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId)
+    val now = System.currentTimeMillis()
+    val minuteByMinute = kind.receiver == SolWidgetReceiver::class.java || kind.receiver == ProximaHoraWidgetReceiver::class.java
+    val slot = now / ((if (minuteByMinute) 5L else 30L) * 60_000L)
+    val data = if (kind.supportsCity) {
+        val placeId = resolveWidgetPlace(context, prefs[WidgetPrefs.PLACE])
+        "$placeId@${repository.cached(placeId)?.fetchedAt}"
+    } else {
+        repository.allCached().joinToString(",") { "${it.placeId}@${it.fetchedAt}" }
+    }
+    // Los carteles "Actualizando…" y "Sin conexión" vencen solos: se cuenta si siguen vigentes.
+    val refreshing = (prefs[WidgetPrefs.REFRESHING_AT] ?: 0L) > now - 90_000
+    val failed = (prefs[WidgetPrefs.REFRESH_FAILED_AT] ?: 0L) > now - 10 * 60_000
+    return listOf(shared, prefs.asMap().toString(), data, slot.toString(), refreshing.toString(), failed.toString()).joinToString("|")
 }

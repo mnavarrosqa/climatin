@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -656,7 +658,7 @@ private fun LazyListScope.screenPage(viewModel: WeatherViewModel) {
         Rows {
             SettingRow(
                 tr("Pronóstico compacto", "Compact forecast"),
-                tr("Menos espacio entre tarjetas, encabezado más bajo y una semana de días", "Less space between cards, a shorter header and one week of days"),
+                tr("Menos espacio entre tarjetas, encabezado más bajo y una semana de días. En pantallas bajas se activa solo", "Less space between cards, a shorter header and one week of days. Turns on by itself on short screens"),
                 checked = Appearance.compact,
                 onCheckedChange = { Appearance.setCompact(context, it) },
             )
@@ -845,6 +847,45 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
         }
     }
 
+    // Los avisos de prueba van en un diálogo: antes eran ocho botones en una tira que había que deslizar.
+    var testing by rememberSaveable { mutableStateOf(false) }
+    if (testing) {
+        val tests = listOf(
+            tr("Lluvia cerca", "Rain nearby") to { RainNotifier.test(context) },
+            tr("Alerta oficial", "Official alert") to { AlertNotifier.test(context) },
+            tr("Resumen del día", "Daily summary") to { SummaryNotifier.notify(context, test = true) },
+            tr("Cambio brusco", "Big change") to { ChangeNotifier.test(context) },
+            tr("Hora dorada", "Golden hour") to { SunNotifier.test(context) },
+            tr("Mi rutina", "My routine") to { RoutineNotifier.test(context) },
+            tr("UV muy alto", "Very high UV") to { HealthNotifier.testUv(context) },
+            tr("Calidad del aire", "Air quality") to { HealthNotifier.testAir(context) },
+        )
+        AlertDialog(
+            onDismissRequest = { testing = false },
+            title = { Text(tr("Probar avisos", "Try alerts")) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        tr("Tocá uno para mandar un ejemplo y ver cómo queda.", "Tap one to send a sample and see how it looks."),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+                    // El diálogo queda abierto para probar varios seguidos.
+                    Rows {
+                        tests.forEach { (label, send) ->
+                            SettingRow(
+                                label,
+                                onClick = { if (canNotify) send() },
+                                trailing = { Icon(Icons.Rounded.Notifications, contentDescription = null) },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { testing = false }) { Text(tr("Listo", "Done")) } },
+        )
+    }
+
     SettingsScaffold(tr("Notificaciones", "Notifications"), onBack = onBack) {
         if (!canNotify) {
             item {
@@ -875,7 +916,25 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
             }
         }
 
-        item { SectionTitle(tr("Lluvia", "Rain")) }
+        // El silencio vale para todos los avisos, así que va arriba y no dentro de un grupo.
+        item { SectionTitle(tr("Horario de silencio", "Quiet hours")) }
+        item {
+            Rows {
+                SettingRow(
+                    tr("No avisar de noche", "No alerts at night"),
+                    tr("Las alertas rojas del SMN avisan igual", "Red official alerts still come through"),
+                    checked = notify.quiet,
+                    onCheckedChange = { on -> change { it.copy(quiet = on) } },
+                )
+                if (notify.quiet) {
+                    SettingRow(tr("Desde", "From"), hourLabel(notify.quietStart), onClick = { picking = "desde" }, trailing = Chevron)
+                    SettingRow(tr("Hasta", "Until"), hourLabel(notify.quietEnd), onClick = { picking = "hasta" }, trailing = Chevron)
+                }
+            }
+        }
+
+        // --- Lluvia y alertas: lo que avisa cuando pasa algo ---
+        item { SectionTitle(tr("Lluvia y alertas", "Rain and alerts")) }
         item {
             Rows {
                 SettingRow(
@@ -906,8 +965,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 }
             }
         }
-
-        item { SectionTitle(tr("Alertas oficiales", "Official alerts")) }
+        groupGap()
         item {
             Rows {
                 SettingRow(
@@ -927,79 +985,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 }
             }
         }
-
-        item { SectionTitle(tr("Resumen diario", "Daily summary")) }
-        item {
-            Rows {
-                SettingRow(
-                    tr("Resumen del día", "Daily summary"),
-                    tr("Máxima, mínima, lluvia, UV y viento. Desde las 17, el de mañana", "High, low, rain, UV and wind. From 5 PM, tomorrow's"),
-                    checked = notify.summary && canNotify,
-                    onCheckedChange = { on ->
-                            toggle("resumen", on) { enabled ->
-                                change { it.copy(summary = enabled) }
-                                SummaryNotifier.schedule(context)
-                            }
-                        },
-                )
-                if (notify.summary) {
-                    SettingRow(
-                        tr("A las", "At"),
-                        hourLabel(notify.summaryHour),
-                        onClick = { picking = "resumen" },
-                        trailing = Chevron,
-                    )
-                    // Con ciudades guardadas se puede elegir de cuál; si la elegida se borró, queda "Mi ubicación".
-                    if (places.isNotEmpty()) {
-                        val options = listOf(CURRENT_PLACE_ID) + places.map { it.id }
-                        val selected = notify.summaryPlace.takeIf { it in options } ?: CURRENT_PLACE_ID
-                        ChoiceRow(
-                            tr("De", "For"),
-                            options,
-                            selected,
-                            { id -> places.firstOrNull { it.id == id }?.shownName ?: tr("Mi ubicación", "My location") },
-                        ) { id -> change { it.copy(summaryPlace = id) } }
-                    }
-                }
-            }
-        }
-
-        item { SectionTitle(tr("Mi rutina", "My routine")) }
-        item {
-            Rows {
-                SettingRow(
-                    tr("Aviso antes de salir", "Heads-up before leaving"),
-                    tr("Una hora antes: el clima de la ida y de la vuelta, y si hace falta paraguas o abrigo", "An hour before: the weather going and coming back, and whether you need an umbrella or a jacket"),
-                    checked = notify.routine && canNotify,
-                    onCheckedChange = { on ->
-                        toggle("rutina", on) { enabled ->
-                            change { it.copy(routine = enabled) }
-                            RoutineNotifier.schedule(context)
-                        }
-                    },
-                )
-                if (notify.routine) {
-                    SettingRow(tr("Salgo a las", "I leave at"), hourLabel(notify.routineLeave), onClick = { picking = "salida" }, trailing = Chevron)
-                    SettingRow(
-                        tr("Vuelvo a las", "I'm back at"),
-                        hourLabel(notify.routineBack) + if (notify.routineBack <= notify.routineLeave) tr(" del día siguiente", " the next day") else "",
-                        onClick = { picking = "vuelta" },
-                        trailing = Chevron,
-                    )
-                    SettingRow(
-                        tr("Solo días de semana", "Weekdays only"),
-                        tr("De lunes a viernes", "Monday to Friday"),
-                        checked = notify.routineWeekdays,
-                        onCheckedChange = { on ->
-                            change { it.copy(routineWeekdays = on) }
-                            RoutineNotifier.schedule(context)
-                        },
-                    )
-                }
-            }
-        }
-
-        item { SectionTitle(tr("Cambios bruscos", "Big changes")) }
+        groupGap()
         item {
             Rows {
                 SettingRow(
@@ -1038,8 +1024,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 }
             }
         }
-
-        item { SectionTitle(tr("UV y calidad del aire", "UV and air quality")) }
+        groupGap()
         item {
             Rows {
                 SettingRow(
@@ -1057,7 +1042,96 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
             }
         }
 
-        item { SectionTitle(tr("Siempre a la vista", "Always visible")) }
+        // --- Resúmenes y rutina: lo que llega a una hora fija ---
+        item { SectionTitle(tr("Resúmenes y rutina", "Summaries and routine")) }
+        item {
+            Rows {
+                SettingRow(
+                    tr("Resumen del día", "Daily summary"),
+                    tr("Máxima, mínima, lluvia, UV y viento. Desde las 17, el de mañana", "High, low, rain, UV and wind. From 5 PM, tomorrow's"),
+                    checked = notify.summary && canNotify,
+                    onCheckedChange = { on ->
+                            toggle("resumen", on) { enabled ->
+                                change { it.copy(summary = enabled) }
+                                SummaryNotifier.schedule(context)
+                            }
+                        },
+                )
+                if (notify.summary) {
+                    SettingRow(
+                        tr("A las", "At"),
+                        hourLabel(notify.summaryHour),
+                        onClick = { picking = "resumen" },
+                        trailing = Chevron,
+                    )
+                    // Con ciudades guardadas se puede elegir de cuál; si la elegida se borró, queda "Mi ubicación".
+                    if (places.isNotEmpty()) {
+                        val options = listOf(CURRENT_PLACE_ID) + places.map { it.id }
+                        val selected = notify.summaryPlace.takeIf { it in options } ?: CURRENT_PLACE_ID
+                        ChoiceRow(
+                            tr("De", "For"),
+                            options,
+                            selected,
+                            { id -> places.firstOrNull { it.id == id }?.shownName ?: tr("Mi ubicación", "My location") },
+                        ) { id -> change { it.copy(summaryPlace = id) } }
+                    }
+                }
+            }
+        }
+        groupGap()
+        item {
+            Rows {
+                SettingRow(
+                    tr("Aviso antes de salir", "Heads-up before leaving"),
+                    tr("Una hora antes: el clima de la ida y de la vuelta, y si hace falta paraguas o abrigo", "An hour before: the weather going and coming back, and whether you need an umbrella or a jacket"),
+                    checked = notify.routine && canNotify,
+                    onCheckedChange = { on ->
+                        toggle("rutina", on) { enabled ->
+                            change { it.copy(routine = enabled) }
+                            RoutineNotifier.schedule(context)
+                        }
+                    },
+                )
+                if (notify.routine) {
+                    SettingRow(tr("Salgo a las", "I leave at"), hourLabel(notify.routineLeave), onClick = { picking = "salida" }, trailing = Chevron)
+                    SettingRow(
+                        tr("Vuelvo a las", "I'm back at"),
+                        hourLabel(notify.routineBack) + if (notify.routineBack <= notify.routineLeave) tr(" del día siguiente", " the next day") else "",
+                        onClick = { picking = "vuelta" },
+                        trailing = Chevron,
+                    )
+                    SettingRow(
+                        tr("Solo días de semana", "Weekdays only"),
+                        tr("De lunes a viernes", "Monday to Friday"),
+                        checked = notify.routineWeekdays,
+                        onCheckedChange = { on ->
+                            change { it.copy(routineWeekdays = on) }
+                            RoutineNotifier.schedule(context)
+                        },
+                    )
+                }
+            }
+        }
+        groupGap()
+        item {
+            Rows {
+                SettingRow(
+                    tr("Hora dorada", "Golden hour"),
+                    tr("Media hora antes de que salga o se ponga el sol, con cuenta regresiva", "Half an hour before sunrise or sunset, with a countdown"),
+                    checked = notify.goldenHour && canNotify,
+                    onCheckedChange = { on ->
+                            toggle("sol", on) { enabled ->
+                                change { it.copy(goldenHour = enabled) }
+                                if (enabled) SunNotifier.check(context)
+                            }
+                        },
+                )
+            }
+        }
+
+        // --- Barra de estado: lo que queda fijo arriba. Junta lo que antes era "Siempre a la vista"
+        // y "En vivo en la barra de estado", que hablaban de lo mismo. ---
+        item { SectionTitle(tr("Barra de estado", "Status bar")) }
         item {
             Rows {
                 SettingRow(
@@ -1079,10 +1153,29 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                         nested = true,
                     )
                 }
+                if (LiveUpdate.supported) {
+                    SettingRow(
+                        tr("Permiso de Live Updates", "Live Updates permission"),
+                        tr("Si no aparece el chip, revisá que esté permitido", "If the chip doesn't show, check that it's allowed"),
+                        onClick = { openAppNotificationSettings(context) },
+                        trailing = Chevron,
+                    )
+                }
             }
         }
-
-        item { SectionTitle(tr("Salgo ahora", "Heading out")) }
+        if (LiveUpdate.supported) {
+            item {
+                Hint(
+                    tr(
+                        "Android 16 puede mostrar la lluvia, las alertas y la temperatura como un chip al lado de la hora y arriba en la pantalla de bloqueo (Live Updates). Se eligen en cada aviso; el sistema decide cuándo.",
+                        "Android 16 can show rain, alerts and the temperature as a chip next to the clock and at the top of the lock screen (Live Updates). Choose them under each alert; the system decides when.",
+                    ),
+                )
+            }
+        } else {
+            groupGap()
+        }
+        // "Salgo ahora" también vive en la barra de estado: dos horas de clima en vivo.
         item {
             val active = Outing.active(context) && Outing.endsAt > 0
             Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
@@ -1093,7 +1186,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                                 tr("Siguiendo el clima hasta las ", "Tracking weather until ") +
                                     shortHour(java.time.Instant.ofEpochMilli(Outing.endsAt).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime())
                             } else {
-                                tr("Dos horas de clima en vivo", "Two hours of live weather")
+                                tr("Salgo ahora: dos horas de clima en vivo", "Heading out: two hours of live weather")
                             },
                             style = MaterialTheme.typography.bodyLarge,
                         )
@@ -1112,93 +1205,21 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
             }
         }
 
-        item { SectionTitle(tr("Amanecer y atardecer", "Sunrise and sunset")) }
+        // Probar y los ajustes del sistema van al final, separados de los grupos: no son avisos.
+        item { Spacer(Modifier.height(24.dp)) }
         item {
             Rows {
                 SettingRow(
-                    tr("Hora dorada", "Golden hour"),
-                    tr("Media hora antes de que salga o se ponga el sol, con cuenta regresiva", "Half an hour before sunrise or sunset, with a countdown"),
-                    checked = notify.goldenHour && canNotify,
-                    onCheckedChange = { on ->
-                            toggle("sol", on) { enabled ->
-                                change { it.copy(goldenHour = enabled) }
-                                if (enabled) SunNotifier.check(context)
-                            }
-                        },
+                    tr("Probar avisos", "Try alerts"),
+                    if (canNotify) {
+                        tr("Mandá un aviso de ejemplo para ver cómo queda", "Send a sample to see how it looks")
+                    } else {
+                        tr("Primero activá las notificaciones", "Turn on notifications first")
+                    },
+                    // Sin permiso no sale nada, así que la fila no abre el diálogo (como antes los botones apagados).
+                    onClick = if (canNotify) ({ testing = true }) else null,
+                    trailing = if (canNotify) Chevron else null,
                 )
-            }
-        }
-
-        if (LiveUpdate.supported) {
-            item { SectionTitle(tr("En vivo en la barra de estado", "Live in the status bar")) }
-            item {
-                Hint(
-                    tr(
-                        "Android 16 puede mostrar la lluvia, las alertas y la temperatura como un chip al lado de la hora y arriba en la pantalla de bloqueo (Live Updates). Se eligen en cada aviso; el sistema decide cuándo.",
-                        "Android 16 can show rain, alerts and the temperature as a chip next to the clock and at the top of the lock screen (Live Updates). Choose them under each alert; the system decides when.",
-                    ),
-                )
-            }
-            item {
-                Rows {
-                    SettingRow(
-                        tr("Permiso de Live Updates", "Live Updates permission"),
-                        tr("Si no aparece el chip, revisá que esté permitido", "If the chip doesn't show, check that it's allowed"),
-                        onClick = { openAppNotificationSettings(context) },
-                        trailing = Chevron,
-                    )
-                }
-            }
-        }
-
-        item { SectionTitle(tr("Horario de silencio", "Quiet hours")) }
-        item {
-            Rows {
-                SettingRow(
-                    tr("No avisar de noche", "No alerts at night"),
-                    tr("Las alertas rojas del SMN avisan igual", "Red official alerts still come through"),
-                    checked = notify.quiet,
-                    onCheckedChange = { on -> change { it.copy(quiet = on) } },
-                )
-                if (notify.quiet) {
-                    SettingRow(tr("Desde", "From"), hourLabel(notify.quietStart), onClick = { picking = "desde" }, trailing = Chevron)
-                    SettingRow(tr("Hasta", "Until"), hourLabel(notify.quietEnd), onClick = { picking = "hasta" }, trailing = Chevron)
-                }
-            }
-        }
-
-        item { SectionTitle(tr("Probar", "Try it")) }
-        item {
-            Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
-                Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                    Text(
-                        tr("Mandá un aviso de ejemplo para ver cómo queda.", "Send a sample to see how it looks."),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            tr("Lluvia", "Rain") to { RainNotifier.test(context) },
-                            tr("Alerta", "Alert") to { AlertNotifier.test(context) },
-                            tr("Resumen", "Summary") to { SummaryNotifier.notify(context, test = true) },
-                            tr("Cambio brusco", "Big change") to { ChangeNotifier.test(context) },
-                            tr("Hora dorada", "Golden hour") to { SunNotifier.test(context) },
-                            tr("Mi rutina", "My routine") to { RoutineNotifier.test(context) },
-                            tr("UV", "UV") to { HealthNotifier.testUv(context) },
-                            tr("Aire", "Air") to { HealthNotifier.testAir(context) },
-                        ).forEach { (label, send) ->
-                            FilledTonalButton(
-                                enabled = canNotify,
-                                onClick = { send() },
-                            ) { Text(label) }
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            Rows {
                 SettingRow(
                     tr("Más opciones del sistema", "More system options"),
                     tr("Sonido, vibración y cómo se muestra cada tipo de aviso", "Sound, vibration and how each kind of alert shows up"),
@@ -1208,6 +1229,11 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
             }
         }
     }
+}
+
+/** Separación entre tarjetas de un mismo grupo, más chica que la de un título de sección. */
+private fun LazyListScope.groupGap() {
+    item { Spacer(Modifier.height(12.dp)) }
 }
 
 // --- Ubicación ---

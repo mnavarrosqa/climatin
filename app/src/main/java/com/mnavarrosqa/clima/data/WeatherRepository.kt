@@ -5,9 +5,13 @@ import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.callbackFlow
@@ -273,17 +277,31 @@ class WeatherRepository private constructor(private val context: Context) {
         }
     }
 
-    /** Un lugar para pedir: id, nombre a mostrar y coordenadas. */
-    private data class Target(val id: String, val name: String?, val latitude: Double, val longitude: Double)
+    /**
+     * Un lugar para pedir: id, nombre a mostrar y coordenadas. Con [lookupName] el nombre se busca
+     * en el geocodificador a la par del pronóstico.
+     */
+    private data class Target(val id: String, val name: String?, val latitude: Double, val longitude: Double, val lookupName: Boolean = false)
+
+    /** Para lo que sigue después de una actualización (el nombre que llega tarde): no la demora. */
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun refreshCurrent(): Result<WeatherSnapshot> = runCatchingCancellable {
         fetchAll(listOf(currentTarget())).first().also { lastRefreshAt = System.currentTimeMillis() }
     }
 
-    /** Dónde estás ahora (o la última ubicación conocida), con su nombre. */
+    /**
+     * Dónde estás ahora (o la última ubicación conocida). El nombre no se espera acá: si hace
+     * falta lo busca [fetchAll] mientras baja el pronóstico (antes el pronóstico esperaba hasta
+     * 10 s al geocodificador).
+     */
     private suspend fun currentTarget(): Target {
         val previous = cached(CURRENT_PLACE_ID)
-        val coordinates = LocationProvider.current(context)
+        // Primera vez, sin nada guardado: si el sistema ya tiene una ubicación reciente se arranca
+        // con esa, sin esperar hasta 15 s una nueva. La próxima actualización la afina.
+        val quick = if (previous == null) LocationProvider.lastKnown(context, FIRST_LOCATION_MAX_AGE_MS) else null
+        val coordinates = quick
+            ?: LocationProvider.current(context)
             ?: previous?.let { Coordinates(it.latitude, it.longitude) }
             ?: throw NoLocationException()
 
@@ -291,9 +309,19 @@ class WeatherRepository private constructor(private val context: Context) {
             abs(previous.latitude - coordinates.latitude) < 0.02 &&
             abs(previous.longitude - coordinates.longitude) < 0.02
         // Mismo lugar con nombre conocido: no hace falta volver a preguntarle al geocodificador.
-        val name = previous?.place?.takeIf { samePlace }
-            ?: LocationProvider.placeName(context, coordinates)
-        return Target(CURRENT_PLACE_ID, name, coordinates.latitude, coordinates.longitude)
+        val known = previous?.place?.takeIf { samePlace }
+        return Target(CURRENT_PLACE_ID, known, coordinates.latitude, coordinates.longitude, lookupName = known == null)
+    }
+
+    /**
+     * Pone el nombre que llegó tarde en el pronóstico que se guardó sin él, si sigue siendo el de
+     * ese punto. Sincronizado con [writeSnapshot]: una actualización en el medio no se pisa.
+     */
+    @Synchronized
+    private fun fillName(placeId: String, latitude: Double, longitude: Double, name: String) {
+        val snapshot = cached(placeId) ?: return
+        if (snapshot.place != null || snapshot.latitude != latitude || snapshot.longitude != longitude) return
+        writeSnapshot(placeId, snapshot.copy(place = name))
     }
 
     suspend fun refreshPlace(place: Place): Result<WeatherSnapshot> = runCatchingCancellable {
@@ -303,6 +331,10 @@ class WeatherRepository private constructor(private val context: Context) {
     /** Pronóstico, aire y alertas de varios lugares a la vez; guarda cada uno en su archivo. */
     private suspend fun fetchAll(targets: List<Target>): List<WeatherSnapshot> = withContext(Dispatchers.IO) {
         val points = targets.map { it.latitude to it.longitude }
+        // El nombre se busca a la par del pronóstico y fuera de esta corrida: si tarda, no la frena.
+        val nameJobs = targets.map { t ->
+            if (!t.lookupName) null else background.async { LocationProvider.placeName(context, Coordinates(t.latitude, t.longitude)) }
+        }
         val (forecasts, airs, alerts) = coroutineScope {
             val forecasts = async { OpenMeteo.forecasts(points) }
             val airs = async { airQualities(targets) }
@@ -321,12 +353,15 @@ class WeatherRepository private constructor(private val context: Context) {
             }
             Triple(forecasts.await(), airs.await(), alerts.await())
         }
+        // Un rato más para el nombre, que casi siempre llega antes. Si no, se guarda sin nombre
+        // ("Mi ubicación") y se completa cuando llegue. Cortar la espera no cancela la búsqueda.
+        val names = nameJobs.map { job -> job?.let { withTimeoutOrNull(NAME_GRACE_MS) { it.await() } } }
         val now = System.currentTimeMillis()
         targets.mapIndexedNotNull { i, t ->
             val snapshot = OpenMeteo.toSnapshot(
                 forecast = forecasts[i],
                 placeId = t.id,
-                place = t.name,
+                place = t.name ?: names[i],
                 latitude = t.latitude,
                 longitude = t.longitude,
                 airQuality = airs.getOrNull(i),
@@ -339,6 +374,11 @@ class WeatherRepository private constructor(private val context: Context) {
                 snapshot.copy(place = place.shownName)
             }
             writeSnapshot(t.id, shown)
+            val late = nameJobs[i]
+            // Aunque haya terminado justo después de la espera: así no se pierde.
+            if (late != null && names[i] == null) {
+                background.launch { late.await()?.let { fillName(t.id, t.latitude, t.longitude, it) } }
+            }
             shown
         }
     }
@@ -346,8 +386,11 @@ class WeatherRepository private constructor(private val context: Context) {
     // --- Lo normal para la época y la lluvia caída ---
 
     // Las tarjetas lo piden al mostrarse (no va en el trabajo cada 15 minutos). En dos paneles lo
-    // piden las dos mitades a la vez: con el candado, la segunda usa lo que bajó la primera.
-    private val pastLock = Mutex()
+    // piden las dos mitades a la vez: con el candado, la segunda usa lo que bajó la primera. Un
+    // candado por lugar: con uno solo, pasar de ciudad con la red lenta esperaba el pedido anterior.
+    private val pastLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+
+    private fun pastLock(key: String): Mutex = pastLocks.getOrPut(key) { Mutex() }
     private val climateDir = File(context.filesDir, "clima")
     /** Días de otros años ya leídos del disco, por lugar redondeado. */
     private val climateMemory = java.util.concurrent.ConcurrentHashMap<String, ClimateCache>()
@@ -360,15 +403,13 @@ class WeatherRepository private constructor(private val context: Context) {
         val latitude = snapshot.latitude
         val longitude = snapshot.longitude
         val today = snapshot.nowAtPlace().toLocalDate()
-        pastLock.withLock {
-            coroutineScope {
-                val days = async { runCatchingCancellable { climateDays(latitude, longitude, today) }.getOrNull() }
-                val week = async { runCatchingCancellable { recentRain(latitude, longitude) }.getOrNull() }
-                PastWeather(
-                    normal = days.await()?.let { normalFor(it, today) },
-                    weekRain = week.await()?.let { weekRain(it, today) },
-                )
-            }
+        coroutineScope {
+            val days = async { runCatchingCancellable { climateDays(latitude, longitude, today) }.getOrNull() }
+            val week = async { runCatchingCancellable { recentRain(latitude, longitude) }.getOrNull() }
+            PastWeather(
+                normal = days.await()?.let { normalFor(it, today) },
+                weekRain = week.await()?.let { weekRain(it, today) },
+            )
         }
     }
 
@@ -381,6 +422,10 @@ class WeatherRepository private constructor(private val context: Context) {
         val lat = kotlin.math.round(latitude * 10) / 10
         val lon = kotlin.math.round(longitude * 10) / 10
         val key = String.format(java.util.Locale.US, "%.1f_%.1f", lat, lon)
+        return pastLock("clima:$key").withLock { climateDaysLocked(key, lat, lon, today) }
+    }
+
+    private suspend fun climateDaysLocked(key: String, lat: Double, lon: Double, today: java.time.LocalDate): List<ClimateDay>? {
         val file = File(climateDir, key.replace(Regex("[^A-Za-z0-9_.-]"), "_") + ".json")
         val stored = climateMemory[key]
             ?: runCatching { json.decodeFromString(ClimateCache.serializer(), file.readText()) }.getOrNull()?.also { climateMemory[key] = it }
@@ -415,6 +460,10 @@ class WeatherRepository private constructor(private val context: Context) {
     /** Lluvia de los últimos 7 días; se guarda una hora en memoria (es un pedido chico). */
     private suspend fun recentRain(latitude: Double, longitude: Double): List<ClimateDay>? {
         val key = String.format(java.util.Locale.US, "%.2f_%.2f", latitude, longitude)
+        return pastLock("lluvia:$key").withLock { recentRainLocked(key, latitude, longitude) }
+    }
+
+    private suspend fun recentRainLocked(key: String, latitude: Double, longitude: Double): List<ClimateDay>? {
         val now = System.currentTimeMillis()
         weekRainMemory[key]?.let { (at, days) -> if (now - at < 60 * 60_000L) return days }
         if (now - (pastFailedAt["lluvia:$key"] ?: 0L) < 15 * 60_000L) return weekRainMemory[key]?.second
@@ -505,6 +554,12 @@ class WeatherRepository private constructor(private val context: Context) {
         private const val KEY_UNIT_PRESSURE = "unit_pressure"
         private const val KEY_USE_24H = "use_24h"
         private const val KEY_CITIES_AT = "ciudades_actualizadas"
+
+        /** Primera vez: una ubicación conocida de hasta esto alcanza para arrancar. */
+        private const val FIRST_LOCATION_MAX_AGE_MS = 2 * 60 * 60_000L
+
+        /** Cuánto más se espera el nombre del lugar después de que llegó el pronóstico. */
+        private const val NAME_GRACE_MS = 1_500L
 
         private fun snapshotKey(placeId: String) = "snapshot:$placeId"
 

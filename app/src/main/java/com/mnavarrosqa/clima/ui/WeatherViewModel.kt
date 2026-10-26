@@ -20,7 +20,12 @@ import com.mnavarrosqa.clima.work.AlertNotifier
 import com.mnavarrosqa.clima.work.RainNotifier
 import com.mnavarrosqa.clima.work.WeatherWorker
 import com.mnavarrosqa.clima.work.TemperatureNotifier
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +35,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+
+/** Qué espera la primera carga: la ubicación o el pronóstico. */
+enum class LoadPhase { LOCATING, DOWNLOADING }
 
 data class SearchState(
     val loading: Boolean = false,
@@ -60,8 +68,33 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
+    private val _errors = MutableStateFlow<Map<String, String>>(emptyMap())
+    /**
+     * Qué lugar no se pudo actualizar y por qué. Va por lugar: si falla una ciudad recién agregada,
+     * el aviso no aparece en las demás.
+     */
+    val errors: StateFlow<Map<String, String>> = _errors.asStateFlow()
+
+    private val connectivity = application.getSystemService(ConnectivityManager::class.java)
+
+    private val _offline = MutableStateFlow(!isOnline())
+    /** Sin conexión: no es un error, se muestra lo guardado y se reintenta al volver la red. */
+    val offline: StateFlow<Boolean> = _offline.asStateFlow()
+
+    private val _loadPhase = MutableStateFlow<LoadPhase?>(null)
+    /** Qué se está esperando mientras no hay pronóstico de "donde estoy" (para el esqueleto). */
+    val loadPhase: StateFlow<LoadPhase?> = _loadPhase.asStateFlow()
+
+    // Al volver la conexión se reintenta solo, si lo último fue sin red o con error.
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            viewModelScope.launch { onNetworkBack() }
+        }
+
+        override fun onLost(network: Network) {
+            viewModelScope.launch { _offline.value = !isOnline() }
+        }
+    }
 
     private val _update = MutableStateFlow<AppRelease?>(null)
     /** Versión nueva disponible (fuera de Play), o null. */
@@ -89,6 +122,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
     val updatePrompt: StateFlow<AppRelease?> = _updatePrompt.asStateFlow()
 
     init {
+        runCatching { connectivity?.registerDefaultNetworkCallback(networkCallback) }
         recheckUpdates()
         // Accesos directos a las primeras ciudades: siguen a la lista (agregar, quitar, ordenar, apodos).
         viewModelScope.launch(Dispatchers.IO) {
@@ -214,19 +248,93 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         if (_refreshing.value) return
         viewModelScope.launch {
             _refreshing.value = true
-            _error.value = null
-            val error = repository.refreshAll(force = true)
-            // Widgets, avisos y reloj, lo mismo que el trabajo periódico. Un aviso que falla no
-            // puede cerrar la app ni dejar el indicador girando.
-            com.mnavarrosqa.clima.work.afterRefresh(getApplication<Application>())
-            refreshShortcuts()
-            _error.value = when (error) {
-                null -> null
-                is NoLocationException -> error.message
-                else -> tr("No pude actualizar el clima. Revisá la conexión.", "Couldn't update the weather. Check your connection.")
+            // Los errores anteriores quedan hasta tener el resultado nuevo: borrarlos al empezar
+            // hacía parpadear el aviso en cada actualización.
+            try {
+                if (!isOnline()) {
+                    // Sin red no se intenta: no es un error, y al volver la conexión se reintenta.
+                    _offline.value = true
+                    return@launch
+                }
+                _offline.value = false
+                val startedAt = System.currentTimeMillis()
+                val phaseJob = trackLoadPhase()
+                val error = try {
+                    repository.refreshAll(force = true)
+                } finally {
+                    phaseJob?.cancel()
+                    _loadPhase.value = null
+                }
+                // Widgets, avisos y reloj, lo mismo que el trabajo periódico. Un aviso que falla no
+                // puede cerrar la app ni dejar el indicador girando.
+                com.mnavarrosqa.clima.work.afterRefresh(getApplication<Application>())
+                refreshShortcuts()
+                when {
+                    error == null -> _errors.value = emptyMap()
+                    // Se cortó la red en el medio: es "sin conexión", no un error.
+                    error !is NoLocationException && !isOnline() -> {
+                        _offline.value = true
+                        _errors.value = emptyMap()
+                    }
+                    else -> _errors.value = withContext(Dispatchers.IO) { failedPlaces(error, startedAt) }
+                }
+            } finally {
+                _refreshing.value = false
             }
-            _refreshing.value = false
         }
+    }
+
+    /**
+     * Los lugares que quedaron sin actualizar: todos se piden juntos, pero "donde estoy" puede
+     * fallar sola (sin ubicación) y el resto llegar bien.
+     */
+    private fun failedPlaces(error: Throwable, startedAt: Long): Map<String, String> {
+        val generic = tr("No pude actualizar el clima. Revisá la conexión.", "Couldn't update the weather. Check your connection.")
+        val ids = listOf(CURRENT_PLACE_ID) + places.value.map { it.id }
+        return ids.filter { id -> (repository.cached(id)?.fetchedAt ?: 0L) < startedAt }.associateWith { id ->
+            if (id == CURRENT_PLACE_ID && error is NoLocationException) error.message ?: generic else generic
+        }
+    }
+
+    /**
+     * Sin pronóstico de "donde estoy", el esqueleto dice qué se espera. El repositorio no cuenta
+     * en qué paso está: primero se busca la ubicación y, pasado lo que suele tardar, se asume que
+     * ya se está bajando el pronóstico.
+     */
+    private fun trackLoadPhase(): Job? {
+        val app = getApplication<Application>()
+        if (repository.cached(CURRENT_PLACE_ID) != null) return null
+        if (!com.mnavarrosqa.clima.data.LocationProvider.hasPermission(app)) {
+            _loadPhase.value = LoadPhase.DOWNLOADING
+            return null
+        }
+        _loadPhase.value = LoadPhase.LOCATING
+        return viewModelScope.launch {
+            delay(4_000)
+            _loadPhase.value = LoadPhase.DOWNLOADING
+        }
+    }
+
+    /** Volvió la red: si lo último fue sin conexión o con error, se reintenta. */
+    private suspend fun onNetworkBack() {
+        val retry = _offline.value || _errors.value.isNotEmpty()
+        _offline.value = false
+        if (!retry) return
+        // Al conectarse, la red tarda un momento en andar de verdad (Wi-Fi con portal, datos).
+        delay(1_500)
+        if (isOnline()) refresh() else _offline.value = true
+    }
+
+    /** Lo mismo que mira el trabajo periódico: si hay una red con internet. */
+    private fun isOnline(): Boolean = runCatching {
+        val manager = connectivity ?: return@runCatching true
+        val capabilities = manager.getNetworkCapabilities(manager.activeNetwork)
+        capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }.getOrDefault(true)
+
+    override fun onCleared() {
+        runCatching { connectivity?.unregisterNetworkCallback(networkCallback) }
+        super.onCleared()
     }
 
     fun searchCities(query: String) {
@@ -261,10 +369,14 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             val result = repository.refreshPlace(place)
             fetching -= place.id
             if (result.isFailure) {
-                _error.value = tr(
-                    "No pude bajar el pronóstico de ${place.shownName}. Se reintenta en la próxima actualización.",
-                    "Couldn't get the forecast for ${place.shownName}. It'll retry on the next update.",
-                )
+                _errors.update {
+                    it + (place.id to tr(
+                        "No pude bajar el pronóstico de ${place.shownName}. Se reintenta en la próxima actualización.",
+                        "Couldn't get the forecast for ${place.shownName}. It'll retry on the next update.",
+                    ))
+                }
+            } else {
+                _errors.update { it - place.id }
             }
             updateWeatherWidgets(getApplication<Application>())
             refreshShortcuts()

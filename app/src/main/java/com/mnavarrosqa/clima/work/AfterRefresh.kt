@@ -8,7 +8,8 @@ import com.mnavarrosqa.clima.widget.updateWeatherWidgets
  * widget: widgets, avisos y reloj. Cada aviso por separado: si uno falla, los demás igual salen.
  */
 suspend fun afterRefresh(context: Context, urgentWear: Boolean = false) {
-    runCatching { updateWeatherWidgets(context) }
+    // Sin forzar: los widgets cuyos datos y ajustes no cambiaron no se redibujan.
+    runCatching { updateWeatherWidgets(context, force = false) }
     runCatching { RainNotifier.check(context) }
     runCatching { AlertNotifier.check(context) }
     runCatching { ChangeNotifier.check(context) }
@@ -26,8 +27,9 @@ suspend fun afterRefresh(context: Context, urgentWear: Boolean = false) {
  * haya conexión ni toque actualizar.
  */
 fun scheduleMidnightRedraw(context: Context) {
-    val now = java.time.LocalDateTime.now()
-    val next = now.toLocalDate().plusDays(1).atStartOfDay().plusMinutes(1)
+    // Con zona, para no correrse una hora la noche del cambio de horario.
+    val now = java.time.ZonedDateTime.now()
+    val next = now.toLocalDate().plusDays(1).atStartOfDay(now.zone).plusMinutes(1)
     val delay = java.time.Duration.between(now, next).toMillis()
     val request = androidx.work.OneTimeWorkRequestBuilder<com.mnavarrosqa.clima.widget.WidgetRedrawWorker>()
         .setInitialDelay(delay, java.util.concurrent.TimeUnit.MILLISECONDS)

@@ -27,6 +27,7 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
@@ -52,17 +53,31 @@ object RoutineNotifier {
             work.cancelUniqueWork(WORK)
             return
         }
-        val now = LocalDateTime.now()
+        // Con zona: entre dos LocalDateTime la noche del cambio de hora quedaba una hora corrida.
+        val zone = ZoneId.systemDefault()
+        val now = ZonedDateTime.now(zone)
         // Con salida a las 0 el aviso cae el día anterior: se mira por día de salida, no de aviso.
         val next = (0L..8L).asSequence()
             .map { now.toLocalDate().plusDays(it) }
             .filter { dayAllowed(it, settings.routineWeekdays) }
-            .map { it.atTime(settings.routineLeave, 0).minusMinutes(LEAD_MINUTES) }
+            .map { it.atTime(settings.routineLeave, 0).atZone(zone).minusMinutes(LEAD_MINUTES) }
             .firstOrNull { it.isAfter(now) } ?: return
         val request = OneTimeWorkRequestBuilder<RoutineWorker>()
             .setInitialDelay(Duration.between(now, next).toMillis(), TimeUnit.MILLISECONDS)
             .build()
         work.enqueueUniqueWork(WORK, policy, request)
+    }
+
+    /**
+     * Agenda el próximo desde el trabajo que está corriendo: encadenado detrás (REPLACE lo
+     * cancelaría a sí mismo). Si el sistema cortó y volvió a correr este trabajo, el siguiente ya
+     * quedó colgado de la primera vuelta: se agrega solo si no hay otro pendiente, si no la cadena
+     * crecía con cada corte.
+     */
+    fun scheduleAfter(context: Context, running: java.util.UUID) {
+        val infos = runCatching { WorkManager.getInstance(context).getWorkInfosForUniqueWork(WORK).get() }.getOrNull()
+        if (infos != null && infos.any { it.id != running && !it.state.isFinished }) return
+        schedule(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
     }
 
     /** La salida que toca avisar ahora: la próxima, si falta poco (el trabajo pudo atrasarse). */
@@ -200,7 +215,7 @@ class RoutineWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             runCatching { RoutineNotifier.notify(applicationContext) }
         } finally {
             // Igual que el resumen: encadenado detrás de este trabajo y siempre, aunque falle.
-            RoutineNotifier.schedule(applicationContext, ExistingWorkPolicy.APPEND_OR_REPLACE)
+            RoutineNotifier.scheduleAfter(applicationContext, id)
         }
         return Result.success()
     }

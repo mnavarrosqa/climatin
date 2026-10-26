@@ -8,19 +8,20 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -37,6 +38,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.unit.Constraints
+import com.mnavarrosqa.clima.data.Units
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -124,8 +129,6 @@ enum class DetailsPart { ALL, FIRST, SECOND }
 
 @Composable
 fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: DetailsPart = DetailsPart.ALL, minute: Long? = null) {
-    val current = snapshot.current
-    val today = snapshot.today()
     val date = snapshot.nowAtPlace().toLocalDate()
     // El sol y la luna se mueven: la tarjeta se rearma cada minuto, no solo con datos nuevos.
     // Si viene de afuera, el mismo minuto para las dos mitades (en dos paneles no se desfasan).
@@ -148,11 +151,56 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
     ) {
         value = WeatherRepository.get(context).pastWeather(snapshot)
     }
+    // De día el sol; de noche la luna, con su recorrido (y entonces no va la tarjeta chica de la luna).
+    // Es lo único que cambia con el minuto.
     val sky = remember(snapshot, tick) { skyDetail(snapshot) }
     val night = sky?.second == true
-    val details = buildList {
-        // De día el sol; de noche la luna, con su recorrido (y entonces no va la tarjeta chica de la luna).
-        sky?.let { add(it.first) }
+    // Lo demás depende de la hora en punto (las horas que vienen, la ventana del UV, el rocío):
+    // se arma una vez por hora y no en cada recomposición. Con el minuto quedan las mismas
+    // instancias, así que Compose saltea esas tarjetas y solo se redibuja la del sol o la luna.
+    val hour = remember(snapshot, tick) { snapshot.nowAtPlace().truncatedTo(java.time.temporal.ChronoUnit.HOURS) }
+    val others = remember(snapshot, hour, past, night, Units.current, Lang.isSpanish) { hourlyDetails(snapshot, past, night) }
+    val details = remember(sky, others) { listOfNotNull(sky?.first) + others }
+    // Los anchos van solos; los demás de a dos, con la misma altura por fila.
+    val rows = remember(details) {
+        buildList<List<Detail>> {
+            var pending: Detail? = null
+            details.forEach { detail ->
+                if (detail.wide) {
+                    add(listOf(detail))
+                } else if (pending == null) {
+                    pending = detail
+                } else {
+                    add(listOf(pending!!, detail))
+                    pending = null
+                }
+            }
+            pending?.let { add(listOf(it)) }
+        }
+    }
+    // En dos paneles se reparten: la izquierda (que ya tiene la temperatura) se lleva menos.
+    val split = rows.size / 2
+    val shown = when (part) {
+        DetailsPart.ALL -> rows
+        DetailsPart.FIRST -> rows.take(split)
+        DetailsPart.SECOND -> rows.drop(split)
+    }
+    if (shown.isEmpty()) return
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Con clave por tarjeta: si aparece o se va una (de día a noche, el aire), el estado de cada
+        // una (la explicación abierta, la animación) no pasa a la de al lado.
+        shown.forEach { row ->
+            key(row.joinToString("|") { it.label }) { TileRow(row) }
+        }
+    }
+}
+
+/** Las tarjetas que no son la del sol o la luna; dependen de la hora en punto, no del minuto. */
+private fun hourlyDetails(snapshot: WeatherSnapshot, past: PastWeather?, night: Boolean): List<Detail> {
+    val current = snapshot.current
+    val today = snapshot.today()
+    val date = snapshot.nowAtPlace().toLocalDate()
+    return buildList {
         // Qué ponerse en las próximas 12 horas.
         snapshot.outfit().takeIf { it.isNotEmpty() }?.let { items ->
             add(
@@ -447,45 +495,68 @@ fun DetailsGrid(snapshot: WeatherSnapshot, modifier: Modifier = Modifier, part: 
             )
         }
     }
-    // Los anchos van solos; los demás de a dos, con la misma altura por fila.
-    val rows = buildList<List<Detail>> {
-        var pending: Detail? = null
-        details.forEach { detail ->
-            if (detail.wide) {
-                add(listOf(detail))
-            } else if (pending == null) {
-                pending = detail
-            } else {
-                add(listOf(pending!!, detail))
-                pending = null
-            }
-        }
-        pending?.let { add(listOf(it)) }
-    }
-    // En dos paneles se reparten: la izquierda (que ya tiene la temperatura) se lleva menos.
-    val split = rows.size / 2
-    val shown = when (part) {
-        DetailsPart.ALL -> rows
-        DetailsPart.FIRST -> rows.take(split)
-        DetailsPart.SECOND -> rows.drop(split)
-    }
-    if (shown.isEmpty()) return
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Con clave por tarjeta: si aparece o se va una (de día a noche, el aire), el estado de cada
-        // una (la explicación abierta, la animación) no pasa a la de al lado.
-        shown.forEach { row ->
-            key(row.joinToString("|") { it.label }) {
-            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                row.forEach { detail -> key(detail.label) { DetailTile(detail, Modifier.weight(1f).fillMaxHeight()) } }
-                if (row.size == 1 && !row[0].wide) Spacer(Modifier.weight(1f))
-            }
+}
+
+/** Qué parte de una tarjeta es cada hijo de [TileRow]. */
+private data class TilePart(val index: Int, val part: Int)
+
+private const val PART_BACKGROUND = 0
+private const val PART_TEXT = 1
+private const val PART_VISUAL = 2
+
+/**
+ * Una fila de tarjetas de la misma altura. Antes era un Row con IntrinsicSize.Min, que mide cada
+ * tarjeta dos veces. Acá cada parte se mide una sola vez: primero el texto y el dibujo, y con eso
+ * la altura de la fila; después el fondo (el que se toca y lee TalkBack) ya con esa altura. El
+ * dibujo va abajo de todo, como antes.
+ */
+@Composable
+private fun TileRow(row: List<Detail>) {
+    // Una tarjeta chica sola ocupa la mitad, con el lugar de al lado vacío.
+    val columns = if (row.size == 1 && !row[0].wide) 2 else row.size
+    // El texto y los dibujos quedan fuera del Surface: el color de contenido se pone a mano.
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+        Layout(
+            content = {
+                row.forEachIndexed { i, detail ->
+                    key(detail.label) {
+                        TileBackground(detail, Modifier.layoutId(TilePart(i, PART_BACKGROUND)))
+                        TileText(detail, Modifier.layoutId(TilePart(i, PART_TEXT)))
+                        TileVisual(detail, Modifier.layoutId(TilePart(i, PART_VISUAL)))
+                    }
+                }
+            },
+        ) { measurables, constraints ->
+            val parts = measurables.associateBy { it.layoutId }
+            fun part(i: Int, kind: Int) = parts.getValue(TilePart(i, kind))
+            val gap = 12.dp.roundToPx()
+            val padX = 20.dp.roundToPx()
+            val padY = 16.dp.roundToPx()
+            val visualGap = 12.dp.roundToPx()
+            val width = if (constraints.hasBoundedWidth) constraints.maxWidth else constraints.minWidth
+            val tileWidth = ((width - gap * (columns - 1)) / columns).coerceAtLeast(0)
+            val inner = Constraints(maxWidth = (tileWidth - padX * 2).coerceAtLeast(0))
+            val texts = row.indices.map { part(it, PART_TEXT).measure(inner) }
+            val visuals = row.indices.map { part(it, PART_VISUAL).measure(inner) }
+            val height = row.indices.maxOf { i ->
+                padY * 2 + texts[i].height + (if (row[i].visual != null) visualGap + visuals[i].height else 0)
+            }.coerceIn(constraints.minHeight, constraints.maxHeight)
+            val backgrounds = row.indices.map { part(it, PART_BACKGROUND).measure(Constraints.fixed(tileWidth, height)) }
+            layout(width, height) {
+                row.indices.forEach { i ->
+                    val x = i * (tileWidth + gap)
+                    backgrounds[i].placeRelative(x, 0)
+                    texts[i].placeRelative(x + padX, padY)
+                    visuals[i].placeRelative(x + padX, height - padY - visuals[i].height)
+                }
             }
         }
     }
 }
 
+/** El fondo de la tarjeta: se toca para ver qué significa y lleva la lectura de TalkBack. */
 @Composable
-private fun DetailTile(detail: Detail, modifier: Modifier) {
+private fun TileBackground(detail: Detail, modifier: Modifier) {
     var open by remember { mutableStateOf(false) }
     val info = detail.info
     if (open && info != null) {
@@ -513,24 +584,31 @@ private fun DetailTile(detail: Detail, modifier: Modifier) {
                     }
                 }
             },
-    ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-            CardLabel(detail.label)
-            Spacer(Modifier.height(6.dp))
-            Text(detail.value, style = MaterialTheme.typography.titleLarge)
-            if (detail.note != null) {
-                Text(
-                    detail.note,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (detail.visual != null) {
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.height(12.dp))
-                detail.visual.invoke()
-            }
+    ) {}
+}
+
+/** Nombre, valor y nota. Va encima del fondo sin tomar toques (llegan al fondo) ni lectura propia. */
+@Composable
+private fun TileText(detail: Detail, modifier: Modifier) {
+    Column(modifier.clearAndSetSemantics { }) {
+        CardLabel(detail.label)
+        Spacer(Modifier.height(6.dp))
+        Text(detail.value, style = MaterialTheme.typography.titleLarge)
+        if (detail.note != null) {
+            Text(
+                detail.note,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
+    }
+}
+
+/** El dibujo de la tarjeta, si tiene; si no, un hueco de tamaño cero. */
+@Composable
+private fun TileVisual(detail: Detail, modifier: Modifier) {
+    Box(modifier.clearAndSetSemantics { }) {
+        detail.visual?.invoke()
     }
 }
 

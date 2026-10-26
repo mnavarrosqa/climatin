@@ -5,7 +5,6 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
@@ -16,22 +15,14 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
-import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.ContentScale
-import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
-import androidx.glance.layout.size
-import androidx.glance.layout.width
-import androidx.glance.text.FontWeight
-import androidx.glance.text.Text
-import androidx.glance.text.TextStyle
-import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherSnapshot
-import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.work.WeatherWorker
 import kotlin.math.roundToInt
 
@@ -48,7 +39,7 @@ class GraficoWidget : GlanceAppWidget(), PreviewableWidget {
     override fun Body() {
         ClimaGlanceTheme {
             val current = widgetSnapshot()
-            if (current == null) EmptyWidget() else GraficoContent(current)
+            if (current == null) EmptyWidget(WidgetStyle.SKY) else GraficoContent(current)
         }
     }
 
@@ -59,15 +50,17 @@ class GraficoWidget : GlanceAppWidget(), PreviewableWidget {
 
 @Composable
 private fun GraficoContent(snapshot: WeatherSnapshot) {
-    val colors = widgetColors(snapshot)
+    // Por defecto, el cielo de fondo como Clima (WidgetCatalog tiene el mismo valor).
+    val colors = widgetColors(snapshot, default = WidgetStyle.SKY)
     val context = LocalContext.current
     val size = LocalSize.current
-    val current = snapshot.current
+    val scale = fontScale()
     val padding = 16.dp
+    // El encabezado compacto de Clima si hay alto; en el 4×2 bajo, el de una línea.
+    val header = if (size.height >= 170.dp * scale) HeaderSize.COMPACT else HeaderSize.INLINE
     // Con letra grande el encabezado crece: si no, tapaba el gráfico.
-    val header = 44.dp * fontScale()
     val chartWidth = size.width - padding * 2
-    val chartHeight = (size.height - padding * 2 - header - 8.dp).coerceAtLeast(56.dp)
+    val chartHeight = (size.height - padding * 2 - header.reserve * scale - 8.dp).coerceAtLeast(40.dp)
     val hourCount = (chartWidth.value / 44f).roundToInt().coerceIn(4, 12)
     val density = context.resources.displayMetrics.density
     val bitmap = ChartBitmap.render(
@@ -80,37 +73,9 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
     )
 
     WidgetSurface(colors, modifier = GlanceModifier.padding(padding)) {
-        Column(modifier = GlanceModifier.fillMaxWidth()) {
-            Row(
-                modifier = GlanceModifier.fillMaxWidth().height(header),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Image(
-                    provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
-                    contentDescription = WeatherCodes.description(current.code),
-                    modifier = GlanceModifier.size(36.dp),
-                )
-                Spacer(GlanceModifier.width(10.dp))
-                Column(modifier = GlanceModifier.defaultWeight()) {
-                    Text(
-                        "${current.temperature.degrees()} ${WeatherCodes.description(current.code)}",
-                        maxLines = 1,
-                        style = TextStyle(
-                            color = colors.text,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                    )
-                    PlaceLabel(snapshot, colors, fontSize = 12.sp)
-                }
-                snapshot.today()?.takeIf { widgetShows(WidgetPart.RANGE) }?.let { today ->
-                    Text(
-                        "${today.max.degrees()} / ${today.min.degrees()}",
-                        style = TextStyle(color = colors.textVariant, fontSize = 13.sp),
-                    )
-                }
-            }
-            Spacer(GlanceModifier.height(8.dp))
+        Column(modifier = GlanceModifier.fillMaxSize()) {
+            NowHeader(snapshot, colors, header)
+            Spacer(GlanceModifier.defaultWeight())
             Image(
                 provider = ImageProvider(bitmap),
                 contentDescription = tr("Temperatura de las próximas horas", "Temperature for the next hours"),

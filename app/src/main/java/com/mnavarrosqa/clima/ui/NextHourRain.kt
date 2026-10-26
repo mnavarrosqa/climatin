@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.mnavarrosqa.clima.data.RainOutlook
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.rainOutlook
 import com.mnavarrosqa.clima.data.rainOutlookText
@@ -32,9 +33,16 @@ fun nextHourRain(snapshot: WeatherSnapshot): List<Double>? {
 }
 
 /**
- * Tarjeta de la próxima hora, como la del Pixel: cuándo empieza o para y barras cada 15 minutos.
- * Solo aparece si va a llover (o está lloviendo) en las próximas dos horas.
+ * Las barras para la tarjeta propia de la próxima hora, o null si no va. Solo cuando la lluvia
+ * empieza dentro de 60 minutos: en un teléfono chico ocupaba la primera pantalla por una lluvia de
+ * dentro de dos horas, que ya cuenta la frase de "Próximas horas".
  */
+fun nextHourRainForCard(snapshot: WeatherSnapshot): List<Double>? {
+    if (snapshot.rainOutlook(withinMinutes = 60) !is RainOutlook.Starts) return null
+    return nextHourRain(snapshot)
+}
+
+/** Tarjeta de la próxima hora, como la del Pixel: cuándo empieza o para y barras cada 15 minutos. */
 @Composable
 fun NextHourRainCard(snapshot: WeatherSnapshot, values: List<Double>) {
     val outlook = snapshot.rainOutlook(withinMinutes = 120)

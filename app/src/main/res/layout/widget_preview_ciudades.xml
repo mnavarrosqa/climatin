@@ -1,99 +1,169 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Como Ciudades: una fila por ciudad, cada una en su recuadro (en el widget, con su cielo). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/preview_surface"
-    android:orientation="vertical"
-    android:paddingHorizontal="16dp"
-    android:paddingVertical="12dp">
+    android:orientation="vertical">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="52dp"
+        android:layout_marginBottom="6dp"
+        android:background="@color/preview_chip"
         android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="📍 Córdoba"
+            android:orientation="vertical">
+
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="Córdoba"
             android:textColor="@color/preview_text"
             android:textSize="14sp" />
 
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_weather_partly_cloudy_day" />
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="Parcialmente nublado"
+            android:textColor="@color/preview_text_variant"
+            android:textSize="12sp" />
+        </LinearLayout>
 
-        <TextView
-            android:layout_width="42dp"
+        <LinearLayout
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="end"
+            android:orientation="vertical">
+
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="22°"
             android:textColor="@color/preview_text"
-            android:textSize="16sp" />
+            android:textSize="24sp" />
+
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Máx 25°  Mín 14°"
+            android:textColor="@color/preview_text_variant"
+            android:textSize="12sp" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="52dp"
+        android:layout_marginBottom="6dp"
+        android:background="@color/preview_chip"
         android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
             android:text="Buenos Aires"
             android:textColor="@color/preview_text"
             android:textSize="14sp" />
 
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_weather_rain" />
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="Lluvia"
+            android:textColor="@color/preview_text_variant"
+            android:textSize="12sp" />
+        </LinearLayout>
 
-        <TextView
-            android:layout_width="42dp"
+        <LinearLayout
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="end"
+            android:orientation="vertical">
+
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="17°"
             android:textColor="@color/preview_text"
-            android:textSize="16sp" />
+            android:textSize="24sp" />
+
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Máx 19°  Mín 12°"
+            android:textColor="@color/preview_text_variant"
+            android:textSize="12sp" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="52dp"
+        android:layout_marginBottom="6dp"
+        android:background="@color/preview_chip"
         android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
             android:text="Mendoza"
             android:textColor="@color/preview_text"
             android:textSize="14sp" />
 
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_weather_clear_day" />
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:text="Despejado"
+            android:textColor="@color/preview_text_variant"
+            android:textSize="12sp" />
+        </LinearLayout>
 
-        <TextView
-            android:layout_width="42dp"
+        <LinearLayout
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="end"
-            android:text="25°"
+            android:orientation="vertical">
+
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="24°"
             android:textColor="@color/preview_text"
-            android:textSize="16sp" />
+            android:textSize="24sp" />
+
+            <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Máx 27°  Mín 11°"
+            android:textColor="@color/preview_text_variant"
+            android:textSize="12sp" />
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>

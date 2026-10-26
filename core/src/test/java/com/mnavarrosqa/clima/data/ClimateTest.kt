@@ -144,6 +144,31 @@ class ClimateTest {
     }
 
     @Test
+    fun lluviaDeHoyCuentaLaHoraQueTermino() {
+        val now = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.HOURS)
+        val today = now.toLocalDate()
+        fun hour(at: LocalDateTime, mm: Double) = Hour(at.toString(), 15.0, 61, null, true, precipitation = mm)
+        // Pronóstico bajado hace 2 horas: la hora de la descarga y la siguiente quedaron en hours.
+        val downloaded = now.minusHours(2)
+        val past = generateSequence(today.minusDays(1).atStartOfDay()) { it.plusHours(1) }
+            .takeWhile { it.isBefore(downloaded) }.map { hour(it, 0.5) }.toList()
+        val upcoming = generateSequence(downloaded) { it.plusHours(1) }.take(6).map { hour(it, 1.0) }.toList()
+        val snapshot = WeatherSnapshot(
+            place = "X", latitude = 0.0, longitude = 0.0, utcOffsetSeconds = 0, timezone = "UTC",
+            fetchedAt = System.currentTimeMillis(), current = Current(now.toString(), 15.0, 15.0, 50, true, 61, 10.0, 0.5),
+            hours = upcoming, days = emptyList(), pastHours = past,
+        )
+        // Cuentan las horas de hoy (por lo que traen: la anterior) hasta la actual inclusive.
+        val expected = (past + upcoming)
+            .filter { !it.dateTime.isAfter(now) && it.dateTime.minusHours(1).toLocalDate() == today }
+            .sumOf { it.precipitation!! }
+        assertEquals(expected, snapshot.rainSoFarToday() ?: 0.0, 0.001)
+        // Desde las 3: de la 1 a la descarga −1 a 0,5 mm, y la de la descarga, la siguiente y la
+        // actual a 1 mm (antes faltaban esas tres).
+        if (now.hour >= 3) assertEquals((now.hour - 3) * 0.5 + 3.0, snapshot.rainSoFarToday()!!, 0.001)
+    }
+
+    @Test
     fun leeElArchivoHistorico() {
         val body = """
             {"latitude": -31.4, "longitude": -64.2, "daily_units": {"time": "iso8601"},

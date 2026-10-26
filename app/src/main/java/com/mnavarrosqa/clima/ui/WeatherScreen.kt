@@ -43,7 +43,7 @@ import androidx.compose.ui.semantics.semantics
 import kotlin.math.absoluteValue
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.BackEventCompat
-import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material.icons.rounded.MoreVert
@@ -55,7 +55,6 @@ import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.drawWithContent
@@ -160,7 +159,6 @@ import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.dayLabel
 import com.mnavarrosqa.clima.data.degrees
-import com.mnavarrosqa.clima.data.longDate
 import com.mnavarrosqa.clima.data.updatedAt
 import com.mnavarrosqa.clima.data.ageText
 import kotlin.math.roundToInt
@@ -271,14 +269,9 @@ fun WeatherRoute(
     }
     // Gesto "atrás" predictivo: mientras se desliza, la pantalla se achica, se corre hacia el lado
     // del dedo y deja ver que vuelve. Si se arrepiente, vuelve a su lugar con un resorte, sin saltar.
-    var backProgress by remember { mutableFloatStateOf(0f) }
+    val backShown = remember { Animatable(0f) }
     var backEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
-    var backDragging by remember { mutableStateOf(false) }
-    val shownBack by animateFloatAsState(
-        backProgress,
-        if (backDragging) snap<Float>() else Motion.gentle<Float>(),
-        label = "atrás",
-    )
+    val backScope = rememberCoroutineScope()
     // La bienvenida abierta desde Ajustes vuelve a Ajustes con "atrás"; la primera vez, "atrás" sale de la app.
     val welcomeFromSettings = showWelcome && Welcome.seen(context)
     PredictiveBackHandler(
@@ -286,9 +279,8 @@ fun WeatherRoute(
     ) { events ->
         try {
             events.collect { event ->
-                backDragging = true
-                backProgress = event.progress
                 backEdge = event.swipeEdge
+                backShown.snapTo(event.progress)
             }
             when {
                 welcomeFromSettings -> showWelcome = false
@@ -297,9 +289,14 @@ fun WeatherRoute(
                 showSettings -> showSettings = false
                 else -> showCities = false
             }
-        } finally {
-            backDragging = false
-            backProgress = 0f
+            // Gesto completo: la pantalla de destino entra entera. Con el resorte de vuelta se veía
+            // achicada y corrida un instante y después saltaba a su lugar.
+            backShown.snapTo(0f)
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            // Se arrepintió: vuelve con el resorte. Esta corrutina ya está cancelada, así que la
+            // animación va en otra.
+            backScope.launch { backShown.animateTo(0f, Motion.gentle()) }
+            throw cancel
         }
     }
 
@@ -338,6 +335,8 @@ fun WeatherRoute(
     AnimatedContent(
         targetState = screen,
         modifier = Modifier.graphicsLayer {
+            // Se lee al dibujar: el gesto no recompone las pantallas.
+            val shownBack = backShown.value
             val scale = 1f - 0.1f * shownBack
             scaleX = scale
             scaleY = scale
@@ -360,6 +359,14 @@ fun WeatherRoute(
                 onFinish = {
                     Welcome.markSeen(context)
                     showWelcome = false
+                    // Si salteó la ubicación y no tiene ciudades, pedirla otra vez enseguida era
+                    // insistir: se abre la búsqueda de ciudades.
+                    if (!hasPermission && places.isEmpty() && currentSnapshot == null) showCities = true
+                },
+                onPickCity = {
+                    Welcome.markSeen(context)
+                    showWelcome = false
+                    showCities = true
                 },
             )
             "radar" -> radar?.let {
@@ -471,7 +478,9 @@ private fun WeatherPager(
     onDeepLinkHandled: () -> Unit,
 ) {
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
-    val error by viewModel.error.collectAsStateWithLifecycle()
+    val errors by viewModel.errors.collectAsStateWithLifecycle()
+    val offline by viewModel.offline.collectAsStateWithLifecycle()
+    val loadPhase by viewModel.loadPhase.collectAsStateWithLifecycle()
     val update by viewModel.updatePrompt.collectAsStateWithLifecycle()
     // Día a abrir en la página de destino del acceso directo.
     var pendingDay by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -497,9 +506,17 @@ private fun WeatherPager(
     }
     // Páginas cuyo encabezado grande ya quedó arriba, fuera de la vista.
     val collapsed = remember { mutableStateMapOf<String, Boolean>() }
+    // Páginas que se están desplazando ahora.
+    val scrolling = remember { mutableStateMapOf<String, Boolean>() }
     val skyId = pages.getOrElse(pagerState.currentPage) { CURRENT_PLACE_ID }
     val skySnapshot by remember(skyId) { viewModel.snapshots(skyId) }
         .collectAsStateWithLifecycle(viewModel.cached(skyId))
+    // Mientras se desplaza, o con el encabezado ya arriba, el cielo casi no se ve detrás de las
+    // tarjetas: va más lento y el desplazamiento queda más fluido. derivedStateOf: solo cambia al
+    // empezar o terminar, no con cada píxel.
+    val calmSky by remember(skyId) {
+        derivedStateOf { scrolling[skyId] == true || collapsed[skyId] == true }
+    }
 
     Box(Modifier.fillMaxSize()) {
         AnimatedSky(
@@ -510,6 +527,7 @@ private fun WeatherPager(
             // El ícono grande del pronóstico ya es el sol (o la luna): sin esto se veían dos.
             sunMoon = false,
             snapshot = skySnapshot,
+            calm = calmSky,
         )
         val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
@@ -543,14 +561,25 @@ private fun WeatherPager(
                         scaleY = scale
                     },
                 ) {
+                    val placeId = pages[page]
                     WeatherPage(
-                        placeId = pages[page],
+                        placeId = placeId,
                         viewModel = viewModel,
-                        error = error,
+                        error = errors[placeId],
+                        offline = offline,
+                        // El esqueleto de "donde estoy" dice si busca la ubicación o baja el pronóstico.
+                        loadingStatus = when {
+                            placeId != CURRENT_PLACE_ID -> tr("Bajando el pronóstico…", "Getting the forecast…")
+                            loadPhase == LoadPhase.LOCATING -> tr("Buscando tu ubicación…", "Finding your location…")
+                            loadPhase == LoadPhase.DOWNLOADING -> tr("Bajando el pronóstico…", "Getting the forecast…")
+                            else -> null
+                        },
                         onOpenRadar = onOpenRadar,
-                        openDay = pendingDay?.takeIf { it.first == pages[page] }?.second,
+                        onPickCity = onOpenCities,
+                        openDay = pendingDay?.takeIf { it.first == placeId }?.second,
                         onDayOpened = { pendingDay = null },
-                        onCollapsedChange = { collapsed[pages[page]] = it },
+                        onCollapsedChange = { collapsed[placeId] = it },
+                        onScrollingChange = { scrolling[placeId] = it },
                         openAlert = openAlert,
                     )
                 }
@@ -735,9 +764,13 @@ private fun WeatherPage(
     viewModel: WeatherViewModel,
     error: String?,
     onOpenRadar: (Double, Double) -> Unit,
+    offline: Boolean = false,
+    loadingStatus: String? = null,
+    onPickCity: () -> Unit = {},
     openDay: String? = null,
     onDayOpened: () -> Unit = {},
     onCollapsedChange: (Boolean) -> Unit = {},
+    onScrollingChange: (Boolean) -> Unit = {},
     openAlert: String? = null,
     banner: (@Composable () -> Unit)? = null,
 ) {
@@ -769,6 +802,10 @@ private fun WeatherPage(
         cards = cards,
         openAlert = openAlert,
         onRetry = viewModel::refresh,
+        offline = offline,
+        loadingStatus = loadingStatus,
+        onPickCity = onPickCity,
+        onScrollingChange = onScrollingChange,
     )
 }
 
@@ -796,9 +833,20 @@ fun ForecastContent(
     cards: List<ForecastCard> = ForecastCard.entries,
     openAlert: String? = null,
     onRetry: () -> Unit = {},
+    offline: Boolean = false,
+    loadingStatus: String? = null,
+    onPickCity: () -> Unit = {},
+    onScrollingChange: (Boolean) -> Unit = {},
 ) {
     // La lista del resumen (la única en pantallas angostas) decide si el encabezado se achica.
     val summaryState = rememberLazyListState()
+    // Las otras columnas de los paneles: también cuentan para calmar el cielo al desplazar.
+    val middleState = rememberLazyListState()
+    val lastState = rememberLazyListState()
+    val scrolling by remember {
+        derivedStateOf { summaryState.isScrollInProgress || middleState.isScrollInProgress || lastState.isScrollInProgress }
+    }
+    LaunchedEffect(scrolling) { onScrollingChange(scrolling) }
     // Un reloj por minuto: "Actualizado hace…", el aviso de datos viejos y la lluvia de la
     // próxima hora siguen al día aunque la pantalla quede abierta.
     val minute by produceState(System.currentTimeMillis()) {
@@ -807,14 +855,26 @@ fun ForecastContent(
             value = System.currentTimeMillis()
         }
     }
+    val age = snapshot?.let { minute - it.fetchedAt }
+    // Con datos de menos de media hora, una actualización fallida o la falta de red no se avisan:
+    // lo que se ve sigue sirviendo.
+    val oldish = age != null && age > 30 * 60_000L
     // Datos de hace más de 2 horas: se avisa arriba, no solo en la letra chica del final.
-    val stale = snapshot != null && minute - snapshot.fetchedAt > 2 * 60 * 60_000L
+    val stale = age != null && age > 2 * 60 * 60_000L
     // Se calculan una vez por pronóstico (y por minuto), no en cada recomposición.
     val alerts = remember(snapshot, minute) { snapshot?.alerts.orEmpty().distinctBy { it.id }.filterNot { it.isExpired() } }
-    val nextRain = remember(snapshot, minute) { snapshot?.let(::nextHourRain) }
+    val nextRain = remember(snapshot, minute) { snapshot?.let(::nextHourRainForCard) }
     val headline = remember(snapshot, minute) { snapshot?.let { Insights.headline(it.copy(alerts = emptyList())) } }
     val ageLabel = remember(snapshot, minute) { snapshot?.let { ageText(it.fetchedAt) } }
-    val heroIndex = listOfNotNull(banner, error ?: if (stale) "" else null).size
+    // El aviso de arriba: sin red, en tono tranquilo; con error, el de error; si no, solo si es viejo.
+    val status: StatusNotice? = when {
+        snapshot == null -> null
+        offline && oldish -> StatusNotice(tr("Sin conexión · datos de ", "No connection · data from ") + ageLabel, null, isError = false, canRetry = false)
+        error != null && oldish -> StatusNotice(error, ageLabel?.let { tr("Mostrando datos de ", "Showing data from ") + it }, isError = true, canRetry = true)
+        stale -> StatusNotice(null, ageLabel?.let { tr("Mostrando datos de ", "Showing data from ") + it }, isError = false, canRetry = true)
+        else -> null
+    }
+    val heroIndex = listOfNotNull(banner, status).size
     val collapseAt = with(LocalDensity.current) { 180.dp.roundToPx() }
     val isCollapsed by remember(heroIndex) {
         derivedStateOf {
@@ -824,31 +884,49 @@ fun ForecastContent(
     }
     LaunchedEffect(isCollapsed) { onCollapsedChange(isCollapsed) }
     val insets = WindowInsets.systemBars.asPaddingValues()
+    val compact = Appearance.compactLayout
     val padding = PaddingValues(
         start = 16.dp,
         end = 16.dp,
         top = insets.calculateTopPadding() + 56.dp,
         bottom = insets.calculateBottomPadding() + 24.dp,
     )
-    val spacing = Arrangement.spacedBy(if (Appearance.compact) 8.dp else 12.dp)
+    val spacing = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)
+    // La frase va como encabezado de "Próximas horas", como el resumen del Clima de Apple; si esa
+    // tarjeta está oculta, va sola arriba.
+    val headlineInHours = ForecastCard.HOURS in cards
 
     // Cada bloque es una función que agrega ítems a una lista; así se reparten entre uno o dos paneles.
     val summary: LazyListScope.() -> Unit = {
-        if (banner != null) item { banner() }
-        if (error != null || stale) {
-            item {
-                ErrorBanner(
-                    message = error,
-                    age = ageLabel?.let { tr("Mostrando datos de ", "Showing data from ") + it },
-                    onRetry = onRetry,
-                )
+        if (banner != null) item(key = "aviso", contentType = "aviso") { banner() }
+        status?.let { notice ->
+            item(key = "estado", contentType = "estado") {
+                ErrorBanner(notice, onRetry = onRetry)
             }
         }
         if (snapshot == null) {
-            // Con error y nada guardado no tiene sentido el esqueleto animado para siempre.
-            if (error == null) item { ForecastSkeleton() }
+            if (error != null || offline) {
+                // Sin nada guardado y sin poder bajarlo: una pantalla que explica y ofrece salidas,
+                // no un aviso suelto sobre el cielo vacío.
+                item(key = "vacio", contentType = "vacio") {
+                    EmptyForecast(
+                        message = if (offline) {
+                            tr(
+                                "Sin conexión. Cuando vuelva la red, el pronóstico se baja solo.",
+                                "No connection. The forecast will download when you're back online.",
+                            )
+                        } else {
+                            error.orEmpty()
+                        },
+                        onRetry = onRetry,
+                        onPickCity = onPickCity,
+                    )
+                }
+            } else {
+                item(key = "esqueleto", contentType = "esqueleto") { ForecastSkeleton(loadingStatus) }
+            }
         } else {
-            item {
+            item(key = "encabezado", contentType = "encabezado") {
                 Box(
                     Modifier
                         .reveal(0, shownAt)
@@ -871,13 +949,25 @@ fun ForecastContent(
                         },
                 ) { Hero(snapshot, isCurrentLocation) }
             }
-            items(alerts, key = { "alerta-" + it.id }) { alert -> Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) } }
+            items(alerts, key = { "alerta-" + it.id }, contentType = { "alerta" }) { alert ->
+                Box(Modifier.reveal(1, shownAt)) { AlertCard(alert, startExpanded = alert.id == openAlert) }
+            }
             nextRain?.let { values ->
-                item(key = "proxima-hora") { Box(Modifier.reveal(1, shownAt)) { NextHourRainCard(snapshot, values) } }
+                item(key = "proxima-hora", contentType = "proxima-hora") {
+                    Box(Modifier.reveal(1, shownAt)) { NextHourRainCard(snapshot, values) }
+                }
             }
             // Las alertas ya tienen su tarjeta: la frase busca lo siguiente más útil.
-            headline?.let { text ->
-                item { Box(Modifier.reveal(1, shownAt)) { InsightChip(text) } }
+            if (!headlineInHours) {
+                headline?.let { text ->
+                    item(key = "frase", contentType = "frase") {
+                        Box(Modifier.reveal(1, shownAt)) {
+                            GlassCard(title = null) {
+                                Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 20.dp))
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -885,10 +975,10 @@ fun ForecastContent(
     // En paneles, los detalles se pueden repartir en dos mitades ([part]).
     val card: LazyListScope.(ForecastCard, Int, DetailsPart) -> Unit = { which, index, part ->
         if (snapshot != null) {
-            item(key = which.name + part.name) {
+            item(key = which.name + part.name, contentType = which.name) {
                 Box(Modifier.reveal(index, shownAt)) {
                     when (which) {
-                        ForecastCard.HOURS -> GlassCard(tr("Próximas horas", "Next hours")) {
+                        ForecastCard.HOURS -> GlassCard(tr("Próximas horas", "Next hours"), summary = headline) {
                             // Con la hora en la clave: si la pantalla queda abierta, el gráfico avanza solo.
                             val hourKey = minute / 3_600_000
                             val sunEvents = remember(snapshot, hourKey) { sunEventsOf(snapshot.days).filter { it.time.isAfter(snapshot.nowAtPlace()) } }
@@ -907,7 +997,7 @@ fun ForecastContent(
     }
     val footer: LazyListScope.() -> Unit = {
         if (snapshot != null) {
-            item {
+            item(key = "pie", contentType = "pie") {
                 Text(
                     tr("Actualizado", "Updated") + " $ageLabel (${updatedAt(snapshot.fetchedAt)}) · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
                     style = MaterialTheme.typography.labelMedium.onSky(),
@@ -936,7 +1026,7 @@ fun ForecastContent(
                 ),
             ),
     ) {
-        val paneSpacing = if (Appearance.compact) 8.dp else 12.dp
+        val paneSpacing = if (compact) 8.dp else 12.dp
         // Cada panel con su relleno: entre paneles va la mitad, así el hueco es parejo.
         fun panePadding(first: Boolean, last: Boolean) = PaddingValues(
             start = if (first) 16.dp else paneSpacing / 2,
@@ -957,6 +1047,7 @@ fun ForecastContent(
                     cardsWhere { if (it == ForecastCard.RADAR) DetailsPart.ALL else null }
                 }
                 LazyColumn(
+                    state = middleState,
                     modifier = Modifier.weight(0.37f).fillMaxSize(),
                     contentPadding = panePadding(first = false, last = false),
                     verticalArrangement = spacing,
@@ -965,6 +1056,7 @@ fun ForecastContent(
                     footer()
                 }
                 LazyColumn(
+                    state = lastState,
                     modifier = Modifier.weight(0.32f).fillMaxSize(),
                     contentPadding = panePadding(first = false, last = true),
                     verticalArrangement = spacing,
@@ -991,6 +1083,7 @@ fun ForecastContent(
                     }
                 }
                 LazyColumn(
+                    state = middleState,
                     modifier = Modifier.weight(0.54f).fillMaxSize(),
                     contentPadding = panePadding(first = false, last = true),
                     verticalArrangement = spacing,
@@ -1097,13 +1190,18 @@ private fun UpdateBanner(release: AppRelease, progressFlow: StateFlow<Float?>, o
     }
 }
 
+/** Lo que dice el aviso de arriba del pronóstico: qué pasó, de cuándo son los datos y si se puede reintentar. */
+private data class StatusNotice(val message: String?, val age: String?, val isError: Boolean, val canRetry: Boolean)
+
 /**
- * No se pudo actualizar, o lo que se ve es viejo: qué pasó, de cuándo son los datos que se ven y
- * un botón para reintentar. TalkBack lo anuncia al aparecer.
+ * No se pudo actualizar, no hay red o lo que se ve es viejo: qué pasó, de cuándo son los datos que
+ * se ven y un botón para reintentar. TalkBack lo anuncia al aparecer.
  */
 @Composable
-private fun ErrorBanner(message: String?, age: String?, onRetry: () -> Unit) {
-    val isError = message != null
+private fun ErrorBanner(notice: StatusNotice, onRetry: () -> Unit) {
+    val isError = notice.isError
+    val message = notice.message
+    val age = notice.age
     Surface(
         color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
         contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
@@ -1119,8 +1217,50 @@ private fun ErrorBanner(message: String?, age: String?, onRetry: () -> Unit) {
                 message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                 age?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
             }
-            TextButton(onClick = onRetry) { Text(tr("Reintentar", "Retry")) }
+            // Sin red no tiene sentido: se reintenta solo cuando vuelve.
+            if (notice.canRetry) {
+                TextButton(onClick = onRetry) { Text(tr("Reintentar", "Retry")) }
+            } else {
+                Spacer(Modifier.height(40.dp))
+            }
         }
+    }
+}
+
+/** Sin pronóstico guardado y sin poder bajarlo: qué pasa y qué se puede hacer. */
+@Composable
+private fun EmptyForecast(message: String, onRetry: () -> Unit, onPickCity: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 48.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Image(
+            painter = painterResource(WeatherCodes.icon(3)),
+            contentDescription = null,
+            modifier = Modifier.size(120.dp),
+        )
+        Spacer(Modifier.height(20.dp))
+        Text(
+            tr("No pude traer el pronóstico", "Couldn't get the forecast"),
+            style = MaterialTheme.typography.headlineSmall.onSky(),
+            color = OnSky,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyLarge.onSky(),
+            color = OnSkyVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 420.dp),
+        )
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = onRetry) { Text(tr("Reintentar", "Retry")) }
+        Spacer(Modifier.height(8.dp))
+        FilledTonalButton(onClick = onPickCity) { Text(tr("Elegir una ciudad", "Pick a city")) }
     }
 }
 
@@ -1129,7 +1269,7 @@ private fun ErrorBanner(message: String?, age: String?, onRetry: () -> Unit) {
 private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
     val current = snapshot.current
     val today = snapshot.today()
-    val compact = Appearance.compact
+    val compact = Appearance.compactLayout
     // Ajustes → Pantalla del clima: tamaño del número y qué datos van debajo.
     val scale = Appearance.heroSize.scale * if (compact) 0.85f else 1f
     val lines = Appearance.heroLines
@@ -1161,11 +1301,8 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                 color = OnSky,
             )
         }
-        Text(
-            longDate(snapshot.nowAtPlace().toLocalDate()),
-            style = MaterialTheme.typography.bodyLarge.onSky(),
-            color = OnSkyVariant,
-        )
+        // Sin la fecha, como Apple y el Pixel: en un teléfono chico era un renglón que empujaba
+        // las próximas horas fuera de la primera pantalla.
         Row(verticalAlignment = Alignment.CenterVertically) {
             BoxWithConstraints(Modifier.weight(1f)) {
                 val shownTemperature by animateFloatAsState(
@@ -1387,36 +1524,30 @@ private fun RadarCard(latitude: Double, longitude: Double, onClick: () -> Unit) 
     }
 }
 
+/**
+ * Tarjeta semitransparente sobre el cielo animado. Con [summary], una frase arriba con una línea
+ * fina debajo, como el resumen de las próximas horas del Clima de Apple; reemplaza al título.
+ */
 @Composable
-private fun InsightChip(text: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-        shape = CircleShape,
-    ) {
-        Row(
-            Modifier.padding(start = 8.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(text, style = MaterialTheme.typography.labelLarge)
-        }
-    }
-}
-
-/** Tarjeta semitransparente sobre el cielo animado. */
-@Composable
-fun GlassCard(title: String?, content: @Composable () -> Unit) {
+fun GlassCard(title: String?, summary: String? = null, content: @Composable () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(28.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        val compact = Appearance.compact
+        val compact = Appearance.compactLayout
         Column(Modifier.padding(vertical = if (compact) 12.dp else 16.dp)) {
-            if (title != null) {
+            if (summary != null) {
+                Text(summary, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 20.dp))
+                Box(
+                    Modifier
+                        .padding(horizontal = 20.dp, vertical = if (compact) 8.dp else 12.dp)
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)),
+                )
+            } else if (title != null) {
                 CardLabel(title, Modifier.padding(horizontal = 20.dp))
                 Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
             }
@@ -1439,7 +1570,7 @@ fun CardLabel(text: String, modifier: Modifier = Modifier) {
 @Composable
 private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
     // Compacto: una semana en vez de dos.
-    val compact = Appearance.compact
+    val compact = Appearance.compactLayout
     val days = snapshot.upcomingDays(if (compact) 7 else 14)
     if (days.isEmpty()) return
     val weekMin = days.minOf { it.min }

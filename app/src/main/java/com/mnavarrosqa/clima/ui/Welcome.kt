@@ -81,6 +81,7 @@ fun WelcomeScreen(
     viewModel: WeatherViewModel,
     onAllowLocation: () -> Unit,
     onFinish: () -> Unit,
+    onPickCity: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val pager = rememberPagerState { 4 }
@@ -141,7 +142,12 @@ fun WelcomeScreen(
                             if (hasLocation) {
                                 Done(tr("Ubicación permitida", "Location allowed"))
                             } else {
-                                Button(onClick = onAllowLocation) { Text(tr("Permitir ubicación", "Allow location")) }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Button(onClick = onAllowLocation) { Text(tr("Permitir ubicación", "Allow location")) }
+                                    Spacer(Modifier.height(8.dp))
+                                    // El texto ofrece usar solo ciudades: el botón lleva directo a buscarla.
+                                    FilledTonalButton(onClick = onPickCity) { Text(tr("Usar una ciudad", "Use a city")) }
+                                }
                             }
                         },
                     )

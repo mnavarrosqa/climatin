@@ -67,6 +67,8 @@ object WidgetCatalog {
         ) { VistazoWidget() },
         WidgetKind(
             GraficoWidgetReceiver::class.java, R.string.widget_grafico_name, R.string.widget_grafico_description, sizes(250, 120, 300, 170, 330, 230),
+            // Por defecto, el cielo del clima de fondo (igual que en GraficoContent).
+            defaultStyle = WidgetStyle.SKY,
             parts = label + WidgetPart.RANGE,
         ) { GraficoWidget() },
         WidgetKind(
@@ -83,14 +85,21 @@ object WidgetCatalog {
             defaultStyle = WidgetStyle.SKY,
             parts = label,
         ) { SemanaWidget() },
-        WidgetKind(SolWidgetReceiver::class.java, R.string.widget_sol_name, R.string.widget_sol_description, sizes(120, 120, 230, 120, 260, 190)) { SolWidget() },
+        WidgetKind(
+            SolWidgetReceiver::class.java, R.string.widget_sol_name, R.string.widget_sol_description, sizes(120, 120, 230, 120, 260, 190),
+            // El cielo muestra el degradado del amanecer y el atardecer (igual que SolWidget.defaultStyle).
+            defaultStyle = WidgetStyle.SKY,
+        ) { SolWidget() },
         WidgetKind(
             ProximaHoraWidgetReceiver::class.java, R.string.widget_proxima_hora_name, R.string.widget_proxima_hora_description, sizes(190, 120, 260, 120, 300, 170),
+            defaultStyle = WidgetStyle.SKY,
             parts = label,
         ) { ProximaHoraWidget() },
         // Muestra todas las ciudades: no se elige una, y cada fila abre la suya.
         WidgetKind(
             CiudadesWidgetReceiver::class.java, R.string.widget_ciudades_name, R.string.widget_ciudades_description, sizes(190, 120, 260, 210, 300, 300),
+            // Con el cielo, cada fila lleva el de su ciudad (igual que CIUDADES_DEFAULT_STYLE).
+            defaultStyle = WidgetStyle.SKY,
             parts = setOf(WidgetPart.RANGE),
             supportsCity = false,
         ) { CiudadesWidget() },

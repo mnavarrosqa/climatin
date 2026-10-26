@@ -19,6 +19,8 @@ class WatchRequestService : WearableListenerService() {
         val request = OneTimeWorkRequestBuilder<WeatherWorker>()
             .setInputData(workDataOf(WeatherWorker.FORCE to true, WeatherWorker.FOR_WATCH to true))
             .build()
+        // KEEP: un toque repetido mientras baja no corta la descarga en curso, que igual le contesta.
+        // No queda trabado en reintentos: para el reloj WeatherWorker no reintenta.
         WorkManager.getInstance(applicationContext).enqueueUniqueWork("reloj-pide", ExistingWorkPolicy.KEEP, request)
     }
 }

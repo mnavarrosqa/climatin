@@ -19,17 +19,24 @@
         android:orientation="vertical">
 
         <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="7"
-        android:textColor="@color/preview_text"
-        android:textSize="28sp" />
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="UV"
+            android:textColor="@color/preview_text_variant"
+            android:textSize="12sp" />
 
         <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Alto"
-        android:textColor="@color/preview_text_variant"
-        android:textSize="11sp" />
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="7"
+            android:textColor="@color/preview_text"
+            android:textSize="28sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Alto"
+            android:textColor="@color/preview_text_variant"
+            android:textSize="12sp" />
     </LinearLayout>
 </FrameLayout>

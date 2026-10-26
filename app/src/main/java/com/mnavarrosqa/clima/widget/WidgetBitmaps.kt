@@ -75,16 +75,26 @@ object WidgetBitmaps {
     /**
      * Barra de mínima a máxima de un día dentro del rango de la semana, con el color de la
      * temperatura (como la del pronóstico de la app). [now], si va, es un punto en la temperatura actual.
+     * [track] es el color de la pista: blanco translúcido sobre el cielo, gris sobre fondos claros.
      */
-    fun rangeBar(widthPx: Int, heightPx: Int, weekMin: Double, weekMax: Double, min: Double, max: Double, now: Double?): Bitmap =
-        cached("rango|$widthPx|$heightPx|$weekMin|$weekMax|$min|$max|$now") {
+    fun rangeBar(
+        widthPx: Int,
+        heightPx: Int,
+        weekMin: Double,
+        weekMax: Double,
+        min: Double,
+        max: Double,
+        now: Double?,
+        track: Int = 0x33FFFFFF,
+    ): Bitmap =
+        cached("rango|$widthPx|$heightPx|$weekMin|$weekMax|$min|$max|$now|$track") {
             val w = widthPx.coerceAtLeast(8)
             val h = heightPx.coerceAtLeast(4)
             val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             val r = h / 2f
-            paint.color = 0x33FFFFFF
+            paint.color = track
             canvas.drawRoundRect(0f, 0f, w.toFloat(), h.toFloat(), r, r, paint)
             val span = (weekMax - weekMin).coerceAtLeast(1.0)
             val x0 = (((min - weekMin) / span) * w).toFloat().coerceIn(0f, w - h.toFloat())

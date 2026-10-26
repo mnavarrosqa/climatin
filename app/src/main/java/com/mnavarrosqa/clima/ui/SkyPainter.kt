@@ -117,6 +117,12 @@ class SkyPainter {
      */
     var useSprites = true
 
+    // Un lugar por nube y otro para el techo, propios de este cielo: en la caché solo cuenta el
+    // último pedido de cada uno (al fundirse dos cielos, cada uno tiene los suyos).
+    private val id = nextId.getAndIncrement()
+    private val blanketSlot = "$id|techo"
+    private val cloudSlots = Array(clouds.size) { "$id|nube|$it" }
+
     fun draw(
         canvas: Canvas,
         width: Float,
@@ -370,7 +376,19 @@ class SkyPainter {
             }
             val left = -width * 0.15f + sin(clock * tau) * width * 0.02f
             val top = -height * 0.1f
-            val sprite = if (useSprites) Sprites.get("techo|${palette[0]}|$strength|$width|$height", width * 1.3f, height * 0.36f, drawBlanket) else null
+            // La imagen se arma a un tamaño redondeado y se estira al real: el techo escala igual a
+            // lo ancho y a lo alto, así que queda idéntico y al cambiar el tamaño de a poco no se
+            // arma una imagen nueva por cuadro.
+            val sprite = if (useSprites) {
+                val bw = Sprites.bucket(width)
+                val bh = Sprites.bucket(height)
+                Sprites.get(blanketSlot, "techo|${palette[0]}|$strength|$bw|$bh", bw * 1.3f, bh * 0.36f) { c, b ->
+                    c.scale(bw / width, bh / height)
+                    drawBlanket(c, b)
+                }
+            } else {
+                null
+            }
             if (sprite != null) {
                 drawSprite(canvas, sprite, left, top, width * 1.3f, height * 0.36f)
             } else {
@@ -405,8 +423,11 @@ class SkyPainter {
             val sprite = if (!useSprites) {
                 null
             } else {
-                Sprites.get("nube|$i|${cloudWidth.toInt()}|${palette[0]}|$alpha", spriteWidth, spriteHeight) { c, b ->
-                    drawCloud(c, b, shape, spriteWidth / 2, cloudWidth * 0.6f, cloudWidth, alpha, palette)
+                // Ancho redondeado: la nube es proporcional a su ancho, así que se arma a ese
+                // tamaño y se estira al real sin que cambie.
+                val bucket = Sprites.bucket(cloudWidth)
+                Sprites.get(cloudSlots[i], "nube|$i|$bucket|${palette[0]}|$alpha", bucket * 1.5f, bucket * 1.0f) { c, b ->
+                    drawCloud(c, b, shape, bucket * 0.75f, bucket * 0.6f, bucket, alpha, palette)
                 }
             }
             if (sprite != null) {
@@ -599,6 +620,7 @@ class SkyPainter {
         val SNOW_SWAY = floatArrayOf(6f, 10f, 16f)
         val SNOW_ALPHA = floatArrayOf(0.55f, 0.8f, 0.9f)
         val FLASHES = floatArrayOf(0.3f, 0.315f, 0.72f)
+        val nextId = java.util.concurrent.atomic.AtomicInteger()
 
     }
 }
@@ -651,33 +673,77 @@ internal class PuffBrush {
  * uno nuevo y antes se redibujaban todas de golpe, con un tirón). Se arman en otro hilo: hasta que
  * están, quien dibuja las hace directo.
  */
-private object Sprites {
-    private val cache = object : android.util.LruCache<String, android.graphics.Bitmap>(32 * 1024 * 1024) {
+internal object Sprites {
+    /**
+     * Tope según la memoria de la app: un cielo cubierto en un teléfono QHD ocupa unos 20 MB y al
+     * fundirse dos cielos hacen falta los dos. Con 32 MB fijos se pisaban entre sí y se volvían a
+     * armar sin parar mientras duraba la transición.
+     */
+    private val maxBytes = (Runtime.getRuntime().maxMemory() / 6)
+        .coerceIn(24L * 1024 * 1024, 64L * 1024 * 1024).toInt()
+
+    private val cache = object : android.util.LruCache<String, android.graphics.Bitmap>(maxBytes) {
         override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.byteCount
     }
-    private val pending = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private class Request(val key: String, val width: Float, val height: Float, val draw: (Canvas, PuffBrush) -> Unit)
+
+    /** El último pedido de cada lugar todavía sin armar; hay como mucho una tarea en cola por lugar. */
+    private val wanted = java.util.concurrent.ConcurrentHashMap<String, Request>()
     private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "nubes").apply { isDaemon = true }
     }
 
-    fun get(key: String, width: Float, height: Float, draw: (Canvas, PuffBrush) -> Unit): android.graphics.Bitmap? {
+    /**
+     * Redondea un tamaño a escalones de un 5%: las claves no dependen de cada píxel, así que al
+     * redimensionar una ventana o un plegable se reusan las imágenes cercanas.
+     */
+    fun bucket(px: Float): Float =
+        if (px <= 1f) 1f else kotlin.math.exp(kotlin.math.round(kotlin.math.ln(px) * 20f) / 20f).toInt().coerceAtLeast(1).toFloat()
+
+    /**
+     * La imagen de [key], o null si todavía no está (y se pide). [slot] es el lugar que la va a
+     * usar: si ya hay un pedido en cola para ese lugar, se reemplaza en vez de sumar otro, así que
+     * al cambiar de tamaño cuadro a cuadro se arma solo el último.
+     */
+    fun get(slot: String, key: String, width: Float, height: Float, draw: (Canvas, PuffBrush) -> Unit): android.graphics.Bitmap? {
         cache.get(key)?.let { return it }
-        if (pending.add(key)) {
-            worker.execute {
-                runCatching {
-                    val scale = min(SkyPainterScale.SCALE, SkyPainterScale.MAX_PX / maxOf(width, height))
-                    val w = (width * scale).toInt().coerceAtLeast(1)
-                    val h = (height * scale).toInt().coerceAtLeast(1)
-                    val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(bitmap)
-                    canvas.scale(w / width, h / height)
-                    draw(canvas, PuffBrush())
-                    cache.put(key, bitmap)
-                }
-                pending.remove(key)
+        val previous = wanted.put(slot, Request(key, width, height, draw))
+        if (previous == null) worker.execute { build(slot) }
+        return null
+    }
+
+    private fun build(slot: String) {
+        val request = wanted[slot] ?: return
+        if (cache.get(request.key) == null) {
+            runCatching {
+                val scale = min(SkyPainterScale.SCALE, SkyPainterScale.MAX_PX / maxOf(request.width, request.height))
+                val w = (request.width * scale).toInt().coerceAtLeast(1)
+                val h = (request.height * scale).toInt().coerceAtLeast(1)
+                val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                canvas.scale(w / request.width, h / request.height)
+                request.draw(canvas, PuffBrush())
+                cache.put(request.key, bitmap)
             }
         }
-        return null
+        // Si mientras se armaba llegó otro pedido para el mismo lugar, no se encoló tarea: se arma ahora.
+        if (!wanted.remove(slot, request)) worker.execute { build(slot) }
+    }
+
+    /** Suelta todas las imágenes: se vuelven a armar cuando un cielo las pida. */
+    fun evictAll() = cache.evictAll()
+
+    /**
+     * Para [android.content.ComponentCallbacks2.onTrimMemory]. Con la app oculta queda la mitad
+     * (lo más reciente: si el fondo de pantalla animado usa las mismas nubes, no las rearma); en
+     * segundo plano o con poca memoria se suelta todo.
+     */
+    fun trim(level: Int) {
+        when {
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> evictAll()
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> cache.trimToSize(maxBytes / 2)
+        }
     }
 }
 

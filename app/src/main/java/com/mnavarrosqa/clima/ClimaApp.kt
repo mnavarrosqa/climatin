@@ -1,6 +1,7 @@
 package com.mnavarrosqa.clima
 
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.content.res.Configuration
 import com.mnavarrosqa.clima.widget.updateWeatherWidgets
 import androidx.work.ExistingWorkPolicy
@@ -14,6 +15,7 @@ import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.work.SunNotifier
 import com.mnavarrosqa.clima.work.Outing
 import com.mnavarrosqa.clima.data.tr
+import com.mnavarrosqa.clima.ui.Sprites
 import android.content.Intent
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
@@ -37,6 +39,13 @@ class ClimaApp : Application() {
         Notify.createChannels(this)
         SunNotifier.createChannel(this)
         Outing.createChannel(this)
+        // Las imágenes de nubes del cielo son una caché global (app, fondo animado): al ocultarse
+        // la app o al faltar memoria se sueltan, si no quedaban decenas de MB hasta que la mataran.
+        registerComponentCallbacks(object : ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) = Sprites.trim(level)
+            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+            override fun onLowMemory() = Sprites.evictAll()
+        })
         // Fuera del hilo principal: leer los ajustes y los pronósticos guardados, agendar los
         // trabajos y el acceso directo no tienen que demorar la primera pantalla. Los pronósticos
         // quedan decodificados en memoria para cuando la pantalla los pida.

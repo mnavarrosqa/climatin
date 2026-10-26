@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -66,6 +67,7 @@ import com.mnavarrosqa.clima.data.windText
 import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 
 /** Cuántas ciudades entran lado a lado: con más, en un teléfono las columnas no se leen. */
@@ -111,11 +113,21 @@ fun CompareScreen(viewModel: WeatherViewModel, initialIds: List<String>, onBack:
     fun nameOf(id: String): String =
         if (id == CURRENT_PLACE_ID) tr("Mi ubicación", "My location") else places.firstOrNull { it.id == id }?.shownName ?: id
 
+    // Cada pronóstico viaja con su id, y el estado se arma de nuevo con cada elección: el de
+    // collectAsState sobrevive al cambio de flujo y, hasta que el nuevo emitía, mostraba los datos
+    // de una ciudad bajo el nombre de otra.
     val flow = remember(chosen) {
-        if (chosen.isEmpty()) flowOf(emptyList<WeatherSnapshot?>()) else combine(chosen.map { viewModel.snapshots(it) }) { it.toList() }
+        if (chosen.isEmpty()) {
+            flowOf(emptyList<Pair<String, WeatherSnapshot?>>())
+        } else {
+            combine(chosen.map { id -> viewModel.snapshots(id).map { id to it } }) { it.toList() }
+        }
     }
-    val initial = remember(chosen) { chosen.map { viewModel.cached(it) } }
-    val snapshots by flow.collectAsStateWithLifecycle(initial)
+    val initial = remember(chosen) { chosen.map { it to viewModel.cached(it) } }
+    val collected = key(chosen) { flow.collectAsStateWithLifecycle(initial).value }
+    val snapshots = remember(collected, chosen) {
+        chosen.map { id -> collected.firstOrNull { it.first == id }?.second }
+    }
 
     Scaffold(
         topBar = {

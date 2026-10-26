@@ -1,11 +1,9 @@
 package com.mnavarrosqa.clima.widget
 
-import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
@@ -20,6 +18,7 @@ import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
@@ -49,7 +48,7 @@ class PronosticoWidget : GlanceAppWidget(), PreviewableWidget {
     override fun Body() {
         ClimaGlanceTheme {
             val current = widgetSnapshot()
-            if (current == null) EmptyWidget() else PronosticoContent(current)
+            if (current == null) EmptyWidget(WidgetStyle.SKY) else PronosticoContent(current)
         }
     }
 
@@ -63,53 +62,41 @@ class PronosticoWidget : GlanceAppWidget(), PreviewableWidget {
 private fun PronosticoContent(snapshot: WeatherSnapshot) {
     val colors = widgetColors(snapshot, default = WidgetStyle.SKY)
     val size = LocalSize.current
-    // Con las horas además de los días hace falta más alto; se corrige por el tamaño de letra.
-    val large = size.height >= 290.dp * fontScale()
+    val scale = fontScale()
+    // El tamaño por defecto (4×3) suele medir 250–280 dp de alto: desde 230 ya entran las horas
+    // con el encabezado compacto; con más alto, el grande y la frase del momento.
+    val large = size.height >= 230.dp * scale
+    val header = when {
+        size.height >= 290.dp * scale -> HeaderSize.FULL
+        size.height >= 170.dp * scale -> HeaderSize.COMPACT
+        else -> HeaderSize.INLINE
+    }
     val dayCount = if (size.width >= 300.dp) 5 else 4
-    val current = snapshot.current
-    WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {
-        Column(modifier = GlanceModifier.fillMaxWidth()) {
-            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Image(
-                    provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
-                    contentDescription = WeatherCodes.description(current.code),
-                    modifier = GlanceModifier.size(40.dp),
-                )
-                Spacer(GlanceModifier.width(10.dp))
-                Column(modifier = GlanceModifier.defaultWeight()) {
-                    Text(
-                        "${current.temperature.degrees()} ${WeatherCodes.description(current.code)}",
-                        maxLines = 1,
-                        style = TextStyle(
-                            color = colors.text,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                    )
-                    PlaceLabel(snapshot, colors, fontSize = 12.sp)
-                }
-            }
+    WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        // Ocupa todo el alto y los días van abajo, como en Clima: si no, el contenido quedaba
+        // flotando en el medio del cielo.
+        Column(modifier = GlanceModifier.fillMaxSize()) {
+            NowHeader(snapshot, colors, header)
             if (large) {
-                Insights.headline(snapshot)?.takeIf { widgetShows(WidgetPart.INSIGHT) }?.let {
-                    Spacer(GlanceModifier.height(6.dp))
+                Insights.headline(snapshot)?.takeIf { size.height >= 300.dp * scale && widgetShows(WidgetPart.INSIGHT) }?.let {
+                    Spacer(GlanceModifier.height(4.dp))
                     Text(
                         it,
                         maxLines = 1,
-                        style = TextStyle(color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                        style = TextStyle(color = colors.text, fontSize = WidgetType.condition, fontWeight = FontWeight.Medium),
                     )
                 }
-                Spacer(GlanceModifier.height(10.dp))
-                HoursRow(snapshot, count = 5, colors = colors)
+                Spacer(GlanceModifier.height(8.dp))
+                HoursRow(snapshot, count = if (size.width >= 300.dp) 6 else 5, colors = colors)
             }
-            Spacer(GlanceModifier.height(12.dp))
-            DaysRow(snapshot, dayCount)
+            Spacer(GlanceModifier.defaultWeight())
+            DaysRow(snapshot, dayCount, colors)
         }
     }
 }
 
 @Composable
-private fun DaysRow(snapshot: WeatherSnapshot, count: Int) {
-    val colors = widgetColors(snapshot, default = WidgetStyle.SKY)
+private fun DaysRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {
     val today = snapshot.nowAtPlace().toLocalDate()
     val days = snapshot.upcomingDays(count)
     // La lluvia va en una línea más, solo si algún día la tiene (así las columnas quedan parejas).
@@ -121,11 +108,12 @@ private fun DaysRow(snapshot: WeatherSnapshot, count: Int) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    dayLabel(day.localDate, today).let { if (it == tr("Mañana", "Tomorrow")) tr("Mañ.", "Tmrw") else it },
+                    dayLabel(day.localDate, today),
                     maxLines = 1,
                     style = TextStyle(
                         color = colors.textVariant,
-                        fontSize = 12.sp,
+                        fontSize = WidgetType.caption,
+                        fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                     ),
                 )
@@ -134,23 +122,25 @@ private fun DaysRow(snapshot: WeatherSnapshot, count: Int) {
                     contentDescription = WeatherCodes.description(day.code),
                     modifier = GlanceModifier.size(28.dp).padding(vertical = 2.dp),
                 )
-                Text(
-                    day.max.degrees(),
-                    style = TextStyle(
-                        color = colors.text,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                )
-                Text(
-                    day.min.degrees(),
-                    style = TextStyle(color = colors.textVariant, fontSize = 12.sp),
-                )
+                // Máxima y mínima en una línea ("25° 12°"), como en el Clima de Apple.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        day.max.degrees(),
+                        maxLines = 1,
+                        style = TextStyle(color = colors.text, fontSize = WidgetType.rowLabel, fontWeight = FontWeight.Medium),
+                    )
+                    Spacer(GlanceModifier.width(4.dp))
+                    Text(
+                        day.min.degrees(),
+                        maxLines = 1,
+                        style = TextStyle(color = colors.textVariant, fontSize = WidgetType.rowLabel),
+                    )
+                }
                 if (showRain) {
                     Text(
                         day.precipitationProbability?.takeIf { it >= 30 }?.let { "$it%" } ?: " ",
                         maxLines = 1,
-                        style = TextStyle(color = colors.textVariant, fontSize = 11.sp),
+                        style = TextStyle(color = colors.textVariant, fontSize = WidgetType.caption),
                     )
                 }
             }

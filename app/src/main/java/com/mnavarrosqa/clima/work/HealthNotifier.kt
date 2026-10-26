@@ -14,6 +14,7 @@ import com.mnavarrosqa.clima.data.tr
 import com.mnavarrosqa.clima.data.trend
 import com.mnavarrosqa.clima.data.uvWindow
 import com.mnavarrosqa.clima.work.Notify.muteAction
+import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.math.roundToInt
 
@@ -29,12 +30,25 @@ object HealthNotifier {
     /** Índice europeo desde el que el aire es "malo". */
     private const val BAD_AIR = 60
 
+    /**
+     * Con datos más viejos que esto no se avisa: sin red el trabajo corre igual con lo guardado, y
+     * un "aire malo hoy" o un UV de hace horas confunde más de lo que ayuda.
+     */
+    private const val MAX_AGE_MS = 2 * 60 * 60_000L
+
     fun check(context: Context) {
         val settings = NotifyPrefs.get(context)
         if (!settings.uvAlert && !settings.airAlert) return
         if (!Notify.allowed(context)) return
         val snapshot = WeatherRepository.get(context).cached() ?: return
+        // Copia local: es del núcleo.
+        val fetchedAt = snapshot.fetchedAt
+        if (System.currentTimeMillis() - fetchedAt > MAX_AGE_MS) return
         val now = snapshot.nowAtPlace()
+        val thisHour = now.truncatedTo(ChronoUnit.HOURS)
+        // Horas enteras desde la descarga, en la hora del lugar: lo por hora arranca en esa hora.
+        val fetchedHour = Instant.ofEpochMilli(fetchedAt).atZone(snapshot.zone).toLocalDateTime().truncatedTo(ChronoUnit.HOURS)
+        val hoursSince = ChronoUnit.HOURS.between(fetchedHour, thisHour).toInt().coerceAtLeast(0)
 
         // UV: desde la primera actualización después de las 7 hasta el mediodía; más tarde ya no sirve.
         if (settings.uvAlert && now.hour in 7..12 && !NotifyPrefs.alreadyToday(context, KEY_UV)) {
@@ -51,11 +65,13 @@ object HealthNotifier {
         }
 
         // Aire: malo ahora, o empeorando hasta malo en las próximas horas. Copia local: es del núcleo.
-        val air = snapshot.airQuality
-        if (settings.airAlert && air != null && now.hour in 7..21 && !NotifyPrefs.alreadyToday(context, KEY_AIR)) {
-            val current = air.europeanAqi
+        val downloaded = snapshot.airQuality
+        if (settings.airAlert && downloaded != null && now.hour in 7..21 && !NotifyPrefs.alreadyToday(context, KEY_AIR)) {
+            // upcomingAqi[0] es la hora de la descarga: se corre a la actual, así [0] es ahora y
+            // cada siguiente una hora más. Pasada una hora, "ahora" sale de esa lista.
+            val air = downloaded.copy(upcomingAqi = downloaded.upcomingAqi.drop(hoursSince))
+            val current = if (hoursSince == 0) air.europeanAqi else air.upcomingAqi.firstOrNull() ?: air.europeanAqi
             val pollutant = air.mainPollutant()?.let { " ($it)" } ?: ""
-            // upcomingAqi[0] es la hora actual; cada siguiente, una hora más.
             val worseAt = if (air.trend() == 1) air.upcomingAqi.indexOfFirst { (it ?: 0) >= BAD_AIR }.takeIf { it > 0 } else null
             when {
                 current != null && current >= BAD_AIR -> {
@@ -67,7 +83,7 @@ object HealthNotifier {
                     NotifyPrefs.markToday(context, KEY_AIR)
                 }
                 worseAt != null -> {
-                    val at = now.truncatedTo(ChronoUnit.HOURS).plusHours(worseAt.toLong())
+                    val at = thisHour.plusHours(worseAt.toLong())
                     show(
                         context, Notify.ID_AIR, 0xFF8E6E53.toInt(),
                         title = tr("La calidad del aire empeora hoy$pollutant", "Air quality is getting worse today$pollutant"),

@@ -33,10 +33,20 @@ object WearStore {
     private val json = Json { ignoreUnknownKeys = true }
     private const val KEY = "snapshot"
     private const val UNITS = "unidades"
+    /** Cuándo llegó lo último del teléfono (hora del reloj): solo para saber que contestó. */
     private const val FROM_PHONE_AT = "del_telefono"
+
+    /** Cuándo bajó el teléfono lo último que mandó (su fetchedAt): esto dice si sirve. */
+    private const val PHONE_DATA_AT = "dato_del_telefono"
 
     /** Con datos del teléfono de hace menos de esto, el reloj no descarga por su cuenta. */
     private const val PHONE_FRESH_MS = 45 * 60_000L
+
+    /**
+     * Al pedir "Actualizar", lo que manda el teléfono tiene que ser de hace menos de esto. Sin red
+     * o si su descarga falla manda lo que tenía guardado, y eso no es una respuesta al pedido.
+     */
+    private const val ASKED_FRESH_MS = 10 * 60_000L
 
     private fun prefs(context: Context) = context.getSharedPreferences("clima_wear", Context.MODE_PRIVATE)
 
@@ -68,9 +78,15 @@ object WearStore {
     }
 
     fun saveFromPhone(context: Context, snapshot: String?, units: String?) {
-        val valid = snapshot?.takeIf { runCatching { json.decodeFromString(WeatherSnapshot.serializer(), it) }.isSuccess }
+        val incoming = snapshot?.let { text ->
+            runCatching { json.decodeFromString(WeatherSnapshot.serializer(), text) }.getOrNull()?.let { text to it }
+        }
+        // Si el reloj bajó algo más nuevo por su cuenta, no se pisa con lo viejo del teléfono.
+        val stored = cached(context)
+        val newer = incoming?.takeIf { stored == null || it.second.fetchedAt >= stored.fetchedAt }
         prefs(context).edit().apply {
-            valid?.let { putString(KEY, it) }
+            newer?.let { putString(KEY, it.first) }
+            incoming?.let { putLong(PHONE_DATA_AT, it.second.fetchedAt) }
             units?.let { putString(UNITS, it) }
             putLong(FROM_PHONE_AT, System.currentTimeMillis())
         }.apply()
@@ -80,7 +96,7 @@ object WearStore {
 
     /**
      * Le pide al teléfono que actualice y espera hasta 20 s a que mande el clima nuevo. Null si no
-     * hay teléfono conectado o no llegó a tiempo.
+     * hay teléfono conectado, no llegó a tiempo o lo que mandó es viejo (sin red o falló su descarga).
      */
     private suspend fun askPhone(context: Context): WeatherSnapshot? {
         val before = prefs(context).getLong(FROM_PHONE_AT, 0L)
@@ -98,7 +114,12 @@ object WearStore {
         if (!sent) return null
         repeat(40) {
             delay(500)
-            if (prefs(context).getLong(FROM_PHONE_AT, 0L) > before) return cached(context)
+            if (prefs(context).getLong(FROM_PHONE_AT, 0L) > before) {
+                // Se juzga por cuándo se bajó, no por cuándo llegó: el teléfono contesta enseguida
+                // con lo guardado si no pudo bajar, y así el reloj baja por su cuenta sin esperar.
+                val answer = cached(context) ?: return null
+                return answer.takeIf { System.currentTimeMillis() - answer.fetchedAt < ASKED_FRESH_MS }
+            }
         }
         return null
     }
@@ -107,9 +128,12 @@ object WearStore {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
-    /** Si el teléfono mandó datos hace poco, alcanza con esos. */
+    /**
+     * Si lo que mandó el teléfono se bajó hace poco, alcanza con eso. Por la hora de descarga y no
+     * por la de llegada: el teléfono sin red reenvía datos viejos y no tienen que frenar al reloj.
+     */
     fun phoneIsFresh(context: Context): Boolean =
-        System.currentTimeMillis() - prefs(context).getLong(FROM_PHONE_AT, 0L) < PHONE_FRESH_MS
+        System.currentTimeMillis() - prefs(context).getLong(PHONE_DATA_AT, 0L) < PHONE_FRESH_MS
 
     @SuppressLint("MissingPermission")
     suspend fun refresh(context: Context, force: Boolean = false): Result<WeatherSnapshot> {

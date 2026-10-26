@@ -21,6 +21,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import com.mnavarrosqa.clima.data.tr
 
@@ -130,9 +131,20 @@ object Appearance {
         private set
     var accent by mutableStateOf(Accent.WALLPAPER)
         private set
-    /** Pronóstico más apretado: menos aire entre tarjetas, encabezado más bajo y una semana. */
+    /**
+     * Pronóstico más apretado: menos aire entre tarjetas, encabezado más bajo y una semana. Es lo
+     * elegido en Ajustes; la pantalla usa [compactLayout], que además lo prende en pantallas bajas.
+     */
     var compact by mutableStateOf(false)
         private set
+
+    /**
+     * Compacto de verdad: el elegido a mano o, en pantallas de menos de unos 700 dp de alto
+     * (teléfonos chicos, apaisado), solo. Ahí el encabezado y los avisos llenaban la primera
+     * pantalla y no se veían las próximas horas.
+     */
+    val compactLayout: Boolean
+        @Composable get() = compact || LocalShortScreen.current
     var heroSize by mutableStateOf(HeroSize.MEDIUM)
         private set
     var heroLines by mutableStateOf(setOf(HeroLine.HIGH_LOW, HeroLine.FEELS_LIKE))
@@ -217,6 +229,12 @@ private fun ColorScheme.withAccent(accent: Accent, dark: Boolean): ColorScheme {
 /** Si la app está en oscuro (por el sistema o por elección). */
 val LocalDarkTheme = staticCompositionLocalOf { false }
 
+/** Alto desde el que el pronóstico ya no se compacta solo. */
+private const val SHORT_SCREEN_DP = 700
+
+/** Ventana baja (menos de [SHORT_SCREEN_DP]): el pronóstico pasa a compacto aunque no se haya elegido. */
+val LocalShortScreen = staticCompositionLocalOf { false }
+
 @Composable
 fun ClimaTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
@@ -244,7 +262,10 @@ fun ClimaTheme(content: @Composable () -> Unit) {
             }
         }
     }
-    CompositionLocalProvider(LocalDarkTheme provides dark) {
+    // Alto de la ventana, no de la pantalla: en pantalla dividida también cuenta.
+    val heightDp = LocalConfiguration.current.screenHeightDp
+    val shortScreen = heightDp in 1 until SHORT_SCREEN_DP
+    CompositionLocalProvider(LocalDarkTheme provides dark, LocalShortScreen provides shortScreen) {
         MaterialTheme(colorScheme = colors, typography = ClimaTypography, content = content)
     }
 }

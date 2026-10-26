@@ -7,11 +7,13 @@ import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
 import android.os.Build
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
@@ -60,6 +62,26 @@ object LocationProvider {
         } finally {
             token.cancel()
         } ?: return null
+        return Coordinates(location.latitude, location.longitude)
+    }
+
+    /**
+     * La última ubicación que ya tiene el sistema, sin prender nada, si no tiene más de
+     * [maxAgeMillis]. Contesta al toque: sirve para arrancar sin esperar una ubicación nueva.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun lastKnown(context: Context, maxAgeMillis: Long): Coordinates? {
+        if (!hasPermission(context)) return null
+        val location = try {
+            withTimeoutOrNull(2_000) { LocationServices.getFusedLocationProviderClient(context).lastLocation.await() }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        // Por el reloj desde el arranque: la hora del sistema puede cambiar y la edad no.
+        val ageMillis = (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000
+        if (ageMillis !in 0..maxAgeMillis) return null
         return Coordinates(location.latitude, location.longitude)
     }
 

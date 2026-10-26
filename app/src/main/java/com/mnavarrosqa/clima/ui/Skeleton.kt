@@ -1,7 +1,13 @@
 package com.mnavarrosqa.clima.ui
 
 import com.mnavarrosqa.clima.data.tr
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -37,7 +43,7 @@ import androidx.compose.ui.unit.dp
  * brillo que la recorre. Así se nota que está cargando y no salta todo cuando aparecen los datos.
  */
 @Composable
-fun ForecastSkeleton() {
+fun ForecastSkeleton(status: String? = null) {
     // Se pasa como lambda y se lee al dibujar: el brillo no recompone la pantalla en cada cuadro.
     val shimmerState = rememberInfiniteTransition(label = "brillo").animateFloat(
         initialValue = -1f,
@@ -49,9 +55,24 @@ fun ForecastSkeleton() {
     Column(
         Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = tr("Buscando el clima…", "Getting the weather…") },
+            .semantics { contentDescription = status ?: tr("Buscando el clima…", "Getting the weather…") },
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Qué se está esperando: sin texto, la primera vez parecía colgada.
+        if (status != null) {
+            AnimatedContent(
+                targetState = status,
+                transitionSpec = { fadeIn(tween(300)).togetherWith(fadeOut(tween(150))) },
+                label = "estado de carga",
+            ) { text ->
+                Text(
+                    text,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OnSky,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+            }
+        }
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Bone(shimmer, Modifier.width(160.dp).height(24.dp))
             Bone(shimmer, Modifier.width(120.dp).height(16.dp))

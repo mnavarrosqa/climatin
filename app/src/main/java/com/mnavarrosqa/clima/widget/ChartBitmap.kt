@@ -179,7 +179,38 @@ object ChartBitmap {
             drawSunArc(context, progress, widthPx, heightPx, onTransparent, accent)
         }
 
-    private fun drawSunArc(context: Context, progress: Float, widthPx: Int, heightPx: Int, onTransparent: Boolean, accent: Int?): Bitmap {
+    /**
+     * El mismo arco para la luna, de noche: de su salida a su puesta, con la luna en su fase
+     * ([age] de 0 a 1, como [com.mnavarrosqa.clima.data.Moon.age]). Si no está a la vista
+     * ([progress] fuera de 0..1), la luna va tenue sobre el horizonte, para que se vea la fase.
+     */
+    fun renderMoonArc(
+        context: Context,
+        progress: Float,
+        age: Double,
+        southern: Boolean,
+        widthPx: Int,
+        heightPx: Int,
+        onTransparent: Boolean = false,
+        accent: Int? = null,
+    ): Bitmap =
+        cached(
+            context,
+            "luna|${"%.2f".format(java.util.Locale.ROOT, progress)}|${"%.2f".format(java.util.Locale.ROOT, age)}|$southern|$widthPx|$heightPx|$onTransparent|$accent",
+        ) {
+            drawSunArc(context, progress, widthPx, heightPx, onTransparent, accent, moonAge = age, southern = southern)
+        }
+
+    private fun drawSunArc(
+        context: Context,
+        progress: Float,
+        widthPx: Int,
+        heightPx: Int,
+        onTransparent: Boolean,
+        accent: Int?,
+        moonAge: Double? = null,
+        southern: Boolean = false,
+    ): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val colors = palette(context, onTransparent, accent)
@@ -215,10 +246,36 @@ object ChartBitmap {
             val angle = Math.toRadians((180.0 + 180.0 * progress))
             val cx = oval.centerX() + (oval.width() / 2) * kotlin.math.cos(angle).toFloat()
             val cy = oval.centerY() + (oval.height() / 2) * kotlin.math.sin(angle).toFloat()
-            canvas.drawCircle(cx, cy, 11f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x55FFC107 })
-            canvas.drawCircle(cx, cy, 7f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFB300.toInt() })
+            if (moonAge != null) {
+                drawMoon(canvas, cx, cy, 8f * density, moonAge, southern, alpha = 255)
+            } else {
+                canvas.drawCircle(cx, cy, 11f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x55FFC107 })
+                canvas.drawCircle(cx, cy, 7f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFB300.toInt() })
+            }
+        } else if (moonAge != null) {
+            // Bajo el horizonte: la fase igual se ve, tenue y apoyada en el medio.
+            val r = 9f * density
+            drawMoon(canvas, widthPx / 2f, horizon - r - 4f * density, r, moonAge, southern, alpha = 150)
         }
         return bitmap
+    }
+
+    /**
+     * Luna en su fase: un disco claro y la sombra corrida según cuánto está iluminada. En el
+     * hemisferio norte crece por la derecha; en el sur, por la izquierda.
+     */
+    private fun drawMoon(canvas: Canvas, cx: Float, cy: Float, r: Float, age: Double, southern: Boolean, alpha: Int) {
+        val lit = com.mnavarrosqa.clima.data.Moon.illumination(age).toFloat()
+        canvas.drawCircle(cx, cy, r * 1.5f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33FFFFFF; this.alpha = alpha / 5 })
+        val disc = Path().apply { addCircle(cx, cy, r, Path.Direction.CW) }
+        canvas.save()
+        canvas.clipPath(disc)
+        canvas.drawCircle(cx, cy, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFF1F3F6.toInt(); this.alpha = alpha })
+        val waxing = age < 0.5
+        val litOnRight = waxing != southern
+        val offset = 2 * r * lit * (if (litOnRight) -1 else 1)
+        canvas.drawCircle(cx + offset, cy, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF39404D.toInt(); this.alpha = alpha * 4 / 5 })
+        canvas.restore()
     }
 
     /** Barras de lluvia cada 15 minutos (o por hora) para el widget "Próxima hora". */

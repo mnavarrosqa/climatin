@@ -1,0 +1,6 @@
+• Widgets con el estilo nuevo: Pronóstico, Semana, Gráfico, Ciudades, Sol (luna de noche), Próxima hora e Indicador
+• Sin conexión: aviso tranquilo y reintento solo al volver la red
+• En teléfonos chicos entra más en la primera pantalla
+• Desplazamiento más fluido y nubes que gastan menos memoria
+• Notificaciones ordenadas en tres grupos
+• Arreglos: reloj con datos viejos, gesto de volver, lluvia caída de hoy, avisos con cambio de horario

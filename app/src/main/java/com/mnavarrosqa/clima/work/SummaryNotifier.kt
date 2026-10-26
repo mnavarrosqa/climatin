@@ -22,7 +22,7 @@ import com.mnavarrosqa.clima.data.windText
 import com.mnavarrosqa.clima.work.Notify.muteAction
 import com.mnavarrosqa.clima.work.Notify.radarAction
 import java.time.Duration
-import java.time.LocalDateTime
+import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
@@ -41,13 +41,24 @@ object SummaryNotifier {
             work.cancelUniqueWork(WORK)
             return
         }
-        val now = LocalDateTime.now()
-        var next = now.toLocalDate().atTime(settings.summaryHour, 0)
-        if (!next.isAfter(now)) next = next.plusDays(1)
+        // Con zona: entre dos LocalDateTime la noche del cambio de hora salía una hora corrida.
+        val now = ZonedDateTime.now()
+        var next = now.toLocalDate().atTime(settings.summaryHour, 0).atZone(now.zone)
+        if (!next.isAfter(now)) next = now.toLocalDate().plusDays(1).atTime(settings.summaryHour, 0).atZone(now.zone)
         val request = OneTimeWorkRequestBuilder<SummaryWorker>()
             .setInitialDelay(Duration.between(now, next).toMillis(), TimeUnit.MILLISECONDS)
             .build()
         work.enqueueUniqueWork(WORK, policy, request)
+    }
+
+    /**
+     * Agenda el próximo desde el trabajo que está corriendo, encadenado detrás. Si el sistema cortó
+     * y volvió a correr el trabajo, el siguiente ya quedó colgado: sin este control la cadena crecía.
+     */
+    fun scheduleAfter(context: Context, running: java.util.UUID) {
+        val infos = runCatching { WorkManager.getInstance(context).getWorkInfosForUniqueWork(WORK).get() }.getOrNull()
+        if (infos != null && infos.any { it.id != running && !it.state.isFinished }) return
+        schedule(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
     }
 
     /**
@@ -132,7 +143,7 @@ class SummaryWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         } finally {
             // Se encadena detrás de este trabajo (con REPLACE se cancelaría a sí mismo), y siempre:
             // si un día falla, mañana sale igual.
-            SummaryNotifier.schedule(applicationContext, ExistingWorkPolicy.APPEND_OR_REPLACE)
+            SummaryNotifier.scheduleAfter(applicationContext, id)
         }
         return Result.success()
     }

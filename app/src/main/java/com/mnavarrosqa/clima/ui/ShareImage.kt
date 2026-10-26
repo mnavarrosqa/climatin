@@ -86,7 +86,11 @@ object ShareImage {
             southern = snapshot.latitude < 0
             // El ícono grande ya es el sol o la luna: sin esto se verían dos.
             showSunMoon = false
-        }.draw(canvas, w, h, w / 400f, STILL_CLOCK, kind, isDay, skyColors(kind, isDay).toGradient())
+            // Se dibuja una sola vez: las imágenes de nubes no se llegarían a usar y sacarían de
+            // la caché las de la app.
+            useSprites = false
+            // Con el tinte del amanecer y el atardecer, igual que la app y los widgets.
+        }.draw(canvas, w, h, w / 400f, STILL_CLOCK, kind, isDay, SkyTime.gradient(kind, isDay, snapshot))
         // Un velo oscuro abajo para que las horas se lean sobre cielos claros.
         Paint().apply {
             shader = LinearGradient(0f, h * 0.45f, 0f, h, 0x00000000, 0x59000000, Shader.TileMode.CLAMP)

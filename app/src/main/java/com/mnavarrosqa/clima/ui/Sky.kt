@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -50,6 +51,10 @@ const val STILL_CLOCK = 0.2f
 /** Duración de una vuelta del reloj del cielo. */
 const val SKY_CYCLE_MS = 60_000
 
+/** Separación mínima entre cuadros del cielo: unos 60 por segundo, o unos 20 en calma. */
+private const val FRAME_MS = 15L
+private const val CALM_FRAME_MS = 45L
+
 /**
  * Fondo animado de la app. Al cambiar el clima (por ejemplo, al pasar de ciudad) los dos cielos
  * se funden en vez de saltar.
@@ -63,6 +68,11 @@ fun AnimatedSky(
     sunMoon: Boolean = true,
     /** Con el pronóstico, el cielo toma los colores del amanecer y del atardecer del lugar. */
     snapshot: WeatherSnapshot? = null,
+    /**
+     * Mientras se desplaza la lista o con el encabezado ya fuera de vista, el cielo queda casi
+     * tapado por las tarjetas: va a unos 20 cuadros por segundo y deja el procesador al scroll.
+     */
+    calm: Boolean = false,
 ) {
     // Los colores de la hora cambian despacio: se revisan una vez por minuto.
     val minute by produceState(0L, snapshot) {
@@ -82,6 +92,8 @@ fun AnimatedSky(
         powerSave = context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true ||
             android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
+    // Se lee dentro del bucle del reloj sin reiniciarlo: cambiar de ritmo no corta la animación.
+    val calmNow by rememberUpdatedState(calm)
     val clock: () -> Float = if (motion == SkyMotion.STILL || powerSave) {
         { STILL_CLOCK }
     } else {
@@ -93,9 +105,10 @@ fun AnimatedSky(
             while (true) {
                 // Pegado al refresco de la pantalla (con un reloj aparte los cuadros salían
                 // desparejos y se veía a saltos), hasta 60 por segundo: en pantallas de 120 Hz se
-                // dibuja uno de cada dos.
+                // dibuja uno de cada dos. En calma, uno cada ~50 ms. La fase sale de la hora del
+                // cuadro y no de cuántos se dibujaron, así que al cambiar de ritmo no salta.
                 withFrameMillis { now ->
-                    if (now - last >= 15) {
+                    if (now - last >= (if (calmNow) CALM_FRAME_MS else FRAME_MS)) {
                         last = now
                         value.floatValue = (now % cycle) / cycle.toFloat()
                     }
