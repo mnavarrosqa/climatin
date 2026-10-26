@@ -1342,6 +1342,31 @@ private fun LazyListScope.aboutPage(viewModel: WeatherViewModel, onShowWelcome: 
             }
         }
     }
+    item { SectionTitle(tr("Compartir", "Share")) }
+    item {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        Rows {
+            SettingRow(
+                tr("Mandar la app", "Send the app"),
+                tr("El instalador, por Quick Share o un chat. Funciona sin conexión", "The installer, over Quick Share or a chat. Works offline"),
+                onClick = {
+                    scope.launch {
+                        runCatching { AppShare.shareApk(context) }.onFailure {
+                            android.widget.Toast.makeText(context, tr("No pude preparar el instalador", "Couldn't prepare the installer"), android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                trailing = Chevron,
+            )
+            SettingRow(
+                tr("Compartir el link", "Share the link"),
+                tr("Para bajar la última versión", "To download the latest version"),
+                onClick = { runCatching { AppShare.shareLink(context) } },
+                trailing = Chevron,
+            )
+        }
+    }
     item { SectionTitle(tr("Ayuda", "Help")) }
     item {
         Rows {
