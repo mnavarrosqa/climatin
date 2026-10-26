@@ -111,6 +111,12 @@ class SkyPainter {
      */
     var showSunMoon = true
 
+    /**
+     * Si las nubes se guardan como imágenes. Para dibujar una sola vez (los widgets) no conviene:
+     * se arman en otro hilo para los cuadros siguientes, que no van a llegar.
+     */
+    var useSprites = true
+
     fun draw(
         canvas: Canvas,
         width: Float,
@@ -364,7 +370,7 @@ class SkyPainter {
             }
             val left = -width * 0.15f + sin(clock * tau) * width * 0.02f
             val top = -height * 0.1f
-            val sprite = Sprites.get("techo|${palette[0]}|$strength|$width|$height", width * 1.3f, height * 0.36f, drawBlanket)
+            val sprite = if (useSprites) Sprites.get("techo|${palette[0]}|$strength|$width|$height", width * 1.3f, height * 0.36f, drawBlanket) else null
             if (sprite != null) {
                 drawSprite(canvas, sprite, left, top, width * 1.3f, height * 0.36f)
             } else {
@@ -396,8 +402,12 @@ class SkyPainter {
             val spriteWidth = cloudWidth * 1.5f
             val spriteHeight = cloudWidth * 1.0f
             val shape = cloudShapes[i]
-            val sprite = Sprites.get("nube|$i|${cloudWidth.toInt()}|${palette[0]}|$alpha", spriteWidth, spriteHeight) { c, b ->
-                drawCloud(c, b, shape, spriteWidth / 2, cloudWidth * 0.6f, cloudWidth, alpha, palette)
+            val sprite = if (!useSprites) {
+                null
+            } else {
+                Sprites.get("nube|$i|${cloudWidth.toInt()}|${palette[0]}|$alpha", spriteWidth, spriteHeight) { c, b ->
+                    drawCloud(c, b, shape, spriteWidth / 2, cloudWidth * 0.6f, cloudWidth, alpha, palette)
+                }
             }
             if (sprite != null) {
                 drawSprite(canvas, sprite, x - spriteWidth / 2, y - cloudWidth * 0.6f, spriteWidth, spriteHeight)

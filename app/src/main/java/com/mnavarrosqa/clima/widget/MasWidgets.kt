@@ -206,7 +206,7 @@ class PildoraWidgetReceiver : SimpleWeatherReceiver() {
 class SemanaWidget : SimpleWeatherWidget() {
     @Composable
     override fun Content(snapshot: WeatherSnapshot) {
-        val colors = widgetColors(snapshot)
+        val colors = widgetColors(snapshot, default = WidgetStyle.SKY)
         val size = LocalSize.current
         val current = snapshot.current
         // Cada día ocupa unos 30 dp y el encabezado unos 56, más con letra grande: si no, con la

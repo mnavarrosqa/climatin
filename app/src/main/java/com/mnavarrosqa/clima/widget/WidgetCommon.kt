@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import androidx.glance.LocalSize
 import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import android.os.Build
@@ -214,7 +215,9 @@ fun widgetColors(snapshot: WeatherSnapshot?, default: WidgetStyle = WidgetStyle.
             WidgetColors(
                 style, null, White, WhiteVariant, WhiteChip, White,
                 transparent = true,
-                backgroundImage = ImageProvider(WidgetBitmaps.sky(kind, current?.isDay ?: true)),
+                backgroundImage = ImageProvider(
+                    WidgetBitmaps.skyScene(snapshot, kind, current?.isDay ?: true, LocalSize.current.width.value, LocalSize.current.height.value),
+                ),
             )
         }
     }

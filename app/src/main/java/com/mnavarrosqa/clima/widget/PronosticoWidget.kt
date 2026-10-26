@@ -61,7 +61,7 @@ class PronosticoWidget : GlanceAppWidget(), PreviewableWidget {
 
 @Composable
 private fun PronosticoContent(snapshot: WeatherSnapshot) {
-    val colors = widgetColors(snapshot)
+    val colors = widgetColors(snapshot, default = WidgetStyle.SKY)
     val size = LocalSize.current
     // Con las horas además de los días hace falta más alto; se corrige por el tamaño de letra.
     val large = size.height >= 290.dp * fontScale()
@@ -109,7 +109,7 @@ private fun PronosticoContent(snapshot: WeatherSnapshot) {
 
 @Composable
 private fun DaysRow(snapshot: WeatherSnapshot, count: Int) {
-    val colors = widgetColors(snapshot)
+    val colors = widgetColors(snapshot, default = WidgetStyle.SKY)
     val today = snapshot.nowAtPlace().toLocalDate()
     val days = snapshot.upcomingDays(count)
     // La lluvia va en una línea más, solo si algún día la tiene (así las columnas quedan parejas).

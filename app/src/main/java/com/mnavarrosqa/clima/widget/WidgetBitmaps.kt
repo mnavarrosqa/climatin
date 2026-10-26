@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.widget
 
+import kotlin.math.roundToInt
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -26,12 +27,85 @@ import kotlin.math.sin
 object WidgetBitmaps {
 
     // Por bytes y no por cantidad: una galletita grande pesa más de 1 MB.
-    private val cache = object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
+    private val cache = object : LruCache<String, Bitmap>(12 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
 
     private fun cached(key: String, create: () -> Bitmap): Bitmap =
         cache.get(key) ?: create().also { cache.put(key, it) }
+
+    /**
+     * El cielo del clima de verdad para el fondo del widget, como los del Clima de Apple: nubes,
+     * estrellas, resplandor del sol y los colores del amanecer y el atardecer. Se dibuja quieto,
+     * a 360 px de ancho (se estira bien: el cielo es difuso) y con la proporción del widget, con
+     * un velo oscuro arriba para que el texto blanco se lea.
+     */
+    fun skyScene(snapshot: com.mnavarrosqa.clima.data.WeatherSnapshot?, kind: WeatherKind, isDay: Boolean, widthDp: Float, heightDp: Float): Bitmap {
+        val aspect = ((heightDp / widthDp.coerceAtLeast(1f)).coerceIn(0.2f, 2.5f) * 8).roundToInt() / 8f
+        val colors = com.mnavarrosqa.clima.ui.SkyTime.gradient(kind, isDay, snapshot)
+        val southern = (snapshot?.latitude ?: 0.0) < 0
+        return cached("escena|$kind|$isDay|$aspect|${colors.hashCode()}|$southern") {
+            val width = 360
+            val height = (width * aspect).roundToInt().coerceAtLeast(60)
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            com.mnavarrosqa.clima.ui.SkyPainter().apply {
+                this.southern = southern
+                // El ícono del widget ya es el sol o la luna: queda el resplandor.
+                showSunMoon = false
+                useSprites = false
+            }.draw(
+                canvas,
+                width.toFloat(),
+                height.toFloat(),
+                width / widthDp.coerceAtLeast(1f),
+                com.mnavarrosqa.clima.ui.STILL_CLOCK,
+                kind,
+                isDay,
+                colors,
+            )
+            Paint().apply {
+                shader = LinearGradient(0f, 0f, 0f, height.toFloat(), 0x40000000, 0x14000000, Shader.TileMode.CLAMP)
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), this)
+            }
+            bitmap
+        }
+    }
+
+    /**
+     * Barra de mínima a máxima de un día dentro del rango de la semana, con el color de la
+     * temperatura (como la del pronóstico de la app). [now], si va, es un punto en la temperatura actual.
+     */
+    fun rangeBar(widthPx: Int, heightPx: Int, weekMin: Double, weekMax: Double, min: Double, max: Double, now: Double?): Bitmap =
+        cached("rango|$widthPx|$heightPx|$weekMin|$weekMax|$min|$max|$now") {
+            val w = widthPx.coerceAtLeast(8)
+            val h = heightPx.coerceAtLeast(4)
+            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            val r = h / 2f
+            paint.color = 0x33FFFFFF
+            canvas.drawRoundRect(0f, 0f, w.toFloat(), h.toFloat(), r, r, paint)
+            val span = (weekMax - weekMin).coerceAtLeast(1.0)
+            val x0 = (((min - weekMin) / span) * w).toFloat().coerceIn(0f, w - h.toFloat())
+            val x1 = (((max - weekMin) / span) * w).toFloat().coerceIn(x0 + h, w.toFloat())
+            paint.shader = LinearGradient(
+                x0, 0f, x1, 0f,
+                com.mnavarrosqa.clima.ui.TempColors.of(min).toArgb(),
+                com.mnavarrosqa.clima.ui.TempColors.of(max).toArgb(),
+                Shader.TileMode.CLAMP,
+            )
+            canvas.drawRoundRect(x0, 0f, x1, h.toFloat(), r, r, paint)
+            paint.shader = null
+            now?.let {
+                val x = (((it - weekMin) / span) * w).toFloat().coerceIn(r, w - r)
+                paint.color = 0xFFFFFFFF.toInt()
+                canvas.drawCircle(x, r, r * 1.1f, paint)
+                paint.color = 0xFF1B1D21.toInt()
+                canvas.drawCircle(x, r, r * 0.6f, paint)
+            }
+            bitmap
+        }
 
     /** Degradado vertical del cielo; chico, porque se estira sin perder calidad. */
     fun sky(kind: WeatherKind, isDay: Boolean): Bitmap = cached("cielo-$kind-$isDay") {

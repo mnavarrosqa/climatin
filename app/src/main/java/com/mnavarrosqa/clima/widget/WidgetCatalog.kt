@@ -51,10 +51,14 @@ object WidgetCatalog {
     val kinds: List<WidgetKind> = listOf(
         WidgetKind(
             ClimaWidgetReceiver::class.java, R.string.widget_clima_name, R.string.widget_clima_description, sizes(110, 110, 260, 120, 260, 260),
+            // Por defecto, el cielo del clima de fondo, como los widgets del Clima de Apple.
+            defaultStyle = WidgetStyle.SKY,
             parts = label + WidgetPart.RANGE + WidgetPart.INSIGHT,
         ) { ClimaWidget() },
         WidgetKind(
             PronosticoWidgetReceiver::class.java, R.string.widget_pronostico_name, R.string.widget_pronostico_description, sizes(200, 120, 260, 200, 300, 300),
+            // Por defecto, el cielo del clima de fondo, como los widgets del Clima de Apple.
+            defaultStyle = WidgetStyle.SKY,
             parts = label + WidgetPart.INSIGHT,
         ) { PronosticoWidget() },
         WidgetKind(
@@ -75,6 +79,8 @@ object WidgetCatalog {
         ) { PildoraWidget() },
         WidgetKind(
             SemanaWidgetReceiver::class.java, R.string.widget_semana_name, R.string.widget_semana_description, sizes(250, 130, 300, 200, 320, 280),
+            // Por defecto, el cielo del clima de fondo, como los widgets del Clima de Apple.
+            defaultStyle = WidgetStyle.SKY,
             parts = label,
         ) { SemanaWidget() },
         WidgetKind(SolWidgetReceiver::class.java, R.string.widget_sol_name, R.string.widget_sol_description, sizes(120, 120, 230, 120, 260, 190)) { SolWidget() },

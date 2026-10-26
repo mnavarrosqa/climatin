@@ -1,0 +1,1 @@
+Widgets nuevos al estilo del Clima de Apple: el cielo de verdad de fondo (nubes, estrellas, amanecer y atardecer), temperatura grande y las próximas horas sin recuadro. Nuevo tamaño grande del widget Clima con los próximos días y su barra de temperatura.
