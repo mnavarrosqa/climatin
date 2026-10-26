@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,7 +54,9 @@ fun GlanceWidgetPreview(
         try {
             // Con tope: si Glance no termina de armarlo, se muestra el respaldo y queda anotado.
             val remote = withTimeoutOrNull(8_000) {
-                GlanceRemoteViews().compose(context, size, state) { kind.widget().Body() }.remoteViews
+                GlanceRemoteViews().compose(context, size, state) {
+                    CompositionLocalProvider(LocalWidgetPreview provides true) { kind.widget().Body() }
+                }.remoteViews
             }
             if (remote != null) {
                 views = remote

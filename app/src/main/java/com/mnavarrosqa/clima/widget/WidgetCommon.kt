@@ -28,6 +28,7 @@ import kotlinx.coroutines.coroutineScope
 import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -363,11 +364,19 @@ fun openDay(placeId: String, date: String) =
 @Composable
 fun widgetPlaceId(): String = resolveWidgetPlace(LocalContext.current, currentState(WidgetPrefs.PLACE))
 
+/**
+ * Verdadero cuando el widget se arma como vista previa (al personalizarlo). Esa composición
+ * termina recién cuando terminan sus efectos: escuchar la caché la dejaba esperando para siempre
+ * y la vista previa quedaba vacía. En la vista previa se usa lo guardado, sin escuchar.
+ */
+val LocalWidgetPreview = staticCompositionLocalOf { false }
+
 /** Pronóstico de la ciudad de este widget; se recompone cuando cambia la caché. */
 @Composable
 fun widgetSnapshot(): WeatherSnapshot? {
     val repository = WeatherRepository.get(LocalContext.current)
     val placeId = widgetPlaceId()
+    if (LocalWidgetPreview.current) return repository.cached(placeId)?.withCurrentFromHours()
     val snapshot by remember(placeId) { repository.snapshots(placeId) }
         .collectAsState(repository.cached(placeId))
     // Si el sistema demoró las actualizaciones, la temperatura de ahora sale del pronóstico por

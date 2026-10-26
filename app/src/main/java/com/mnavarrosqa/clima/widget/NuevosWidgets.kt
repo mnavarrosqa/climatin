@@ -166,7 +166,12 @@ class CiudadesWidget : GlanceAppWidget(), PreviewableWidget {
     override fun Body() {
         val repository = WeatherRepository.get(LocalContext.current)
         ClimaGlanceTheme {
-            val all by remember { repository.allSnapshots() }.collectAsState(repository.allCached())
+            // En la vista previa, lo guardado sin escuchar (ver LocalWidgetPreview).
+            val all = if (LocalWidgetPreview.current) {
+                repository.allCached()
+            } else {
+                remember { repository.allSnapshots() }.collectAsState(repository.allCached()).value
+            }
             if (all.isEmpty()) EmptyWidget(CIUDADES_DEFAULT_STYLE) else CiudadesContent(all)
         }
     }
