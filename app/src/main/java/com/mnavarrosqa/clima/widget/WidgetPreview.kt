@@ -28,6 +28,8 @@ import com.mnavarrosqa.clima.CrashLog
 import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.tr
 import com.mnavarrosqa.clima.ui.skyColors
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * El widget de verdad: se arma con Glance igual que en la pantalla de inicio, con los ajustes que
@@ -48,14 +50,24 @@ fun GlanceWidgetPreview(
     var failed by remember { mutableStateOf(false) }
     LaunchedEffect(kind, size, config) {
         val state = mutablePreferencesOf().also { config.writeTo(it) }
-        runCatching {
-            GlanceRemoteViews().compose(context, size, state) { kind.widget().Body() }.remoteViews
-        }.onSuccess {
-            views = it
-            failed = false
-        }.onFailure {
+        try {
+            // Con tope: si Glance no termina de armarlo, se muestra el respaldo y queda anotado.
+            val remote = withTimeoutOrNull(8_000) {
+                GlanceRemoteViews().compose(context, size, state) { kind.widget().Body() }.remoteViews
+            }
+            if (remote != null) {
+                views = remote
+                failed = false
+            } else {
+                CrashLog.recordCaught(context, IllegalStateException("Glance no terminó en 8 s (${size.width}×${size.height})"), "vista previa del widget")
+                failed = views == null
+            }
+        } catch (cancel: CancellationException) {
+            // Cambió un ajuste y se arma de nuevo: no es un error.
+            throw cancel
+        } catch (error: Exception) {
             // Queda anotado en "Último error" para poder ver qué pasó.
-            CrashLog.recordCaught(context, it, "vista previa del widget")
+            CrashLog.recordCaught(context, error, "vista previa del widget")
             failed = views == null
         }
     }
