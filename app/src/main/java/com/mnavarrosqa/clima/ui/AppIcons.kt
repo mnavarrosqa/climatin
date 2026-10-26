@@ -10,6 +10,17 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.content.ContextCompat
+import com.mnavarrosqa.clima.data.Place
+import com.mnavarrosqa.clima.data.WeatherCodes
+import com.mnavarrosqa.clima.data.WeatherRepository
+import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.ClimaActivity
 import com.mnavarrosqa.clima.work.Outing
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +50,9 @@ enum class AppIcon(
     val label: String get() = tr(es, en)
 
     private fun component(context: Context) = ComponentName(context.packageName, "com.mnavarrosqa.clima$alias")
+
+    /** El alias como componente, para colgarle accesos directos. */
+    fun componentName(context: Context): ComponentName = component(context)
 
     companion object {
         /** El elegido, leído del sistema una sola vez (son llamadas al sistema) y como estado de Compose. */
@@ -90,6 +104,92 @@ enum class AppIcon(
                     .build()
                 ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
             }
+            // Los de las ciudades también cuelgan del ícono: se rearman con el nuevo.
+            CityShortcuts.update(context, WeatherRepository.get(context).places())
         }
+    }
+}
+
+/**
+ * Accesos directos a las primeras ciudades guardadas (al mantener apretado el ícono de la app).
+ * Abren la app en esa ciudad con el mismo extra "place" que usan los widgets. "Salgo ahora"
+ * queda primero y no se toca.
+ */
+object CityShortcuts {
+    private const val PREFIX = "ciudad:"
+    private const val MAX_CITIES = 3
+
+    /** Lo último publicado: con las ciudades iguales no se vuelve a llamar al sistema. */
+    @Volatile
+    private var lastKey: String? = null
+
+    /**
+     * Son llamadas al sistema y se dibujan íconos: va fuera del hilo principal. Sincronizado
+     * porque lo llaman a la vez la lista de ciudades y el fin de una actualización.
+     */
+    @Synchronized
+    fun update(context: Context, places: List<Place>) {
+        runCatching {
+            val app = context.applicationContext
+            val alias = AppIcon.current(app)
+            // Los launchers muestran pocos (4 o 5): uno queda para "Salgo ahora".
+            val room = (ShortcutManagerCompat.getMaxShortcutCountPerActivity(app) - 1).coerceAtLeast(0)
+            val shown = places.take(minOf(MAX_CITIES, room))
+            val repository = WeatherRepository.get(app)
+            // Con el estado en la clave el ícono se renueva cuando cambia el clima de la ciudad.
+            val codes = shown.map { place ->
+                val current = repository.cached(place.id)?.current
+                if (current == null) "" else "${current.code}-${current.isDay}"
+            }
+            val key = alias.name + "|" + shown.mapIndexed { i, p -> "${p.id}=${p.shownName}=${codes[i]}" }.joinToString("|")
+            if (key == lastKey) return
+            val ids = shown.map { PREFIX + it.id }.toSet()
+            // Las de ciudades quitadas (o que ya no entran) se sacan.
+            val stale = ShortcutManagerCompat.getDynamicShortcuts(app).map { it.id }.filter { it.startsWith(PREFIX) && it !in ids }
+            if (stale.isNotEmpty()) ShortcutManagerCompat.removeDynamicShortcuts(app, stale)
+            shown.forEachIndexed { index, place ->
+                val snapshot = repository.cached(place.id)
+                val intent = Intent(app, ClimaActivity::class.java)
+                    // Los accesos directos necesitan una acción; el extra es el de los widgets.
+                    .setAction(Intent.ACTION_VIEW)
+                    .putExtra("place", place.id)
+                val shortcut = ShortcutInfoCompat.Builder(app, PREFIX + place.id)
+                    .setShortLabel(place.shownName.take(24))
+                    .setLongLabel(tr("El clima en ${place.shownName}", "Weather in ${place.shownName}"))
+                    .setIcon(IconCompat.createWithAdaptiveBitmap(icon(app, snapshot)))
+                    .setIntent(intent)
+                    .setActivity(alias.componentName(app))
+                    // Después de "Salgo ahora", en el orden de la lista de ciudades.
+                    .setRank(index + 1)
+                    .build()
+                ShortcutManagerCompat.pushDynamicShortcut(app, shortcut)
+            }
+            lastKey = key
+        }
+    }
+
+    /**
+     * Ícono adaptable: el cielo de la ciudad con el ícono de su clima en el centro (dentro de la
+     * zona segura, el 66 % del medio, que el launcher nunca recorta).
+     */
+    private fun icon(context: Context, snapshot: WeatherSnapshot?): Bitmap {
+        val size = 324
+        val current = snapshot?.current
+        val code = current?.code ?: 2
+        val isDay = current?.isDay ?: true
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val colors = skyColors(WeatherCodes.kind(code), isDay).map { it.toArgb() }.toIntArray()
+        Paint().apply {
+            shader = LinearGradient(0f, 0f, 0f, size.toFloat(), colors, floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+            canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), this)
+        }
+        val drawable = ContextCompat.getDrawable(context, WeatherCodes.icon(code, isDay))?.mutate()
+        if (drawable != null) {
+            val inset = (size * 0.28f).toInt()
+            drawable.setBounds(inset, inset, size - inset, size - inset)
+            drawable.draw(canvas)
+        }
+        return bitmap
     }
 }

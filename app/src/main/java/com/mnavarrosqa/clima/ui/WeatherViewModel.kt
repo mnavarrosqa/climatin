@@ -90,6 +90,15 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         recheckUpdates()
+        // Accesos directos a las primeras ciudades: siguen a la lista (agregar, quitar, ordenar, apodos).
+        viewModelScope.launch(Dispatchers.IO) {
+            places.collect { CityShortcuts.update(getApplication<Application>(), it) }
+        }
+    }
+
+    /** Con el pronóstico nuevo, el ícono de cada acceso directo muestra el clima de ahora. */
+    private suspend fun refreshShortcuts() = withContext(Dispatchers.IO) {
+        CityShortcuts.update(getApplication<Application>(), places.value)
     }
 
     private var updatesJob: Job? = null
@@ -210,6 +219,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
             // Widgets, avisos y reloj, lo mismo que el trabajo periódico. Un aviso que falla no
             // puede cerrar la app ni dejar el indicador girando.
             com.mnavarrosqa.clima.work.afterRefresh(getApplication<Application>())
+            refreshShortcuts()
             _error.value = when (error) {
                 null -> null
                 is NoLocationException -> error.message
@@ -257,6 +267,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
             updateWeatherWidgets(getApplication<Application>())
+            refreshShortcuts()
         }
     }
 

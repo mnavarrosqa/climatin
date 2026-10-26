@@ -1,0 +1,1 @@
+Compartí el pronóstico como imagen y compará hasta 3 ciudades (menú ⋮). En el mapa de lluvia, mantené apretado un punto para agregarlo a tus ciudades. Tus ciudades aparecen como atajos al mantener apretado el ícono. Volver atrás con el gesto anima la pantalla.

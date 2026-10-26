@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Carpeta donde se guarda el APK de la actualización antes de instalarlo. -->
 <paths>
+    <!-- Carpeta donde se guarda el APK de la actualización antes de instalarlo. -->
     <cache-path name="updates" path="updates/" />
+    <!-- Imagen del pronóstico para compartir (ui/ShareImage.kt). -->
+    <cache-path name="compartir" path="compartir/" />
 </paths>

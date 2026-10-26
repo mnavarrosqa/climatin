@@ -96,6 +96,10 @@ class ClimaActivity : ComponentActivity() {
 
     private fun parse(intent: Intent?): DeepLinkTarget? {
         val place = intent?.getStringExtra("place") ?: return null
+        // Desde el acceso directo de una ciudad: el launcher aprende cuáles se usan más.
+        if (intent.action == Intent.ACTION_VIEW) {
+            runCatching { androidx.core.content.pm.ShortcutManagerCompat.reportShortcutUsed(this, "ciudad:$place") }
+        }
         return DeepLinkTarget(
             place,
             intent.getStringExtra("day"),

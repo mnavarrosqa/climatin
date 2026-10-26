@@ -34,6 +34,21 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
+import com.mnavarrosqa.clima.data.Coordinates
+import com.mnavarrosqa.clima.data.LocationProvider
+import com.mnavarrosqa.clima.data.Place
+import kotlin.math.PI
+import kotlin.math.atan
+import kotlin.math.sinh
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -90,6 +105,9 @@ import kotlin.math.roundToInt
 
 private data class Tile(val x: Int, val y: Int)
 
+/** Punto del mapa que se mantuvo apretado: dónde queda y dónde se dibuja. */
+private class MapPoint(val latitude: Double, val longitude: Double, val screen: Offset)
+
 /** Lluvia cargada para una zona del mapa (en coordenadas de tesela de su [zoom]). */
 private class RainArea(
     val x0: Double,
@@ -107,9 +125,10 @@ private class MapPin(val name: String, val latitude: Double, val longitude: Doub
 /**
  * Mapa de lluvia animado (3 horas atrás y 12 adelante). Se arrastra, se pellizca para acercar,
  * doble toque acerca y tocar un punto dice cuánto llueve ahí a esa hora. Muestra tus ciudades.
+ * Mantener apretado un punto ofrece agregarlo a tus ciudades ([onAddPlace]).
  */
 @Composable
-fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
+fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPlace: ((Place) -> Unit)? = null) {
     // El tema elegido en la app (claro u oscuro), no el del sistema.
     val dark = LocalDarkTheme.current
     val context = LocalContext.current
@@ -140,8 +159,29 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
             ?.timezone?.let { runCatching { ZoneId.of(it) }.getOrNull() }
             ?: ZoneId.systemDefault()
     }
-    val pins = remember {
-        cached.map { MapPin(it.place ?: tr("Mi ubicación", "My location"), it.latitude, it.longitude, it.placeId == CURRENT_PLACE_ID) }
+    // Las ciudades agregadas desde el mapa se marcan enseguida, sin esperar su pronóstico.
+    val addedPins = remember { mutableStateListOf<MapPin>() }
+    val pins = remember(addedPins.size) {
+        cached.map { MapPin(it.place ?: tr("Mi ubicación", "My location"), it.latitude, it.longitude, it.placeId == CURRENT_PLACE_ID) } + addedPins
+    }
+    // Punto apretado para agregar como ciudad, y su nombre cuando llega del geocodificador.
+    var adding by remember { mutableStateOf<MapPoint?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val view = LocalView.current
+    adding?.let { point ->
+        AddPlaceDialog(
+            point = point,
+            onDismiss = { adding = null },
+            onConfirm = { name ->
+                adding = null
+                val add = onAddPlace ?: return@AddPlaceDialog
+                // Redondeado a ~1 km: tocar dos veces casi el mismo punto no la duplica.
+                val id = String.format(java.util.Locale.US, "map:%.2f,%.2f", point.latitude, point.longitude)
+                add(Place(id = id, name = name, detail = null, latitude = point.latitude, longitude = point.longitude))
+                addedPins += MapPin(name, point.latitude, point.longitude, here = false)
+                scope.launch { snackbar.showSnackbar(tr("Agregaste $name", "Added $name"), duration = SnackbarDuration.Short) }
+            },
+        )
     }
     val images = remember { mutableStateMapOf<String, ImageBitmap>() }
     val tileScope = rememberCoroutineScope()
@@ -322,6 +362,32 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                             val mm = rainAt(point, size.width.toFloat(), size.height.toFloat())
                             probe = if (mm == null) null else point to rainText(mm)
                         },
+                        onLongPress = { point ->
+                            // Del punto de la pantalla a latitud y longitud (Mercator, al revés).
+                            val tile = 512f * scale
+                            val world = (1 shl zoom).toDouble()
+                            val tx = centerX + (point.x - size.width / 2f) / tile
+                            val ty = centerY + (point.y - size.height / 2f) / tile
+                            val lon = ((tx / world * 360.0 - 180.0) % 360.0 + 540.0) % 360.0 - 180.0
+                            val lat = Math.toDegrees(atan(sinh(PI * (1.0 - 2.0 * ty / world))))
+                            if (onAddPlace != null && lat in -85.0..85.0) {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                probe = null
+                                val existing = WeatherRepository.get(context).places().firstOrNull {
+                                    abs(it.latitude - lat) < 0.02 && abs(it.longitude - lon) < 0.02
+                                }
+                                if (existing != null) {
+                                    scope.launch {
+                                        snackbar.showSnackbar(
+                                            tr("${existing.shownName} ya está en tus ciudades", "${existing.shownName} is already in your cities"),
+                                            duration = SnackbarDuration.Short,
+                                        )
+                                    }
+                                } else {
+                                    adding = MapPoint(lat, lon, point)
+                                }
+                            }
+                        },
                     )
                 },
         ) {
@@ -369,6 +435,11 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                 drawCircle(Color.White, radius = 7.dp.toPx(), center = point)
                 drawCircle(Color(0xFF1E88E5), radius = 4.dp.toPx(), center = point)
             }
+            // El punto que se está por agregar, con el color de la app.
+            adding?.let { point ->
+                drawCircle(Color.White, radius = 9.dp.toPx(), center = point.screen)
+                drawCircle(markerColor, radius = 6.dp.toPx(), center = point.screen)
+            }
         }
 
         Row(
@@ -393,6 +464,15 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                 Icon(Icons.Rounded.LocationOn, contentDescription = tr("Volver al lugar", "Back to the place"))
             }
         }
+
+        // Arriba, debajo de los botones: abajo lo taparía el panel de la línea de tiempo.
+        SnackbarHost(
+            snackbar,
+            Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 64.dp),
+        )
 
         // Acercar y alejar flotando al costado, como en los mapas.
         Column(
@@ -440,7 +520,13 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit) {
                         )
                         Text(
                             error ?: probe?.second?.let { tr("Acá: ", "Here: ") + it }
-                                ?: if (frame == null) tr("Cargando…", "Loading…") else tr("Tocá el mapa para ver cuánto llueve", "Tap the map to see how much it rains"),
+                                ?: if (frame == null) {
+                                    tr("Cargando…", "Loading…")
+                                } else if (onAddPlace != null) {
+                                    tr("Tocá el mapa para ver cuánto llueve; mantené apretado para agregar una ciudad", "Tap the map to see how much it rains; long-press to add a city")
+                                } else {
+                                    tr("Tocá el mapa para ver cuánto llueve", "Tap the map to see how much it rains")
+                                },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -643,4 +729,42 @@ private fun frameLabel(frame: RainFrame, zone: ZoneId): String {
         else -> tr("en $hours h", "in $hours h")
     }
     return "${timeOf(frame, zone)} · $relative"
+}
+
+/**
+ * "¿Agregar Córdoba a tus ciudades?". Mientras el geocodificador busca el nombre se dice que se
+ * está buscando; si el teléfono no tiene o no encuentra nada, se ofrece con las coordenadas.
+ */
+@Composable
+private fun AddPlaceDialog(point: MapPoint, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    val context = LocalContext.current
+    val fallback = String.format(java.util.Locale.getDefault(), "%.2f, %.2f", point.latitude, point.longitude)
+    // null mientras busca; después, el nombre o las coordenadas.
+    val name by produceState<String?>(null, point) {
+        value = LocationProvider.placeName(context, Coordinates(point.latitude, point.longitude)) ?: fallback
+    }
+    val shown = name
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Rounded.Place, contentDescription = null) },
+        title = {
+            Text(
+                if (shown == null) tr("Buscando el lugar…", "Looking up the place…") else tr("¿Agregar $shown a tus ciudades?", "Add $shown to your cities?"),
+            )
+        },
+        text = {
+            Text(
+                tr(
+                    "Vas a ver su pronóstico al deslizar entre ciudades, en los widgets y en los avisos.",
+                    "You'll see its forecast when swiping between cities, in widgets and in alerts.",
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { if (shown != null) onConfirm(shown) }, enabled = shown != null) {
+                Text(tr("Agregar", "Add"))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancelar", "Cancel")) } },
+    )
 }

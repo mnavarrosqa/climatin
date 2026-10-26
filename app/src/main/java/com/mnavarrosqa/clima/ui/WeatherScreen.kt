@@ -42,6 +42,15 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import kotlin.math.absoluteValue
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.BackEventCompat
+import androidx.compose.animation.core.snap
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import kotlinx.coroutines.launch
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -179,6 +188,8 @@ fun WeatherRoute(
     var hasPermission by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var showCities by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    // Comparar ciudades: las que se eligen de entrada (la que se mira primero), o null si está cerrada.
+    var compareIds by rememberSaveable { mutableStateOf<String?>(null) }
     // Bienvenida: la primera vez (sin permiso de ubicación ni ciudades) o desde Ajustes → Acerca de.
     var showWelcome by rememberSaveable {
         mutableStateOf(!Welcome.seen(context) && !LocationProvider.hasPermission(context) && viewModel.places.value.isEmpty())
@@ -209,6 +220,7 @@ fun WeatherRoute(
         if (deepLink != null) {
             showCities = false
             showSettings = false
+            compareIds = null
             // Un widget puede pedir abrir directo el mapa de lluvia de su ciudad.
             val place = if (deepLink.radar) viewModel.cached(deepLink.placeId) ?: viewModel.cached(CURRENT_PLACE_ID) else null
             radarAt = place?.let { "${it.latitude},${it.longitude}" }
@@ -257,20 +269,36 @@ fun WeatherRoute(
             },
         )
     }
-    // Gesto "atrás" predictivo: mientras se desliza, la pantalla se achica y deja ver que vuelve.
+    // Gesto "atrás" predictivo: mientras se desliza, la pantalla se achica, se corre hacia el lado
+    // del dedo y deja ver que vuelve. Si se arrepiente, vuelve a su lugar con un resorte, sin saltar.
     var backProgress by remember { mutableFloatStateOf(0f) }
+    var backEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
+    var backDragging by remember { mutableStateOf(false) }
+    val shownBack by animateFloatAsState(
+        backProgress,
+        if (backDragging) snap<Float>() else Motion.gentle<Float>(),
+        label = "atrás",
+    )
     // La bienvenida abierta desde Ajustes vuelve a Ajustes con "atrás"; la primera vez, "atrás" sale de la app.
     val welcomeFromSettings = showWelcome && Welcome.seen(context)
-    PredictiveBackHandler(enabled = showCities || showSettings || radarAt != null || welcomeFromSettings) { events ->
+    PredictiveBackHandler(
+        enabled = showCities || showSettings || radarAt != null || compareIds != null || welcomeFromSettings,
+    ) { events ->
         try {
-            events.collect { backProgress = it.progress }
+            events.collect { event ->
+                backDragging = true
+                backProgress = event.progress
+                backEdge = event.swipeEdge
+            }
             when {
                 welcomeFromSettings -> showWelcome = false
                 radarAt != null -> radarAt = null
+                compareIds != null -> compareIds = null
                 showSettings -> showSettings = false
                 else -> showCities = false
             }
         } finally {
+            backDragging = false
             backProgress = 0f
         }
     }
@@ -288,6 +316,7 @@ fun WeatherRoute(
     val screen = when {
         showWelcome -> "bienvenida"
         radar != null -> "radar"
+        compareIds != null -> "comparar"
         showSettings -> "ajustes"
         showCities -> "ciudades"
         pages.isEmpty() -> "permiso"
@@ -309,11 +338,14 @@ fun WeatherRoute(
     AnimatedContent(
         targetState = screen,
         modifier = Modifier.graphicsLayer {
-            val scale = 1f - 0.1f * backProgress
+            val scale = 1f - 0.1f * shownBack
             scaleX = scale
             scaleY = scale
-            shape = RoundedCornerShape((32 * backProgress).dp)
-            clip = backProgress > 0f
+            // Desde el borde izquierdo se corre a la derecha y al revés, como si la empujara el dedo.
+            val direction = if (backEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f
+            translationX = direction * shownBack * size.width * 0.05f
+            shape = RoundedCornerShape((32 * shownBack).dp)
+            clip = shownBack > 0f
         },
         transitionSpec = {
             (fadeIn(tween(320, delayMillis = 60)) + scaleIn(tween(380, easing = EaseOutCubic), initialScale = 0.94f))
@@ -330,7 +362,14 @@ fun WeatherRoute(
                     showWelcome = false
                 },
             )
-            "radar" -> radar?.let { RadarScreen(it[0], it[1], onBack = { radarAt = null }) }
+            "radar" -> radar?.let {
+                RadarScreen(it[0], it[1], onBack = { radarAt = null }, onAddPlace = viewModel::addPlace)
+            }
+            "comparar" -> CompareScreen(
+                viewModel = viewModel,
+                initialIds = compareIds.orEmpty().split('|').filter { it.isNotEmpty() },
+                onBack = { compareIds = null },
+            )
             "ciudades" -> CitiesScreen(
                 viewModel = viewModel,
                 onBack = { showCities = false },
@@ -365,6 +404,10 @@ fun WeatherRoute(
                     onOpenCities = { showCities = true },
                     onOpenSettings = { showSettings = true },
                     onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
+                    // Arranca con la ciudad que se mira y las que le siguen.
+                    onOpenCompare = { firstId ->
+                        compareIds = (listOf(firstId) + pages.filter { it != firstId }).take(3).joinToString("|")
+                    },
                     deepLink = cityTarget ?: deepLink,
                     onDeepLinkHandled = {
                         cityTarget = null
@@ -423,6 +466,7 @@ private fun WeatherPager(
     onOpenCities: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenRadar: (Double, Double) -> Unit,
+    onOpenCompare: (String) -> Unit,
     deepLink: DeepLinkTarget?,
     onDeepLinkHandled: () -> Unit,
 ) {
@@ -599,6 +643,63 @@ private fun WeatherPager(
             IconButton(onClick = onOpenSettings) {
                 Icon(Icons.Rounded.Settings, contentDescription = tr("Ajustes", "Settings"), tint = OnSky)
             }
+            ForecastMenu(
+                snapshot = skySnapshot,
+                canCompare = pages.size > 1,
+                onCompare = { onOpenCompare(skyId) },
+            )
+        }
+    }
+}
+
+/** El "⋮" del pronóstico: compartir la ciudad que se mira como imagen y comparar ciudades. */
+@Composable
+private fun ForecastMenu(snapshot: WeatherSnapshot?, canCompare: Boolean, onCompare: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var open by remember { mutableStateOf(false) }
+    var sharing by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Rounded.MoreVert, contentDescription = tr("Más opciones", "More options"), tint = OnSky)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(tr("Compartir pronóstico", "Share forecast")) },
+                leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
+                // Sin pronóstico no hay qué dibujar; mientras se arma la imagen, un toque basta.
+                enabled = snapshot != null && !sharing,
+                onClick = {
+                    open = false
+                    val shown = snapshot ?: return@DropdownMenuItem
+                    sharing = true
+                    scope.launch {
+                        try {
+                            ShareImage.share(context, shown)
+                        } catch (cancel: kotlinx.coroutines.CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) {
+                            android.widget.Toast.makeText(
+                                context,
+                                tr("No pude armar la imagen", "Couldn't create the image"),
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        } finally {
+                            sharing = false
+                        }
+                    }
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(tr("Comparar ciudades", "Compare cities")) },
+                leadingIcon = { Icon(CompareIcon, contentDescription = null) },
+                // Hace falta una segunda ciudad (o "Mi ubicación" y una guardada).
+                enabled = canCompare,
+                onClick = {
+                    open = false
+                    onCompare()
+                },
+            )
         }
     }
 }
