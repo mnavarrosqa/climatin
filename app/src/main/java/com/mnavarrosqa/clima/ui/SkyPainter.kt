@@ -209,7 +209,8 @@ class SkyPainter {
         paint.shader = rayShader
         canvas.save()
         canvas.translate(cx, cy)
-        canvas.rotate(clock * 180f)
+        // Un rayo de corrimiento por vuelta del reloj: al reiniciarse, los rayos quedan iguales.
+        canvas.rotate(clock * 360f / 14)
         repeat(14) { i ->
             canvas.rotate(360f / 14)
             // Largos distintos: menos geométrico que doce rayos iguales.
@@ -366,6 +367,10 @@ class SkyPainter {
      */
     private fun drawClouds(canvas: Canvas, width: Float, height: Float, clock: Float, kind: WeatherKind, isDay: Boolean, strength: Float, parallax: Float) {
         val palette = cloudPalette(kind, isDay)
+        if (width != spritesWidth) {
+            sprites.clear()
+            spritesWidth = width
+        }
         val count = when (kind) {
             WeatherKind.PARTLY -> 4
             WeatherKind.FOG -> 3
@@ -375,28 +380,69 @@ class SkyPainter {
         }
         val heavy = kind != WeatherKind.PARTLY
         if (heavy && kind != WeatherKind.FOG) {
-            blanket.forEachIndexed { i, b ->
-                val x = i / 15f * width * 1.2f - width * 0.1f + sin((clock + b.y) * tau) * width * 0.02f
-                puff(canvas, x, -height * 0.04f + b.y * height * 0.07f, width * (0.5f + b.size * 0.3f) * 0.5f, height * 0.16f, 0.85f * strength, palette[1])
-                puff(canvas, x, -height * 0.07f + b.y * height * 0.06f, width * (0.5f + b.size * 0.3f) * 0.48f, height * 0.13f, 0.9f * strength, palette[0])
+            // El techo se dibuja una vez en una imagen y se mece entero.
+            val sprite = sprite("techo|${palette[0]}|$strength|$height", width * 1.3f, height * 0.36f) { c ->
+                blanket.forEachIndexed { i, b ->
+                    val x = i / 15f * width * 1.2f + width * 0.05f
+                    puff(c, x, height * 0.06f + b.y * height * 0.07f, width * (0.5f + b.size * 0.3f) * 0.5f, height * 0.16f, 0.85f * strength, palette[1])
+                    puff(c, x, height * 0.03f + b.y * height * 0.06f, width * (0.5f + b.size * 0.3f) * 0.48f, height * 0.13f, 0.9f * strength, palette[0])
+                }
             }
+            drawSprite(canvas, sprite, -width * 0.15f + sin(clock * tau) * width * 0.02f, -height * 0.1f, width * 1.3f, height * 0.36f)
         }
         for (i in 0 until count) {
             val c = clouds[i]
             val layer = i % 3
             val cloudWidth = width * LAYER_SCALE[layer] * (0.85f + 0.3f * c.size)
             val travel = width + cloudWidth * 1.4f
+            // Vueltas enteras por ciclo: al reiniciarse el reloj, cada nube sigue donde estaba (con
+            // velocidades fraccionarias saltaban cada minuto).
             val laps = if (layer == 2) 2 else 1
             // En el fondo de pantalla, al pasar de página las nubes cercanas se corren más que las
             // lejanas: da profundidad.
-            val x = ((c.x + 0.15f * i + clock * laps * (0.6f + 0.4f * c.speed)) % 1f) * travel - cloudWidth * 0.7f -
+            val x = ((c.x + 0.15f * i + clock * laps) % 1f) * travel - cloudWidth * 0.7f -
                 width * 0.05f * layer * parallax
             // Con cielo cubierto bajan más: llenan la parte de arriba de la pantalla.
             val spread = if (kind == WeatherKind.CLOUDY) 0.2f else 0.08f
             val y = height * ((if (heavy) 0.08f else 0.05f) + LAYER_TOP[layer] + spread * c.y)
             val alpha = strength * LAYER_ALPHA[layer] * if (kind == WeatherKind.PARTLY) 1f else 0.9f
-            drawCloud(canvas, cloudShapes[i], x, y, cloudWidth, alpha, palette)
+            // Cada nube son 48 círculos con degradado: se dibuja una vez en una imagen y en cada
+            // cuadro solo se mueve. Así el cielo va fluido aunque haya varias nubes.
+            val spriteWidth = cloudWidth * 1.5f
+            val spriteHeight = cloudWidth * 1.0f
+            val sprite = sprite("nube|$i|${cloudWidth.toInt()}|${palette[0]}|$alpha", spriteWidth, spriteHeight) { c ->
+                drawCloud(c, cloudShapes[i], spriteWidth / 2, cloudWidth * 0.6f, cloudWidth, alpha, palette)
+            }
+            drawSprite(canvas, sprite, x - spriteWidth / 2, y - cloudWidth * 0.6f, spriteWidth, spriteHeight)
         }
+    }
+
+    /**
+     * Imágenes ya dibujadas (nubes y techo), a menos resolución: las nubes son difusas y no se
+     * nota, y ocupan mucha menos memoria. Se descartan si cambia el tamaño de la pantalla.
+     */
+    private val sprites = HashMap<String, android.graphics.Bitmap>()
+    private var spritesWidth = 0f
+    private val spritePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val spriteRect = RectF()
+
+    private fun sprite(key: String, width: Float, height: Float, draw: (Canvas) -> Unit): android.graphics.Bitmap {
+        sprites[key]?.let { return it }
+        // Al amanecer y al atardecer cambian los colores: que no se acumulen imágenes viejas.
+        if (sprites.size > 24) sprites.clear()
+        val w = (width * SPRITE_SCALE).toInt().coerceAtLeast(1)
+        val h = (height * SPRITE_SCALE).toInt().coerceAtLeast(1)
+        val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = Canvas(bitmap)
+        c.scale(SPRITE_SCALE, SPRITE_SCALE)
+        draw(c)
+        sprites[key] = bitmap
+        return bitmap
+    }
+
+    private fun drawSprite(canvas: Canvas, bitmap: android.graphics.Bitmap, x: Float, y: Float, width: Float, height: Float) {
+        spriteRect.set(x, y, x + width, y + height)
+        canvas.drawBitmap(bitmap, null, spriteRect, spritePaint)
     }
 
     /** Una nube con volumen: la base en sombra, el cuerpo y un brillo suave solo en la cima. */
@@ -473,7 +519,8 @@ class SkyPainter {
         repeat(7) { i ->
             val y = height * (0.2f + i * 0.11f)
             val dir = if (i % 2 == 0) -1f else 1f
-            val raw = (clock * (1 + i % 3) * 0.5f * dir + i * 0.37f) % 1f
+            // Vueltas enteras por ciclo: si no, los bancos saltaban al reiniciarse el reloj.
+            val raw = (clock * (1 + i % 2) * dir + i * 0.37f) % 1f
             val shift = (if (raw < 0) raw + 1f else raw) * width * 1.6f - width * 0.3f
             puff(canvas, shift, y, width * 0.9f, height * 0.07f, 0.26f, 0xFFFFFF)
             puff(canvas, shift - width * 1.6f * dir, y, width * 0.9f, height * 0.07f, 0.26f, 0xFFFFFF)
@@ -566,6 +613,7 @@ class SkyPainter {
         val SNOW_SWAY = floatArrayOf(6f, 10f, 16f)
         val SNOW_ALPHA = floatArrayOf(0.55f, 0.8f, 0.9f)
         val FLASHES = floatArrayOf(0.3f, 0.315f, 0.72f)
+        const val SPRITE_SCALE = 0.4f
     }
 }
 

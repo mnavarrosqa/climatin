@@ -86,15 +86,20 @@ fun AnimatedSky(
         { STILL_CLOCK }
     } else {
         val cycle = if (motion == SkyMotion.REDUCED) SKY_CYCLE_MS * 3 else SKY_CYCLE_MS
-        // A unos 30 cuadros por segundo: el cielo se mueve tan despacio que más no se nota, y en
-        // pantallas de 120 Hz eran cuatro veces más dibujos de toda la pantalla.
+        // Hasta 60 cuadros por segundo: a 30 la lluvia y la nieve se veían a saltos.
         val value = remember { mutableFloatStateOf(0f) }
         LaunchedEffect(cycle) {
+            var last = 0L
             while (true) {
-                // Se espera antes de pedir el cuadro: pedirlo en cada refresco (120 Hz) y descartar
-                // la mayoría mantenía despierta la pantalla igual.
-                kotlinx.coroutines.delay(32)
-                withFrameMillis { now -> value.floatValue = (now % cycle) / cycle.toFloat() }
+                // Pegado al refresco de la pantalla (con un reloj aparte los cuadros salían
+                // desparejos y se veía a saltos), hasta 60 por segundo: en pantallas de 120 Hz se
+                // dibuja uno de cada dos.
+                withFrameMillis { now ->
+                    if (now - last >= 15) {
+                        last = now
+                        value.floatValue = (now % cycle) / cycle.toFloat()
+                    }
+                }
             }
         }
         val read: () -> Float = { value.floatValue }
