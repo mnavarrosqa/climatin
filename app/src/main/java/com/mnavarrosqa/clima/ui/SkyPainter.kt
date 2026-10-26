@@ -72,27 +72,8 @@ class SkyPainter {
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
     private val tau = 2 * PI.toFloat()
 
-    /** Degradados radiales de radio 1 por color; se escalan con el canvas en vez de crear uno por puff. */
-    private val puffShaders = HashMap<Int, Shader>()
-    private val softShaders = HashMap<Int, Shader>()
-
-    private fun puffShader(rgb: Int): Shader = puffShaders.getOrPut(rgb) {
-        val solid = rgb or 0xFF000000.toInt()
-        val half = (rgb and 0x00FFFFFF) or 0x8C000000.toInt()
-        val clear = rgb and 0x00FFFFFF
-        RadialGradient(0f, 0f, 1f, intArrayOf(solid, half, clear), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
-    }
-
-    /** Más difuso hacia el borde: para nubes y copos cercanos, sin el canto marcado de un círculo. */
-    private fun softShader(rgb: Int): Shader = softShaders.getOrPut(rgb) {
-        val base = rgb and 0x00FFFFFF
-        RadialGradient(
-            0f, 0f, 1f,
-            intArrayOf(base or 0xFF000000.toInt(), base or 0xBF000000.toInt(), base or 0x40000000, base),
-            floatArrayOf(0f, 0.35f, 0.7f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-    }
+    /** El pincel de los puffs para dibujar en pantalla (las imágenes de nubes se arman con otro, en otro hilo). */
+    private val brush = PuffBrush()
 
     private val rayShader = LinearGradient(0f, 0f, 1f, 0f, 0x29FFF5D2, 0x00FFF5D2, Shader.TileMode.CLAMP)
     private val rayPath = Path().apply {
@@ -121,18 +102,8 @@ class SkyPainter {
         }
     }
 
-    private fun puff(canvas: Canvas, x: Float, y: Float, radiusX: Float, radiusY: Float, alpha: Float, rgb: Int, soft: Boolean = false) {
-        if (alpha <= 0f || radiusX <= 0f || radiusY <= 0f) return
-        paint.shader = if (soft) softShader(rgb) else puffShader(rgb)
-        paint.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
-        canvas.save()
-        canvas.translate(x, y)
-        canvas.scale(radiusX, radiusY)
-        canvas.drawCircle(0f, 0f, 1f, paint)
-        canvas.restore()
-        paint.shader = null
-        paint.alpha = 255
-    }
+    private fun puff(canvas: Canvas, x: Float, y: Float, radiusX: Float, radiusY: Float, alpha: Float, rgb: Int, soft: Boolean = false) =
+        brush.puff(canvas, x, y, radiusX, radiusY, alpha, rgb, soft)
 
     /**
      * Si se dibujan el sol y la luna. En el pronóstico van apagados: el ícono grande del estado
@@ -246,11 +217,14 @@ class SkyPainter {
 
     /** Estrellas que titilan (las más brillantes con una cruz), una fugaz por minuto y la luna con halo. */
     private fun drawNight(canvas: Canvas, width: Float, height: Float, density: Float, clock: Float) {
-        stars.forEach { s ->
+        val unit = min(width, height * 0.75f)
+        val tiles = kotlin.math.ceil(width / unit).toInt()
+        for (tile in 0 until tiles) stars.forEach { s ->
             val speed = 2 + (s.speed * 4).toInt()
             val twinkle = 0.3f + 0.7f * (sin((clock * speed + s.phase) * tau) + 1f) / 2f
-            val x = s.x * width
-            val y = s.y * height * 0.7f
+            val x = tile * unit + s.x * unit
+            // Cada franja corrida en alto, así no se ve el mismo dibujo repetido.
+            val y = ((s.y + tile * 0.41f) % 1f) * height * 0.7f
             paint.color = Color.argb((255 * 0.9f * twinkle * (0.35f + 0.65f * s.size)).toInt(), 255, 255, 255)
             canvas.drawCircle(x, y, (0.5f + s.size * s.size * 1.6f) * density, paint)
             if (s.size > 0.93f) {
@@ -367,10 +341,9 @@ class SkyPainter {
      */
     private fun drawClouds(canvas: Canvas, width: Float, height: Float, clock: Float, kind: WeatherKind, isDay: Boolean, strength: Float, parallax: Float) {
         val palette = cloudPalette(kind, isDay)
-        if (width != spritesWidth) {
-            sprites.clear()
-            spritesWidth = width
-        }
+        // El tamaño de las nubes sale del lado chico: en tabletas apaisadas, medidas por el ancho,
+        // quedaban enormes y borrosas.
+        val unit = min(width, height * 0.75f)
         val count = when (kind) {
             WeatherKind.PARTLY -> 4
             WeatherKind.FOG -> 3
@@ -381,19 +354,31 @@ class SkyPainter {
         val heavy = kind != WeatherKind.PARTLY
         if (heavy && kind != WeatherKind.FOG) {
             // El techo se dibuja una vez en una imagen y se mece entero.
-            val sprite = sprite("techo|${palette[0]}|$strength|$height", width * 1.3f, height * 0.36f) { c ->
-                blanket.forEachIndexed { i, b ->
+            val blanketShape = blanket
+            val drawBlanket = { c: Canvas, b: PuffBrush ->
+                blanketShape.forEachIndexed { i, p ->
                     val x = i / 15f * width * 1.2f + width * 0.05f
-                    puff(c, x, height * 0.06f + b.y * height * 0.07f, width * (0.5f + b.size * 0.3f) * 0.5f, height * 0.16f, 0.85f * strength, palette[1])
-                    puff(c, x, height * 0.03f + b.y * height * 0.06f, width * (0.5f + b.size * 0.3f) * 0.48f, height * 0.13f, 0.9f * strength, palette[0])
+                    b.puff(c, x, height * 0.06f + p.y * height * 0.07f, width * (0.5f + p.size * 0.3f) * 0.5f, height * 0.16f, 0.85f * strength, palette[1])
+                    b.puff(c, x, height * 0.03f + p.y * height * 0.06f, width * (0.5f + p.size * 0.3f) * 0.48f, height * 0.13f, 0.9f * strength, palette[0])
                 }
             }
-            drawSprite(canvas, sprite, -width * 0.15f + sin(clock * tau) * width * 0.02f, -height * 0.1f, width * 1.3f, height * 0.36f)
+            val left = -width * 0.15f + sin(clock * tau) * width * 0.02f
+            val top = -height * 0.1f
+            val sprite = Sprites.get("techo|${palette[0]}|$strength|$width|$height", width * 1.3f, height * 0.36f, drawBlanket)
+            if (sprite != null) {
+                drawSprite(canvas, sprite, left, top, width * 1.3f, height * 0.36f)
+            } else {
+                // Mientras se arma la imagen (en otro hilo), se dibuja directo: no hay salto.
+                canvas.save()
+                canvas.translate(left, top)
+                drawBlanket(canvas, brush)
+                canvas.restore()
+            }
         }
         for (i in 0 until count) {
             val c = clouds[i]
             val layer = i % 3
-            val cloudWidth = width * LAYER_SCALE[layer] * (0.85f + 0.3f * c.size)
+            val cloudWidth = unit * LAYER_SCALE[layer] * (0.85f + 0.3f * c.size)
             val travel = width + cloudWidth * 1.4f
             // Vueltas enteras por ciclo: al reiniciarse el reloj, cada nube sigue donde estaba (con
             // velocidades fraccionarias saltaban cada minuto).
@@ -410,35 +395,20 @@ class SkyPainter {
             // cuadro solo se mueve. Así el cielo va fluido aunque haya varias nubes.
             val spriteWidth = cloudWidth * 1.5f
             val spriteHeight = cloudWidth * 1.0f
-            val sprite = sprite("nube|$i|${cloudWidth.toInt()}|${palette[0]}|$alpha", spriteWidth, spriteHeight) { c ->
-                drawCloud(c, cloudShapes[i], spriteWidth / 2, cloudWidth * 0.6f, cloudWidth, alpha, palette)
+            val shape = cloudShapes[i]
+            val sprite = Sprites.get("nube|$i|${cloudWidth.toInt()}|${palette[0]}|$alpha", spriteWidth, spriteHeight) { c, b ->
+                drawCloud(c, b, shape, spriteWidth / 2, cloudWidth * 0.6f, cloudWidth, alpha, palette)
             }
-            drawSprite(canvas, sprite, x - spriteWidth / 2, y - cloudWidth * 0.6f, spriteWidth, spriteHeight)
+            if (sprite != null) {
+                drawSprite(canvas, sprite, x - spriteWidth / 2, y - cloudWidth * 0.6f, spriteWidth, spriteHeight)
+            } else {
+                drawCloud(canvas, brush, shape, x, y, cloudWidth, alpha, palette)
+            }
         }
     }
 
-    /**
-     * Imágenes ya dibujadas (nubes y techo), a menos resolución: las nubes son difusas y no se
-     * nota, y ocupan mucha menos memoria. Se descartan si cambia el tamaño de la pantalla.
-     */
-    private val sprites = HashMap<String, android.graphics.Bitmap>()
-    private var spritesWidth = 0f
     private val spritePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val spriteRect = RectF()
-
-    private fun sprite(key: String, width: Float, height: Float, draw: (Canvas) -> Unit): android.graphics.Bitmap {
-        sprites[key]?.let { return it }
-        // Al amanecer y al atardecer cambian los colores: que no se acumulen imágenes viejas.
-        if (sprites.size > 24) sprites.clear()
-        val w = (width * SPRITE_SCALE).toInt().coerceAtLeast(1)
-        val h = (height * SPRITE_SCALE).toInt().coerceAtLeast(1)
-        val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
-        val c = Canvas(bitmap)
-        c.scale(SPRITE_SCALE, SPRITE_SCALE)
-        draw(c)
-        sprites[key] = bitmap
-        return bitmap
-    }
 
     private fun drawSprite(canvas: Canvas, bitmap: android.graphics.Bitmap, x: Float, y: Float, width: Float, height: Float) {
         spriteRect.set(x, y, x + width, y + height)
@@ -446,19 +416,19 @@ class SkyPainter {
     }
 
     /** Una nube con volumen: la base en sombra, el cuerpo y un brillo suave solo en la cima. */
-    private fun drawCloud(canvas: Canvas, shape: List<Puff>, x: Float, y: Float, cloudWidth: Float, alpha: Float, palette: IntArray) {
+    private fun drawCloud(canvas: Canvas, brush: PuffBrush, shape: List<Puff>, x: Float, y: Float, cloudWidth: Float, alpha: Float, palette: IntArray) {
         shape.forEach { p ->
             val r = p.radius * cloudWidth
-            puff(canvas, x + p.dx * cloudWidth, y + p.dy * cloudWidth + r * 0.25f, r * 1.05f, r * 0.8f, alpha * 0.7f, palette[1], soft = true)
+            brush.puff(canvas, x + p.dx * cloudWidth, y + p.dy * cloudWidth + r * 0.25f, r * 1.05f, r * 0.8f, alpha * 0.7f, palette[1], soft = true)
         }
         shape.forEach { p ->
             val r = p.radius * cloudWidth
-            puff(canvas, x + p.dx * cloudWidth, y + p.dy * cloudWidth, r, r, alpha * 0.85f, palette[0], soft = true)
+            brush.puff(canvas, x + p.dx * cloudWidth, y + p.dy * cloudWidth, r, r, alpha * 0.85f, palette[0], soft = true)
         }
         shape.forEach { p ->
             if (p.top < 0.45f) return@forEach
             val r = p.radius * cloudWidth * 0.8f
-            puff(canvas, x + p.dx * cloudWidth - r * 0.1f, y + p.dy * cloudWidth - r * 0.25f, r, r * 0.8f, alpha * 0.45f, palette[2], soft = true)
+            brush.puff(canvas, x + p.dx * cloudWidth - r * 0.1f, y + p.dy * cloudWidth - r * 0.25f, r, r * 0.8f, alpha * 0.45f, palette[2], soft = true)
         }
     }
 
@@ -479,13 +449,17 @@ class SkyPainter {
         strokeWidth: Float,
         slant: Float,
     ) {
-        list.forEach { p ->
+        // En pantallas anchas las gotas se reparten en franjas del ancho de un teléfono: si no,
+        // quedaban ralas.
+        val unit = min(width, height * 0.75f)
+        val tiles = kotlin.math.ceil(width / unit).toInt()
+        for (tile in 0 until tiles) list.forEach { p ->
             val f = falls + (p.speed * falls * 0.5f).toInt()
             val len = length * density * (0.6f + 0.8f * p.size)
-            val progress = (p.y + clock * f) % 1f
+            val progress = (p.y + tile * 0.37f + clock * f) % 1f
             val y = progress * (height + len * 2) - len
             // Arrancan más a la derecha para que la inclinación no deje un hueco a un costado.
-            val x = p.x * (width + height * slant) - height * slant * progress
+            val x = tile * unit + p.x * (unit + height * slant) - height * slant * progress
             val dx = -slant * len
             val strength = alpha * (0.6f + 0.4f * p.size)
             linePaint.strokeWidth = strokeWidth * density * (0.7f + 0.6f * p.size)
@@ -498,16 +472,18 @@ class SkyPainter {
 
     /** Nieve en tres capas: copos lejanos chicos y lentos, cercanos grandes, difusos y con más vaivén. */
     private fun drawSnow(canvas: Canvas, width: Float, height: Float, density: Float, clock: Float) {
-        flakes.forEach { f ->
+        val unit = min(width, height * 0.75f)
+        val tiles = kotlin.math.ceil(width / unit).toInt()
+        for (tile in 0 until tiles) flakes.forEach { f ->
             val layer = when {
                 f.size < 0.45f -> 0
                 f.size < 0.8f -> 1
                 else -> 2
             }
-            val y = ((f.y + clock * (layer + 1)) % 1f) * (height + 40f) - 20f
+            val y = ((f.y + tile * 0.37f + clock * (layer + 1)) % 1f) * (height + 40f) - 20f
             val sway = sin((clock * (3 + layer) + f.phase) * tau) * SNOW_SWAY[layer] * density
             val r = SNOW_SIZE[layer] * density * (0.8f + f.speed * 0.5f)
-            puff(canvas, f.x * width + sway, y, r * 1.6f, r * 1.6f, SNOW_ALPHA[layer], 0xFFFFFF, soft = layer == 2)
+            puff(canvas, tile * unit + f.x * unit + sway, y, r * 1.6f, r * 1.6f, SNOW_ALPHA[layer], 0xFFFFFF, soft = layer == 2)
         }
     }
 
@@ -613,8 +589,95 @@ class SkyPainter {
         val SNOW_SWAY = floatArrayOf(6f, 10f, 16f)
         val SNOW_ALPHA = floatArrayOf(0.55f, 0.8f, 0.9f)
         val FLASHES = floatArrayOf(0.3f, 0.315f, 0.72f)
-        const val SPRITE_SCALE = 0.4f
+
     }
+}
+
+/**
+ * Dibuja "puffs" (círculos con degradado radial) con su propio pincel y sus degradados: así se
+ * puede usar en otro hilo sin pisarse con el que dibuja en pantalla.
+ */
+internal class PuffBrush {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /** Degradados radiales de radio 1 por color; se escalan con el canvas en vez de crear uno por puff. */
+    private val puffShaders = HashMap<Int, Shader>()
+    private val softShaders = HashMap<Int, Shader>()
+
+    private fun puffShader(rgb: Int): Shader = puffShaders.getOrPut(rgb) {
+        val solid = rgb or 0xFF000000.toInt()
+        val half = (rgb and 0x00FFFFFF) or 0x8C000000.toInt()
+        val clear = rgb and 0x00FFFFFF
+        RadialGradient(0f, 0f, 1f, intArrayOf(solid, half, clear), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+    }
+
+    /** Más difuso hacia el borde: para nubes y copos cercanos, sin el canto marcado de un círculo. */
+    private fun softShader(rgb: Int): Shader = softShaders.getOrPut(rgb) {
+        val base = rgb and 0x00FFFFFF
+        RadialGradient(
+            0f, 0f, 1f,
+            intArrayOf(base or 0xFF000000.toInt(), base or 0xBF000000.toInt(), base or 0x40000000, base),
+            floatArrayOf(0f, 0.35f, 0.7f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+    }
+
+    fun puff(canvas: Canvas, x: Float, y: Float, radiusX: Float, radiusY: Float, alpha: Float, rgb: Int, soft: Boolean = false) {
+        if (alpha <= 0f || radiusX <= 0f || radiusY <= 0f) return
+        paint.shader = if (soft) softShader(rgb) else puffShader(rgb)
+        paint.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
+        canvas.save()
+        canvas.translate(x, y)
+        canvas.scale(radiusX, radiusY)
+        canvas.drawCircle(0f, 0f, 1f, paint)
+        canvas.restore()
+        paint.shader = null
+        paint.alpha = 255
+    }
+}
+
+/**
+ * Imágenes de nubes ya dibujadas, compartidas entre todos los cielos (al pasar de ciudad se arma
+ * uno nuevo y antes se redibujaban todas de golpe, con un tirón). Se arman en otro hilo: hasta que
+ * están, quien dibuja las hace directo.
+ */
+private object Sprites {
+    private val cache = object : android.util.LruCache<String, android.graphics.Bitmap>(32 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.byteCount
+    }
+    private val pending = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "nubes").apply { isDaemon = true }
+    }
+
+    fun get(key: String, width: Float, height: Float, draw: (Canvas, PuffBrush) -> Unit): android.graphics.Bitmap? {
+        cache.get(key)?.let { return it }
+        if (pending.add(key)) {
+            worker.execute {
+                runCatching {
+                    val scale = min(SkyPainterScale.SCALE, SkyPainterScale.MAX_PX / maxOf(width, height))
+                    val w = (width * scale).toInt().coerceAtLeast(1)
+                    val h = (height * scale).toInt().coerceAtLeast(1)
+                    val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bitmap)
+                    canvas.scale(w / width, h / height)
+                    draw(canvas, PuffBrush())
+                    cache.put(key, bitmap)
+                }
+                pending.remove(key)
+            }
+        }
+        return null
+    }
+}
+
+/**
+ * Resolución de las imágenes de nubes: más nítidas que antes (a 40% en tabletas se veían
+ * borrosas), con un tope de unos 1100 px de lado para la memoria.
+ */
+private object SkyPainterScale {
+    const val SCALE = 0.6f
+    const val MAX_PX = 1100f
 }
 
 /** Tres colores del cielo de arriba hacia abajo. */
