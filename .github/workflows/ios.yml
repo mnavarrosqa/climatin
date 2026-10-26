@@ -35,3 +35,29 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | tee build.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
           grep -q "BUILD SUCCEEDED" build.log
+      # La app abierta en un simulador, ubicada en Córdoba: una captura para ver cómo se ve.
+      - name: Captura en el simulador
+        continue-on-error: true
+        run: |
+          set -x
+          DEVICE=$(xcrun simctl list devices available | grep -m1 -oE "iPhone 1[5-7][^(]*\(([0-9A-F-]{36})\)" | grep -oE "[0-9A-F-]{36}")
+          xcrun simctl boot "$DEVICE"
+          xcodebuild build -project Climatin.xcodeproj -scheme Climatin -configuration Debug \
+            -destination "id=$DEVICE" -derivedDataPath build CODE_SIGNING_ALLOWED=NO -quiet
+          APP=$(find build/Build/Products -name "Climatin.app" -maxdepth 3 | head -1)
+          xcrun simctl install "$DEVICE" "$APP"
+          xcrun simctl privacy "$DEVICE" grant location com.mnavarrosqa.climatin
+          xcrun simctl location "$DEVICE" set -31.4201,-64.1888
+          xcrun simctl launch "$DEVICE" com.mnavarrosqa.climatin
+          sleep 25
+          mkdir -p capturas
+          xcrun simctl io "$DEVICE" screenshot capturas/inicio.png
+          # Chica y en base64 en el log, para revisarla sin bajar el artifact.
+          sips -Z 640 capturas/inicio.png --out capturas/chica.png > /dev/null
+          echo "CAPTURA_BASE64_INICIO"; base64 -i capturas/chica.png; echo "CAPTURA_BASE64_FIN"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capturas-ios
+          path: ios/capturas/*.png
+          if-no-files-found: ignore
