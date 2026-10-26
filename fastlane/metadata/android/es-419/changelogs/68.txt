@@ -1,0 +1,1 @@
+• Arreglo: un widget podía aparecer con el contenido de otro (la Burbuja como Indicador o Próxima hora)

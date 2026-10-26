@@ -399,10 +399,13 @@ suspend fun updateWeatherWidgets(context: Context, force: Boolean = true) {
             async {
                 runCatching {
                     val widget = kind.widget() as GlanceAppWidget
-                    manager.getGlanceIds(widget.javaClass).map { glanceId ->
+                    // Los ids salen de Android por el receptor de este tipo, no de la lista de Glance:
+                    // si esa lista mezcla tipos, un widget se dibujaba con el contenido de otro (la
+                    // Burbuja aparecía como Indicador o Próxima hora según cuál terminaba último).
+                    kind.placedIds(app).map { appWidgetId ->
                         async {
                             runCatching {
-                                val appWidgetId = manager.getAppWidgetId(glanceId)
+                                val glanceId = manager.getGlanceIdBy(appWidgetId)
                                 val signature = shared?.let { base ->
                                     runCatching { widgetSignature(app, kind, glanceId, repository, base) }.getOrNull()
                                 }
