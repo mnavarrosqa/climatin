@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Las dos columnas comparten el ancho y cada texto va en una línea: si no, un estado largo
+     aplastaba la ciudad y la temperatura. -->
 <!-- Como el Clima mediano: ciudad y temperatura a la izquierda; ícono, estado y máx/mín a la derecha. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -23,6 +25,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:id="@+id/preview_place"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="Córdoba"
             android:textColor="@color/preview_text_variant"
             android:textSize="13sp" />
@@ -31,14 +35,17 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:id="@+id/preview_temp"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="22°"
             android:textColor="@color/preview_text"
             android:textSize="46sp" />
         </LinearLayout>
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:gravity="end"
             android:orientation="vertical">
 
@@ -53,6 +60,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:id="@+id/preview_desc"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="Parcialmente nublado"
             android:textColor="@color/preview_text"
             android:textSize="13sp" />
@@ -61,6 +70,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:id="@+id/preview_minmax"
+            android:ellipsize="end"
+            android:maxLines="1"
             android:text="Máx 25°  Mín 14°"
             android:textColor="@color/preview_text"
             android:textSize="12sp" />

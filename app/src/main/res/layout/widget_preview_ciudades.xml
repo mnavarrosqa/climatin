@@ -23,6 +23,7 @@
             <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
             android:maxLines="1"
             android:text="Córdoba"
             android:textColor="@color/preview_text"
@@ -31,6 +32,7 @@
             <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
             android:maxLines="1"
             android:text="Parcialmente nublado"
             android:textColor="@color/preview_text_variant"
@@ -53,7 +55,7 @@
             <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Máx 25°  Mín 14°"
+            android:text="25° / 14°"
             android:textColor="@color/preview_text_variant"
             android:textSize="12sp" />
         </LinearLayout>
@@ -77,6 +79,7 @@
             <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
             android:maxLines="1"
             android:text="Buenos Aires"
             android:textColor="@color/preview_text"
@@ -85,6 +88,7 @@
             <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
             android:maxLines="1"
             android:text="Lluvia"
             android:textColor="@color/preview_text_variant"
@@ -107,7 +111,7 @@
             <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Máx 19°  Mín 12°"
+            android:text="19° / 12°"
             android:textColor="@color/preview_text_variant"
             android:textSize="12sp" />
         </LinearLayout>
@@ -131,6 +135,7 @@
             <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
             android:maxLines="1"
             android:text="Mendoza"
             android:textColor="@color/preview_text"
@@ -139,6 +144,7 @@
             <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
             android:maxLines="1"
             android:text="Despejado"
             android:textColor="@color/preview_text_variant"
@@ -161,7 +167,7 @@
             <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Máx 27°  Mín 11°"
+            android:text="27° / 11°"
             android:textColor="@color/preview_text_variant"
             android:textSize="12sp" />
         </LinearLayout>
