@@ -11,6 +11,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.animation.Crossfade
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -156,26 +162,69 @@ fun SettingsScreen(
     onShowWelcome: () -> Unit = {},
 ) {
     var page by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
-    // Atrás desde una página vuelve a la lista de categorías, no al pronóstico.
-    BackHandler(enabled = page != null) { page = null }
-    AnimatedContent(
-        targetState = page,
-        transitionSpec = {
-            val forward = targetState != null
-            (slideInHorizontally(tween(320)) { if (forward) it / 4 else -it / 4 } + fadeIn(tween(220)))
-                .togetherWith(slideOutHorizontally(tween(320)) { if (forward) -it / 4 else it / 4 } + fadeOut(tween(160)))
-        },
-        label = "ajustes",
-    ) { current ->
-        when (current) {
-            null -> SettingsHome(viewModel, onBack = onBack, onOpen = { page = it })
-            SettingsPage.APPEARANCE -> SettingsScaffold(tr("Apariencia", "Appearance"), onBack = { page = null }) { appearancePage() }
-            SettingsPage.SCREEN -> SettingsScaffold(tr("Pantalla del clima", "Weather screen"), onBack = { page = null }) { screenPage(viewModel) }
-            SettingsPage.UNITS -> SettingsScaffold(tr("Unidades", "Units"), onBack = { page = null }) { unitsPage(viewModel) }
-            SettingsPage.NOTIFICATIONS -> NotificationsPage(viewModel, onBack = { page = null })
-            SettingsPage.LOCATION -> LocationPage(onBack = { page = null }, onLocationPermission = onLocationPermission)
-            SettingsPage.ABOUT -> SettingsScaffold(tr("Acerca de", "About"), onBack = { page = null }) { aboutPage(viewModel, onShowWelcome) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Plegable abierto o tablet: las categorías a la izquierda y la elegida a la derecha, como
+        // los ajustes del sistema. En el teléfono, una pantalla por vez.
+        val wide = maxWidth >= SettingsTwoPaneWidth
+        // Atrás desde una página vuelve a la lista de categorías, no al pronóstico (con dos paneles
+        // la lista ya está a la vista: atrás sale de ajustes).
+        BackHandler(enabled = page != null && !wide) { page = null }
+        if (wide) {
+            val shown = page ?: SettingsPage.APPEARANCE
+            Row(Modifier.fillMaxSize()) {
+                Box(Modifier.width(380.dp).fillMaxHeight()) {
+                    SettingsHome(viewModel, onBack = onBack, onOpen = { page = it }, selected = shown)
+                }
+                VerticalDivider()
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    CompositionLocalProvider(LocalSettingsPane provides true) {
+                        Crossfade(shown, animationSpec = tween(220), label = "pagina") { current ->
+                            SettingsPageContent(current, viewModel, onBack = { page = null }, onLocationPermission, onShowWelcome)
+                        }
+                    }
+                }
+            }
+        } else {
+            AnimatedContent(
+                targetState = page,
+                transitionSpec = {
+                    val forward = targetState != null
+                    (slideInHorizontally(tween(320)) { if (forward) it / 4 else -it / 4 } + fadeIn(tween(220)))
+                        .togetherWith(slideOutHorizontally(tween(320)) { if (forward) -it / 4 else it / 4 } + fadeOut(tween(160)))
+                },
+                label = "ajustes",
+            ) { current ->
+                if (current == null) {
+                    SettingsHome(viewModel, onBack = onBack, onOpen = { page = it })
+                } else {
+                    SettingsPageContent(current, viewModel, onBack = { page = null }, onLocationPermission, onShowWelcome)
+                }
+            }
         }
+    }
+}
+
+/** Ancho desde el que los ajustes van en dos paneles (el razr fold abierto, tablets). */
+private val SettingsTwoPaneWidth = 720.dp
+
+/** Verdadero en el panel derecho: la página no lleva flecha de volver, la lista está al lado. */
+private val LocalSettingsPane = staticCompositionLocalOf { false }
+
+@Composable
+private fun SettingsPageContent(
+    page: SettingsPage,
+    viewModel: WeatherViewModel,
+    onBack: () -> Unit,
+    onLocationPermission: (Boolean) -> Unit,
+    onShowWelcome: () -> Unit,
+) {
+    when (page) {
+        SettingsPage.APPEARANCE -> SettingsScaffold(tr("Apariencia", "Appearance"), onBack = onBack) { appearancePage() }
+        SettingsPage.SCREEN -> SettingsScaffold(tr("Pantalla del clima", "Weather screen"), onBack = onBack) { screenPage(viewModel) }
+        SettingsPage.UNITS -> SettingsScaffold(tr("Unidades", "Units"), onBack = onBack) { unitsPage(viewModel) }
+        SettingsPage.NOTIFICATIONS -> NotificationsPage(viewModel, onBack = onBack)
+        SettingsPage.LOCATION -> LocationPage(onBack = onBack, onLocationPermission = onLocationPermission)
+        SettingsPage.ABOUT -> SettingsScaffold(tr("Acerca de", "About"), onBack = onBack) { aboutPage(viewModel, onShowWelcome) }
     }
 }
 
@@ -191,8 +240,10 @@ private fun SettingsScaffold(title: String, onBack: () -> Unit, content: LazyLis
             LargeTopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Volver", "Back"))
+                    if (!LocalSettingsPane.current) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Volver", "Back"))
+                        }
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -240,6 +291,8 @@ private fun SettingRow(
     checked: Boolean? = null,
     onCheckedChange: ((Boolean) -> Unit)? = null,
     nested: Boolean = false,
+    /** La categoría abierta en el panel derecho (dos paneles): resaltada en la lista. */
+    selected: Boolean = false,
 ) {
     // Una opción que depende de la de arriba va corrida a la derecha, como en los ajustes del sistema.
     val indent: (@Composable () -> Unit)? = if (nested) ({ Spacer(Modifier.width(8.dp)) }) else null
@@ -250,9 +303,13 @@ private fun SettingRow(
         // Con interruptor, toda la fila lo prende y apaga (y TalkBack la lee como un interruptor);
         // antes solo respondía el interruptor chiquito.
         trailingContent = if (checked != null) ({ Switch(checked = checked, onCheckedChange = null) }) else trailing,
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = ListItemDefaults.colors(
+            containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+        ),
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
+            // Solo la categoría abierta se anuncia como elegida; las demás filas no dicen nada de más.
+            .then(if (selected) Modifier.semantics { this.selected = true } else Modifier)
             .then(
                 when {
                     checked != null && onCheckedChange != null ->
@@ -310,7 +367,12 @@ private val Chevron: @Composable () -> Unit = {
 // --- Página principal ---
 
 @Composable
-private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
+private fun SettingsHome(
+    viewModel: WeatherViewModel,
+    onBack: () -> Unit,
+    onOpen: (SettingsPage) -> Unit,
+    selected: SettingsPage? = null,
+) {
     val context = LocalContext.current
     val units by viewModel.units.collectAsStateWithLifecycle()
     val cards by viewModel.cards.collectAsStateWithLifecycle()
@@ -363,6 +425,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
                         }
                     },
                     onClick = { onOpen(SettingsPage.APPEARANCE) },
+                    selected = selected == SettingsPage.APPEARANCE,
                     trailing = Chevron,
                 )
                 SettingRow(
@@ -371,6 +434,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
                         cards.visible.joinToString(", ") { it.label.lowercase() },
                     icon = { CategoryIcon(Color(0xFF3F7BE8), Icons.Rounded.Home) },
                     onClick = { onOpen(SettingsPage.SCREEN) },
+                    selected = selected == SettingsPage.SCREEN,
                     trailing = Chevron,
                 )
                 SettingRow(
@@ -382,6 +446,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
                         }
                     },
                     onClick = { onOpen(SettingsPage.UNITS) },
+                    selected = selected == SettingsPage.UNITS,
                     trailing = Chevron,
                 )
             }
@@ -394,6 +459,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
                     notifications,
                     icon = { CategoryIcon(Color(0xFFE8833A), Icons.Rounded.Notifications) },
                     onClick = { onOpen(SettingsPage.NOTIFICATIONS) },
+                    selected = selected == SettingsPage.NOTIFICATIONS,
                     trailing = Chevron,
                 )
                 SettingRow(
@@ -401,6 +467,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
                     location,
                     icon = { CategoryIcon(Color(0xFF2E9E5B), Icons.Rounded.LocationOn) },
                     onClick = { onOpen(SettingsPage.LOCATION) },
+                    selected = selected == SettingsPage.LOCATION,
                     trailing = Chevron,
                 )
             }
@@ -445,6 +512,7 @@ private fun SettingsHome(viewModel: WeatherViewModel, onBack: () -> Unit, onOpen
                         ?: tr("Versión ${installed.first}", "Version ${installed.first}"),
                     icon = { CategoryIcon(Color(0xFF607D8B), Icons.Rounded.Info) },
                     onClick = { onOpen(SettingsPage.ABOUT) },
+                    selected = selected == SettingsPage.ABOUT,
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (update != null) Badge { Text("1") }
