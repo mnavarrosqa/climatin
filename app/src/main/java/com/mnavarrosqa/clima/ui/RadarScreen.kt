@@ -509,6 +509,8 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
             Column(
                 Modifier
                     .navigationBarsPadding()
+                    // La hoja llega hasta abajo, detrás de la barra flotante: su contenido queda arriba.
+                    .padding(bottom = LocalBottomBarSpace.current)
                     .padding(horizontal = 20.dp, vertical = 16.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

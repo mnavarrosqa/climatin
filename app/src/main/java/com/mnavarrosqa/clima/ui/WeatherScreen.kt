@@ -334,9 +334,9 @@ fun WeatherRoute(
             }
         }
     }
-    // Barra flotante abajo en las tres pantallas principales; el mapa, comparar y la bienvenida
-    // ocupan toda la pantalla.
-    val showBar = screen == "clima" || screen == "ciudades" || screen == "ajustes"
+    // Barra flotante abajo en las pantallas principales (también el mapa); comparar y la
+    // bienvenida ocupan toda la pantalla.
+    val showBar = screen == "clima" || screen == "ciudades" || screen == "ajustes" || screen == "radar"
     val tabId = pages.getOrElse(pagerState.currentPage) { CURRENT_PLACE_ID }
     val tabSnapshot by remember(tabId) { viewModel.snapshots(tabId) }
         .collectAsStateWithLifecycle(viewModel.cached(tabId))
@@ -447,6 +447,7 @@ fun WeatherRoute(
                 selected = when (screen) {
                     "ciudades" -> NavTab.CIUDADES
                     "ajustes" -> NavTab.AJUSTES
+                    "radar" -> NavTab.MAPA
                     else -> NavTab.CLIMA
                 },
                 overSky = screen == "clima",
@@ -454,15 +455,19 @@ fun WeatherRoute(
                 onSelect = { tab ->
                     when (tab) {
                         NavTab.CLIMA -> {
+                            radarAt = null
                             showCities = false
                             showSettings = false
                         }
-                        NavTab.MAPA -> tabSnapshot?.let { radarAt = "${it.latitude},${it.longitude}" }
+                        // Ya en el mapa, no se vuelve a abrir (perdería el lugar y el zoom).
+                        NavTab.MAPA -> if (radarAt == null) tabSnapshot?.let { radarAt = "${it.latitude},${it.longitude}" }
                         NavTab.CIUDADES -> {
+                            radarAt = null
                             showSettings = false
                             showCities = true
                         }
                         NavTab.AJUSTES -> {
+                            radarAt = null
                             showCities = false
                             showSettings = true
                         }
