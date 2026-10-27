@@ -305,6 +305,8 @@ fun CitiesScreen(
                     subtitle = if (hasLocation) here?.place else tr("Sin permiso de ubicación", "No location permission"),
                     snapshot = here,
                     icon = Icons.Rounded.LocationOn,
+                    // Las ciudades guardadas tienen "⋮": así las temperaturas quedan en columna.
+                    alignWithMenu = places.isNotEmpty() && hasLocation,
                     modifier = Modifier.padding(bottom = 10.dp),
                     onClick = if (here != null) ({ onOpenPlace(CURRENT_PLACE_ID) }) else null,
                     action = if (hasLocation) null else {
@@ -429,8 +431,8 @@ fun CitiesScreen(
             item {
                 Hint(
                     tr(
-                        "Tocá una ciudad para ver su pronóstico. Con ⋮ le ponés un apodo, la movés o la quitás; también podés deslizarla (izquierda quita, derecha apodo) o mantenerla apretada para arrastrarla.",
-                        "Tap a city to see its forecast. Use ⋮ to nickname, move or remove it; you can also swipe it (left removes, right nicknames) or press and hold to drag it.",
+                        "Deslizá a la izquierda para quitar y a la derecha para ponerle un apodo. Mantené apretada para moverla.",
+                        "Swipe left to remove and right to nickname. Press and hold to move it.",
                     ),
                 )
             }

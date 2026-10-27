@@ -37,6 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,6 +66,8 @@ fun CityCard(
     onClick: (() -> Unit)? = null,
     action: (@Composable () -> Unit)? = null,
     menu: (@Composable () -> Unit)? = null,
+    /** Deja a la derecha el lugar del "⋮" aunque no lo tenga, para que las temperaturas queden en columna. */
+    alignWithMenu: Boolean = false,
 ) {
     val shadow = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.35f), Offset(0f, 1f), 8f))
     val shape = RoundedCornerShape(22.dp)
@@ -91,12 +95,21 @@ fun CityCard(
             isDay = snapshot?.current?.isDay ?: true,
             modifier = Modifier.matchParentSize(),
             southern = (snapshot?.latitude ?: 0.0) < 0,
+            snapshot = snapshot,
+            sunMoon = false,
+            starFraction = 0.35f,
         )
-        // Un velo suave abajo para que el estado y la mínima se lean sobre cualquier cielo.
+        // Un velo suave arriba y abajo para que el nombre y el estado se lean sobre cualquier cielo.
         Box(
             Modifier
                 .matchParentSize()
-                .background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.22f))),
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.12f),
+                        0.45f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.26f),
+                    ),
+                ),
         )
         Row(
             Modifier
@@ -104,7 +117,7 @@ fun CityCard(
                 // La altura del contenido (al menos la de siempre), así las columnas reparten el espacio.
                 .heightIn(min = 116.dp)
                 .height(IntrinsicSize.Min)
-                .padding(start = 18.dp, end = if (menu != null) 4.dp else 18.dp, top = 14.dp, bottom = 14.dp),
+                .padding(start = 18.dp, end = if (menu != null || alignWithMenu) 4.dp else 18.dp, top = 14.dp, bottom = 14.dp),
         ) {
             // Los textos ya van en la descripción de la tarjeta: no se leen de nuevo uno por uno.
             Column(
@@ -138,14 +151,22 @@ fun CityCard(
                     }
                 }
                 snapshot?.let {
-                    Text(
-                        WeatherCodes.description(it.current.code),
-                        style = MaterialTheme.typography.bodyMedium.merge(shadow),
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painterResource(WeatherCodes.icon(it.current.code, it.current.isDay)),
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            WeatherCodes.description(it.current.code),
+                            style = MaterialTheme.typography.bodyMedium.merge(shadow),
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             if (action != null) {
@@ -177,6 +198,9 @@ fun CityCard(
             }
             if (menu != null) {
                 Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.TopCenter) { menu() }
+            } else if (alignWithMenu) {
+                // El ancho de un IconButton, como el "⋮" de las otras tarjetas.
+                Spacer(Modifier.width(48.dp))
             }
         }
     }

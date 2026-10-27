@@ -148,12 +148,24 @@ fun AnimatedSky(
  * gastan batería sin aportar mucho. Se dibuja una vez y solo se redibuja si cambia el tamaño.
  */
 @Composable
-fun StillSky(kind: WeatherKind, isDay: Boolean, modifier: Modifier = Modifier, southern: Boolean = false) {
+fun StillSky(
+    kind: WeatherKind,
+    isDay: Boolean,
+    modifier: Modifier = Modifier,
+    southern: Boolean = false,
+    /** Con el pronóstico, los colores del amanecer y el atardecer del lugar. */
+    snapshot: WeatherSnapshot? = null,
+    /** Sin sol ni luna: en las tarjetas quedaban detrás de la temperatura. */
+    sunMoon: Boolean = true,
+    starFraction: Float = 1f,
+) {
     val painter = remember { SkyPainter() }
-    val gradient = remember(kind, isDay) { skyColors(kind, isDay).toGradient() }
+    val gradient = remember(kind, isDay, snapshot) { SkyTime.gradient(kind, isDay, snapshot) }
     Canvas(modifier) {
         drawIntoCanvas {
             painter.southern = southern
+            painter.showSunMoon = sunMoon
+            painter.starFraction = starFraction
             painter.draw(it.nativeCanvas, size.width, size.height, density, STILL_CLOCK, kind, isDay, gradient)
         }
     }

@@ -117,6 +117,12 @@ class SkyPainter {
      */
     var useSprites = true
 
+    /**
+     * Qué parte de las estrellas se dibuja (1 = todas). En las tarjetas de ciudades, bajas y
+     * anchas, el cielo se repite muchas veces y las estrellas tapaban los nombres.
+     */
+    var starFraction = 1f
+
     // Un lugar por nube y otro para el techo, propios de este cielo: en la caché solo cuenta el
     // último pedido de cada uno (al fundirse dos cielos, cada uno tiene los suyos).
     private val id = nextId.getAndIncrement()
@@ -229,9 +235,13 @@ class SkyPainter {
 
     /** Estrellas que titilan (las más brillantes con una cruz), una fugaz por minuto y la luna con halo. */
     private fun drawNight(canvas: Canvas, width: Float, height: Float, density: Float, clock: Float) {
-        val unit = min(width, height * 0.75f)
+        // Franjas de al menos la mitad del ancho: en un recuadro bajo y ancho, medidas con el alto,
+        // eran muchas y el cielo quedaba lleno de estrellas.
+        val unit = min(width, maxOf(height * 0.75f, width / 2f))
         val tiles = kotlin.math.ceil(width / unit).toInt()
-        for (tile in 0 until tiles) stars.forEach { s ->
+        val shown = (stars.size * starFraction).toInt()
+        for (tile in 0 until tiles) stars.forEachIndexed { index, s ->
+            if (index >= shown) return@forEachIndexed
             val speed = 2 + (s.speed * 4).toInt()
             val twinkle = 0.3f + 0.7f * (sin((clock * speed + s.phase) * tau) + 1f) / 2f
             val x = tile * unit + s.x * unit
