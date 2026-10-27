@@ -106,6 +106,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
@@ -332,6 +334,14 @@ fun WeatherRoute(
             }
         }
     }
+    // Barra flotante abajo en las tres pantallas principales; el mapa, comparar y la bienvenida
+    // ocupan toda la pantalla.
+    val showBar = screen == "clima" || screen == "ciudades" || screen == "ajustes"
+    val tabId = pages.getOrElse(pagerState.currentPage) { CURRENT_PLACE_ID }
+    val tabSnapshot by remember(tabId) { viewModel.snapshots(tabId) }
+        .collectAsStateWithLifecycle(viewModel.cached(tabId))
+    Box(Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalBottomBarSpace provides if (showBar) BottomBarSpace else 0.dp) {
     AnimatedContent(
         targetState = screen,
         modifier = Modifier.graphicsLayer {
@@ -409,7 +419,6 @@ fun WeatherRoute(
                     pagerState,
                     viewModel,
                     onOpenCities = { showCities = true },
-                    onOpenSettings = { showSettings = true },
                     onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
                     // Arranca con la ciudad que se mira y las que le siguen.
                     onOpenCompare = { firstId ->
@@ -422,6 +431,57 @@ fun WeatherRoute(
                     },
                 )
             }
+        }
+    }
+    }
+        AnimatedVisibility(
+            visible = showBar,
+            enter = slideInVertically(Motion.gentle()) { it } + fadeIn(),
+            exit = slideOutVertically(Motion.gentle()) { it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            FloatingNavBar(
+                selected = when (screen) {
+                    "ciudades" -> NavTab.CIUDADES
+                    "ajustes" -> NavTab.AJUSTES
+                    else -> NavTab.CLIMA
+                },
+                overSky = screen == "clima",
+                mapEnabled = tabSnapshot != null,
+                onSelect = { tab ->
+                    when (tab) {
+                        NavTab.CLIMA -> {
+                            showCities = false
+                            showSettings = false
+                        }
+                        NavTab.MAPA -> tabSnapshot?.let { radarAt = "${it.latitude},${it.longitude}" }
+                        NavTab.CIUDADES -> {
+                            showSettings = false
+                            showCities = true
+                        }
+                        NavTab.AJUSTES -> {
+                            showCities = false
+                            showSettings = true
+                        }
+                    }
+                },
+                icon = { tab, tint ->
+                    when (tab) {
+                        // El clima de ahora de la ciudad que se mira, como ícono.
+                        NavTab.CLIMA -> Image(
+                            painterResource(WeatherCodes.icon(tabSnapshot?.current?.code ?: 2, tabSnapshot?.current?.isDay ?: true)),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        NavTab.MAPA -> Icon(Icons.Rounded.Place, contentDescription = null, tint = tint)
+                        NavTab.CIUDADES -> Icon(Icons.AutoMirrored.Rounded.List, contentDescription = null, tint = tint)
+                        NavTab.AJUSTES -> Icon(Icons.Rounded.Settings, contentDescription = null, tint = tint)
+                    }
+                },
+            )
         }
     }
 }
@@ -471,7 +531,6 @@ private fun WeatherPager(
     pagerState: PagerState,
     viewModel: WeatherViewModel,
     onOpenCities: () -> Unit,
-    onOpenSettings: () -> Unit,
     onOpenRadar: (Double, Double) -> Unit,
     onOpenCompare: (String) -> Unit,
     deepLink: DeepLinkTarget?,
@@ -597,6 +656,8 @@ private fun WeatherPager(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
+                // Arriba de la barra flotante.
+                .padding(bottom = LocalBottomBarSpace.current)
                 .padding(horizontal = 12.dp, vertical = 12.dp)
                 .widthIn(max = 560.dp)
                 .zIndex(2f),
@@ -626,9 +687,9 @@ private fun WeatherPager(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onOpenCities) {
-                Icon(Icons.AutoMirrored.Rounded.List, contentDescription = tr("Ciudades", "Cities"), tint = OnSky)
-            }
+            // Ciudades y Ajustes están en la barra de abajo: de este lado queda el lugar, para que
+            // los puntos sigan centrados frente al "⋮".
+            Spacer(Modifier.size(48.dp))
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 CompactHeader(
                     skySnapshot,
@@ -669,9 +730,6 @@ private fun WeatherPager(
                         }
                     }
                 }
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Rounded.Settings, contentDescription = tr("Ajustes", "Settings"), tint = OnSky)
             }
             ForecastMenu(
                 snapshot = skySnapshot,
@@ -889,7 +947,7 @@ fun ForecastContent(
         start = 16.dp,
         end = 16.dp,
         top = insets.calculateTopPadding() + 56.dp,
-        bottom = insets.calculateBottomPadding() + 24.dp,
+        bottom = insets.calculateBottomPadding() + 24.dp + LocalBottomBarSpace.current,
     )
     val spacing = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)
     // La frase va como encabezado de "Próximas horas", como el resumen del Clima de Apple; si esa

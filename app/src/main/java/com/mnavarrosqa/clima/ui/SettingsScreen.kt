@@ -260,7 +260,7 @@ private fun SettingsScaffold(title: String, onBack: () -> Unit, content: LazyLis
                 start = 16.dp,
                 end = 16.dp,
                 top = padding.calculateTopPadding(),
-                bottom = padding.calculateBottomPadding() + 24.dp,
+                bottom = padding.calculateBottomPadding() + 24.dp + LocalBottomBarSpace.current,
             ),
             content = content,
         )

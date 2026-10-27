@@ -231,7 +231,7 @@ fun CitiesScreen(
                 start = 16.dp,
                 end = 16.dp,
                 top = padding.calculateTopPadding(),
-                bottom = padding.calculateBottomPadding() + 24.dp,
+                bottom = padding.calculateBottomPadding() + 24.dp + LocalBottomBarSpace.current,
             ),
         ) {
             // Buscador relleno y sin borde, como el de iOS.
