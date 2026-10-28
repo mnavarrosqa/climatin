@@ -13,10 +13,10 @@ android {
         applicationId = "com.mnavarrosqa.clima"
         minSdk = 26
         targetSdk = 36
-        versionCode = 76
+        versionCode = 77
         // Solo español e inglés: evita que las librerías sumen traducciones que la app no tiene.
         resourceConfigurations += listOf("es", "en")
-        versionName = "1.34.1"
+        versionName = "1.34.2"
     }
 
     signingConfigs {
@@ -48,10 +48,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Sin clave propia se firma con la de debug, para poder instalarlo a mano.
-            signingConfig = signingConfigs.getByName(
-                if (System.getenv("CLIMATIN_KEYSTORE") != null) "release" else "debug",
-            )
         }
     }
 
@@ -62,10 +58,18 @@ android {
         create("github") {
             dimension = "distribucion"
             buildConfigField("boolean", "SELF_UPDATE", "true")
+            // Siempre con la clave fija del repo: si cambiara, Android rechazaría la actualización
+            // dentro de la app en los teléfonos que ya la tienen instalada.
+            signingConfig = signingConfigs.getByName("debug")
         }
         create("play") {
             dimension = "distribucion"
             buildConfigField("boolean", "SELF_UPDATE", "false")
+            // La clave propia para Play Store, si el CI la define (ver PUBLICAR.md); si no, la de
+            // prueba, para poder instalarlo a mano.
+            signingConfig = signingConfigs.getByName(
+                if (System.getenv("CLIMATIN_KEYSTORE") != null) "release" else "debug",
+            )
         }
     }
 
