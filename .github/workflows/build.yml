@@ -105,6 +105,27 @@ jobs:
           echo "Las capturas fallaron. Primeros errores:"
           grep -h -A12 "<failure" app/build/test-results/testGithubDebugUnitTest/*.xml 2>/dev/null | head -60 || true
           ls app/build/test-results/testGithubDebugUnitTest 2>/dev/null || echo "Sin resultados: falló antes de correr los tests (ver el paso Capturas de pantalla)."
+      # Capturas en tamaño real en el repo público de versiones (carpeta capturas/), para la ficha
+      # de Play Store. Solo al lanzarlo a mano: no hace falta en cada push.
+      - name: Publicar capturas
+        if: github.event_name == 'workflow_dispatch' && steps.capturas.outcome == 'success' && env.RELEASES_TOKEN != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          for f in app/build/capturas/*.png; do
+            name=$(basename "$f")
+            sha=$(gh api "repos/mnavarrosqa/climatin-releases/contents/capturas/$name" --jq .sha 2>/dev/null || true)
+            python3 - "$f" "$name" "$sha" > body.json <<'PY'
+          import base64, json, sys
+          path, name, sha = sys.argv[1:4]
+          body = {"message": f"Captura {name}", "content": base64.b64encode(open(path, "rb").read()).decode()}
+          if sha:
+              body["sha"] = sha
+          print(json.dumps(body))
+          PY
+            gh api -X PUT "repos/mnavarrosqa/climatin-releases/contents/capturas/$name" --input body.json > /dev/null && echo "Subida: $name"
+          done
       # Capturas chicas en el log (base64), para revisarlas sin bajar el artifact.
       - name: Capturas en el log
         if: always() && steps.capturas.outcome == 'success'
