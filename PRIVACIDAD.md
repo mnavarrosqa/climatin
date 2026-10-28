@@ -29,4 +29,4 @@ La versión que se instala desde fuera de la tienda consulta cada pocas horas la
 
 ## Contacto
 
-[completá con el email de contacto que figure en Play Console]
+Por dudas o pedidos sobre tus datos: martin@upgservicios.com
