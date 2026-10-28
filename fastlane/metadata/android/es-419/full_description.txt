@@ -1,21 +1,21 @@
-Climatin es una app de clima pensada para verse como el resto de tu Android: usa los colores de tu fondo de pantalla (Material You) en la app y en los widgets, o el color que elijas.
+Climatin es una app de clima linda y completa, con un cielo animado que cambia con el tiempo real y la hora del día, y que se adapta a los colores de tu Android (Material You).
 
 Lo que tiene:
-• Pronóstico por hora en gráfico y de 14 días, con detalle al tocar cada día.
-• Cielo animado según el clima: sol, nubes, lluvia, nieve, niebla, tormenta, estrellas y la luna con su fase de hoy.
+• Cielo animado según el clima y la hora: sol, nubes, lluvia, nieve, niebla, tormenta, estrellas, amanecer y atardecer.
+• Pronóstico por hora y de 14 días, con detalle al tocar cada día y una frase que resume lo que viene.
 • Aviso de lluvia: cuándo empieza, cuánto dura, qué tan fuerte es y cuándo para.
-• En vivo en Android 16: la lluvia que viene con cuenta regresiva en la barra de estado, las alertas naranjas y rojas hasta que terminan y la temperatura como chip.
-• Salgo ahora: dos horas de clima en vivo de donde estás, desde los ajustes rápidos o el ícono.
-• Hora dorada: aviso antes del amanecer y del atardecer.
-• Alertas oficiales del Servicio Meteorológico Nacional para lugares en Argentina.
-• Resumen diario y aviso de cambios bruscos (temperatura, heladas, viento fuerte, UV alto), con horario de silencio.
 • Mapa de lluvia animado.
-• Calidad del aire, índice UV, presión, visibilidad, viento, amanecer, atardecer y fase lunar.
-• Varias ciudades: buscalas, ordenalas, poneles un apodo y deslizá entre ellas.
-• Once widgets personalizables (estilo, color, opacidad, esquinas, qué muestran y qué hacen al tocarlos), con vista previa real.
-• Fondo de pantalla animado con el cielo del clima real, en cuatro diseños.
-• Personalización: tema claro u oscuro, color de acento, ícono de la app, tamaño de la temperatura y qué datos van debajo, pronóstico compacto y cielo animado, reducido o quieto.
+• Detalles: sensación térmica, UV con su horario, viento, humedad, rocío, presión, visibilidad, calidad del aire y polen, sol y luna, lluvia caída y si hace calor o frío para la época.
+• Alertas oficiales del Servicio Meteorológico Nacional para lugares en Argentina.
+• Avisos a tu medida: resumen diario, Mi rutina (el clima antes de salir y de volver), cambios bruscos, heladas, viento, UV muy alto, aire malo y hora dorada, con horario de silencio.
+• En vivo en Android 16: la lluvia que viene con cuenta regresiva, las alertas naranjas y rojas y la temperatura en la barra de estado.
+• Salgo ahora: dos horas de clima en vivo de donde estás.
+• Varias ciudades: buscalas, ordenalas, poneles un apodo, comparalas lado a lado y compartí el pronóstico como imagen.
+• Once widgets con el cielo de fondo o en tu color, personalizables y con vista previa real.
+• Fondo de pantalla animado con el cielo del clima real.
+• Pensada también para plegables y tablets: dos y tres columnas cuando hay lugar.
 • App para Wear OS con tarjeta y complicación.
+• Personalización: tema claro u oscuro, color de acento, ícono de la app, tarjetas a elección y cielo animado, reducido o quieto.
 • Unidades a elección: °C/°F, km/h, m/s, mph o nudos, hPa, inHg o mmHg, y 12 o 24 horas.
 
-Sin publicidad ni cuentas. Los datos del clima y el mapa de lluvia vienen de Open-Meteo, y el mapa base de Esri.
+Sin publicidad ni cuentas. Tu ubicación es aproximada y solo se usa para pedir el pronóstico. Los datos del clima vienen de Open-Meteo y el mapa base de Esri.

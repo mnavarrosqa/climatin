@@ -1,1 +1,1 @@
-Clima con widgets Material You, radar de lluvia y alertas del SMN.
+Clima con cielo animado, widgets, radar de lluvia y alertas del SMN.
