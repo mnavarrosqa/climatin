@@ -115,7 +115,7 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.mnavarrosqa.clima
           releaseFiles: app/build/outputs/bundle/playRelease/app-play-release.aab
-          track: internal
+          tracks: internal
           status: completed
           whatsNewDirectory: play-notas
       # Al final del log, para encontrarlo fácil: por qué fallaron las capturas, si fallaron.
