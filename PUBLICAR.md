@@ -45,3 +45,16 @@ Sin los secretos se siguen generando, pero firmados con la clave de debug (sirve
 ## Números de versión
 
 Cada paquete subido necesita un `versionCode` mayor que el anterior. El del teléfono está en `app/build.gradle.kts` y el del reloj en `wear/build.gradle.kts` (empieza en 2.000.000 para no chocar con el del teléfono).
+
+## Subida automática a la prueba interna
+
+Con el secreto `PLAY_SERVICE_ACCOUNT_JSON`, cada versión nueva (cuando cambia `versionName`) se sube sola a **Prueba interna** con las notas de `fastlane/metadata/android/es-419/changelogs/<versionCode>.txt`. La primera versión hay que subirla a mano.
+
+1. **Google Cloud** ([console.cloud.google.com](https://console.cloud.google.com)): crear un proyecto (por ejemplo `climatin-play`).
+2. En ese proyecto, **APIs y servicios → Biblioteca**: habilitar **Google Play Android Developer API**.
+3. **IAM y administración → Cuentas de servicio → Crear cuenta de servicio**: nombre `github-play`, sin roles. Copiar su email (`github-play@...iam.gserviceaccount.com`).
+4. En esa cuenta, **Claves → Agregar clave → Crear clave nueva → JSON**. Se descarga un `.json`: es una contraseña, no se sube al repo.
+5. **Play Console → Usuarios y permisos → Invitar a usuarios nuevos**: pegar el email de la cuenta de servicio. En **Permisos de la app** agregar Climatin con *Ver información de la app* y *Lanzar versiones en los segmentos de prueba*. Invitar.
+6. **GitHub → Settings → Secrets and variables → Actions → New repository secret**: `PLAY_SERVICE_ACCOUNT_JSON` con todo el contenido del `.json`.
+
+Los permisos nuevos pueden tardar hasta un día en activarse en Play.

@@ -16,6 +16,8 @@ jobs:
     env:
       KEYSTORE_BASE64: ${{ secrets.CLIMATIN_KEYSTORE_BASE64 }}
       RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+      # Para subir a Play: el "if" de un paso no ve su propio env, por eso va acá.
+      PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -95,9 +97,27 @@ jobs:
           cp wear/build/outputs/apk/release/wear-release.apk "climatin-wear-$CODE.apk"
           NOTES="fastlane/metadata/android/es-419/changelogs/$CODE.txt"
           [ -f "$NOTES" ] || echo "Climatin $NAME" > "$NOTES"
+          # Las mismas notas para Play (whatsnew-<idioma>, máximo 500 caracteres).
+          mkdir -p play-notas && head -c 500 "$NOTES" > play-notas/whatsnew-es-419
           gh release create "$TAG" "climatin-$CODE.apk" "climatin-wear-$CODE.apk" \
             --repo mnavarrosqa/climatin-releases --title "Climatin $NAME" --notes-file "$NOTES" 2>&1 | tee publicar.log
-          exit "${PIPESTATUS[0]}"
+          status="${PIPESTATUS[0]}"
+          # Versión nueva de verdad: la misma se sube a Play (paso siguiente).
+          [ "$status" = "0" ] && echo "nueva=true" >> "$GITHUB_OUTPUT"
+          exit "$status"
+      # Sube el paquete de Play a la prueba interna, solo con una versión nueva (Play rechaza un
+      # versionCode repetido). Necesita el secreto PLAY_SERVICE_ACCOUNT_JSON (ver PUBLICAR.md).
+      - name: Subir a Play (prueba interna)
+        if: steps.publicar.outputs.nueva == 'true' && env.PLAY_JSON != '' && env.KEYSTORE_BASE64 != ''
+        continue-on-error: true
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.mnavarrosqa.clima
+          releaseFiles: app/build/outputs/bundle/playRelease/app-play-release.aab
+          track: internal
+          status: completed
+          whatsNewDirectory: play-notas
       # Al final del log, para encontrarlo fácil: por qué fallaron las capturas, si fallaron.
       - name: Resumen de capturas
         if: always() && steps.capturas.outcome == 'failure'
