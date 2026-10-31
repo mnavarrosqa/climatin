@@ -106,6 +106,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material.icons.automirrored.rounded.List
@@ -1478,44 +1480,77 @@ fun alertSpans(snapshot: WeatherSnapshot): List<AlertSpan> {
     }
 }
 
-/** Alerta oficial: tocarla muestra u oculta la descripción completa. */
+/**
+ * Alerta oficial, corta: el aviso y una línea del titular, para que varias alertas no tapen el
+ * pronóstico. Tocarla muestra u oculta el detalle completo.
+ */
 @Composable
 private fun AlertCard(alert: WeatherAlert, startExpanded: Boolean = false) {
     var expanded by rememberSaveable(alert.id) { mutableStateOf(startExpanded) }
     // Si llega desde la notificación con la tarjeta ya en pantalla, se abre igual.
     LaunchedEffect(startExpanded) { if (startExpanded) expanded = true }
     val severe = alert.isSevere
+    val chevron by animateFloatAsState(if (expanded) 180f else 0f, label = "flecha alerta")
     Surface(
         color = if (severe) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer,
         contentColor = if (severe) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onTertiaryContainer,
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(20.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(20.dp))
             .pressable { expanded = !expanded }
+            .semantics { stateDescription = if (expanded) tr("Abierta", "Expanded") else tr("Cerrada, tocá para ver el detalle", "Collapsed, tap for details") }
             .animateContentSize(Motion.gentle()),
     ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Warning, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(tr("Alerta", "Alert") + ": ${alert.event}", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        alert.event.calmCase(),
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    alert.headline?.let {
+                        Text(
+                            it.calmCase(),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = if (expanded) Int.MAX_VALUE else 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Icon(
+                    Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp).graphicsLayer { rotationZ = chevron },
+                )
             }
-            alert.headline?.let {
-                Spacer(Modifier.height(4.dp))
-                Text(it, style = MaterialTheme.typography.bodyMedium)
-            }
-            alert.description?.takeIf { expanded }?.let {
+            if (expanded) {
+                alert.description?.let {
+                    Spacer(Modifier.height(10.dp))
+                    Text(it, style = MaterialTheme.typography.bodyMedium)
+                }
                 Spacer(Modifier.height(8.dp))
-                Text(it, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    tr("Fuente: Servicio Meteorológico Nacional", "Source: Argentina's National Weather Service"),
+                    style = MaterialTheme.typography.labelSmall,
+                )
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (expanded) tr("Fuente: Servicio Meteorológico Nacional", "Source: Argentina's National Weather Service") else tr("Tocá para ver el detalle", "Tap for details"),
-                style = MaterialTheme.typography.labelSmall,
-            )
         }
     }
+}
+
+/**
+ * El SMN escribe muchos avisos en mayúsculas ("AVISO NARANJA POR TORMENTAS…"): gritaban. Si el
+ * texto viene todo en mayúsculas, queda con mayúscula solo al principio.
+ */
+private fun String.calmCase(): String {
+    val letters = filter { it.isLetter() }
+    if (letters.isEmpty() || letters.any { it.isLowerCase() }) return this
+    return lowercase().replaceFirstChar { it.uppercase() }
 }
 
 @Composable
