@@ -1453,6 +1453,7 @@ private fun LazyListScope.aboutPage(viewModel: WeatherViewModel, onShowWelcome: 
         Rows {
             SettingRow(tr("Pronóstico y calidad del aire", "Forecast and air quality"), "Open-Meteo", onClick = { open("https://open-meteo.com") }, trailing = Chevron)
             SettingRow(tr("Alertas oficiales", "Official alerts"), tr("Servicio Meteorológico Nacional", "Argentina's National Weather Service"), onClick = { open("https://www.smn.gob.ar") }, trailing = Chevron)
+            SettingRow(tr("Lluvia ahora (radar)", "Rain now (radar)"), "RainViewer", onClick = { open("https://www.rainviewer.com") }, trailing = Chevron)
             SettingRow(tr("Mapa base", "Base map"), "Esri", onClick = { open("https://www.esri.com") }, trailing = Chevron)
             SettingRow(tr("Código fuente", "Source code"), "github.com/mnavarrosqa/climatin", onClick = { open("https://github.com/mnavarrosqa/climatin") }, trailing = Chevron)
         }

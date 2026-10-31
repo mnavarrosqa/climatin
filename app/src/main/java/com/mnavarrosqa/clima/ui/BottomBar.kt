@@ -61,7 +61,9 @@ fun FloatingNavBar(
     modifier: Modifier = Modifier,
 ) {
     val container by animateColorAsState(
-        if (overSky) Color.Black.copy(alpha = 0.30f) else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f),
+        // Sobre el cielo no puede ser tan transparente: con las tarjetas claras pasando por
+        // detrás, su texto se mezclaba con el de la barra.
+        if (overSky) Color(0xFF1B2433).copy(alpha = 0.62f) else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
         label = "barra fondo",
     )
     val content = if (overSky) Color.White else MaterialTheme.colorScheme.onSurface

@@ -353,6 +353,15 @@ class WeatherRepository private constructor(private val context: Context) {
             }
             Triple(forecasts.await(), airs.await(), alerts.await())
         }
+        // El radar, solo donde el modelo no da lluvia ahora: si la ve, manda lo que mide.
+        val radarRain = coroutineScope {
+            forecasts.mapIndexed { i, forecast ->
+                async {
+                    val code = forecast.current.weatherCode
+                    if (WeatherCodes.kind(code).isWet) false else RadarNow.raining(targets[i].latitude, targets[i].longitude)
+                }
+            }.map { it.await() }
+        }
         // Un rato más para el nombre, que casi siempre llega antes. Si no, se guarda sin nombre
         // ("Mi ubicación") y se completa cuando llegue. Cortar la espera no cancela la búsqueda.
         val names = nameJobs.map { job -> job?.let { withTimeoutOrNull(NAME_GRACE_MS) { it.await() } } }
@@ -366,7 +375,13 @@ class WeatherRepository private constructor(private val context: Context) {
                 longitude = t.longitude,
                 airQuality = airs.getOrNull(i),
                 fetchedAt = now,
-            ).copy(alerts = alerts[i])
+            ).copy(alerts = alerts[i]).let { base ->
+                if (!radarRain[i]) base else base.copy(
+                    rainByRadar = true,
+                    // Lluvia leve: el radar dice que llueve, no cuánto.
+                    current = base.current.copy(code = 61, precipitation = maxOf(base.current.precipitation, 0.2)),
+                )
+            }
             // Mientras bajaba, la ciudad pudo cambiar de apodo o quitarse: se guarda con el nombre
             // de ahora, y si ya no está, no se guarda (quedaría un pronóstico huérfano).
             val shown = if (t.id == CURRENT_PLACE_ID) snapshot else {

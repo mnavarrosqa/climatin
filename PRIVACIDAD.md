@@ -13,6 +13,8 @@ Las coordenadas (redondeadas a unos 10 metros) se envían a:
 - [Open-Meteo](https://open-meteo.com/en/terms) para el pronóstico, la calidad del aire y el buscador de ciudades.
 - El geocodificador de tu teléfono (Google) para saber el nombre de la ciudad.
 
+Para saber si está lloviendo ahora se pide a [RainViewer](https://www.rainviewer.com/) la imagen de radar de la región (un cuadrado de unos 300 km de lado, no tu ubicación exacta).
+
 Para el mapa de lluvia se piden mapas de Esri (ArcGIS) y la lluvia de Open-Meteo para la zona que estás mirando. Las alertas se descargan completas del [Servicio Meteorológico Nacional](https://www.smn.gob.ar/) y se filtran en el teléfono, sin enviar tu ubicación.
 
 ## Datos guardados en el teléfono

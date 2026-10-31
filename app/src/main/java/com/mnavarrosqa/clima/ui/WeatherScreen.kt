@@ -1434,7 +1434,9 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
 private fun heroExtras(snapshot: WeatherSnapshot, lines: Set<HeroLine>): List<String> {
     val current = snapshot.current
     val today = snapshot.today()
-    return HeroLine.entries.filter { it in lines }.mapNotNull { line ->
+    // Si el pronóstico decía otra cosa y la lluvia la vio el radar, se dice de dónde sale.
+    val radar = listOfNotNull(tr("Lloviendo según el radar", "Raining, per the radar").takeIf { snapshot.rainByRadar })
+    return radar + HeroLine.entries.filter { it in lines }.mapNotNull { line ->
         when (line) {
             HeroLine.HIGH_LOW -> null
             HeroLine.FEELS_LIKE -> tr("Sensación térmica", "Feels like") + " ${current.feelsLike.degrees()}"

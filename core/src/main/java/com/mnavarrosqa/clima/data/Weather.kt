@@ -26,6 +26,8 @@ data class WeatherSnapshot(
     val timezone: String? = null,
     /** Horas que ya pasaron desde ayer a las 0 (temperatura, presión y lluvia), para comparar con ayer. */
     val pastHours: List<Hour> = emptyList(),
+    /** El radar ve lluvia ahora aunque el modelo no: el estado de [current] ya se corrigió a lluvia. */
+    val rainByRadar: Boolean = false,
 ) {
     /** Temperatura de ayer a la misma hora de cada una de [hours] (null si no se sabe). */
     fun yesterdayAt(hours: List<Hour>): List<Double?> {
@@ -62,6 +64,8 @@ data class WeatherSnapshot(
         val hour = upcomingHours(1).firstOrNull() ?: return this
         if (hour.dateTime != nowAtPlace().truncatedTo(ChronoUnit.HOURS)) return this
         return copy(
+            // Pasó más de una hora: lo que vio el radar ya no es "ahora".
+            rainByRadar = false,
             current = current.copy(
                 temperature = hour.temperature,
                 code = hour.code,

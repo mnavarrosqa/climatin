@@ -1,0 +1,2 @@
+• Lluvia según el radar: si está lloviendo y el pronóstico decía despejado, ahora lo muestra
+• La barra de abajo se lee mejor sobre el pronóstico
