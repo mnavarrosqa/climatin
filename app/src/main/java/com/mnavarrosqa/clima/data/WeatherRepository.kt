@@ -346,7 +346,10 @@ class WeatherRepository private constructor(private val context: Context) {
                 targets.map { t ->
                     when {
                         !Geo.isInArgentina(t.latitude, t.longitude) -> emptyList()
+                        // El SMN manda una alerta por zona: si el lugar cae en el borde de dos, llegaba
+                        // la misma dos veces (mismo aviso, mismo texto) y se mostraban repetidas.
                         cap != null -> cap.filter { it.covers(t.latitude, t.longitude) }.map { it.alert }
+                            .distinctBy { listOf(it.event.trim().lowercase(), it.severity, it.headline?.trim(), it.description?.trim()) }
                         else -> cached(t.id)?.alerts.orEmpty().filterNot { it.isExpired() }
                     }
                 }
