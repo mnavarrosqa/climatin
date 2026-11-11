@@ -37,7 +37,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.LocationOn
@@ -98,6 +97,8 @@ import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.degrees
+import com.mnavarrosqa.clima.ui.ClimaSectionTitle
+import com.mnavarrosqa.clima.ui.ClimaShapes
 import com.mnavarrosqa.clima.ui.skyColors
 import com.mnavarrosqa.clima.ui.theme.ClimaTheme
 import kotlinx.coroutines.launch
@@ -345,7 +346,7 @@ private fun ConfigScreen(
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(ClimaShapes.tile)
                             .selectable(
                                 selected = config.style == style,
                                 role = Role.RadioButton,
@@ -402,7 +403,7 @@ private fun ConfigScreen(
         if (parts.isNotEmpty()) {
             item { SectionTitle(tr("Qué mostrar", "What to show")) }
             item {
-                Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp)) {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = ClimaShapes.tile) {
                     Column {
                         parts.forEach { part ->
                             val shown = part !in config.hidden
@@ -571,7 +572,7 @@ private fun PreviewBox(
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
+            .clip(ClimaShapes.card)
             .backdrop(backdrop)
             .animateContentSize(),
         contentAlignment = Alignment.Center,
@@ -710,15 +711,17 @@ private fun StyleThumbnail(
         WidgetStyle.COLOR -> scheme.primaryContainer.copy(alpha = alpha) to scheme.onPrimaryContainer
         WidgetStyle.TRANSPARENT, WidgetStyle.SKY -> Color.Transparent to Color.White
     }
-    val shape = RoundedCornerShape(if (large) 24.dp else 16.dp)
+    // El widget de mentira por dentro y el recuadro de fondo por fuera, con las esquinas de la app.
+    val shape = if (large) ClimaShapes.tile else ClimaShapes.inner
+    val outer = if (large) ClimaShapes.card else ClimaShapes.inner
     Box(
         Modifier
             .size(if (large) 220.dp else 104.dp, if (large) 110.dp else 72.dp)
-            .clip(RoundedCornerShape(if (large) 28.dp else 18.dp))
+            .clip(outer)
             .backdrop(PreviewBackdrop.PHOTO)
             .then(
                 if (selected) {
-                    Modifier.border(BorderStroke(3.dp, MaterialTheme.colorScheme.primary), RoundedCornerShape(18.dp))
+                    Modifier.border(BorderStroke(3.dp, MaterialTheme.colorScheme.primary), outer)
                 } else {
                     Modifier
                 },
@@ -795,10 +798,10 @@ private fun CityOption(
     Surface(
         color = if (selected) colors.primaryContainer else colors.surfaceContainer,
         contentColor = if (selected) colors.onPrimaryContainer else colors.onSurface,
-        shape = RoundedCornerShape(20.dp),
+        shape = ClimaShapes.tile,
         modifier = Modifier
             .width(150.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(ClimaShapes.tile)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -831,15 +834,9 @@ private fun CityOption(
     }
 }
 
+/** El título de sección de la app, con el aire de esta lista. */
 @Composable
 private fun SectionTitle(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        // Encabezado: TalkBack permite saltar de sección en sección.
-        modifier = Modifier
-            .padding(start = 4.dp, top = 24.dp, bottom = 8.dp)
-            .semantics { heading() },
-    )
+    // Encabezado: TalkBack permite saltar de sección en sección.
+    ClimaSectionTitle(text, Modifier.padding(start = 4.dp, top = 24.dp, bottom = 8.dp).semantics { heading() })
 }

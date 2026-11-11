@@ -3,7 +3,6 @@ package com.mnavarrosqa.clima.widget
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
@@ -61,7 +60,7 @@ private fun VistazoContent(snapshot: WeatherSnapshot?) {
             Text(
                 longDate(date),
                 maxLines = 1,
-                style = TextStyle(color = colors.text, fontSize = if (tight) 20.sp else 24.sp, fontWeight = FontWeight.Medium),
+                style = TextStyle(color = colors.text, fontSize = if (tight) WidgetType.dateTight else WidgetType.date, fontWeight = FontWeight.Medium),
             )
             if (snapshot != null) {
                 val current = snapshot.current

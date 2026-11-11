@@ -72,13 +72,21 @@ private fun PronosticoContent(snapshot: WeatherSnapshot) {
         else -> HeaderSize.INLINE
     }
     val dayCount = if (size.width >= 300.dp) 5 else 4
+    val showInsight = large && size.height >= 300.dp * scale && widgetShows(WidgetPart.INSIGHT)
+    val insight = if (showInsight) Insights.headline(snapshot) else null
+    val showRain = snapshot.upcomingDays(dayCount).any { (it.precipitationProbability ?: 0) >= 30 }
+    // Todo lo que no es encabezado, para saber si entran los botones de 40 dp.
+    val others = WidgetPadding.vertical.value * 2 + daysRowHeight(showRain, scale) +
+        (if (large) 8f + hoursRowHeight(colors, scale) else 0f) +
+        (if (insight != null) 4f + textLineHeight(WidgetType.condition, scale) else 0f)
+    val buttonHeight = headerButton(header, size.height, others, scale)
     WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.vertical)) {
         // Ocupa todo el alto y los días van abajo, como en Clima: si no, el contenido quedaba
         // flotando en el medio del cielo.
         Column(modifier = GlanceModifier.fillMaxSize()) {
-            NowHeader(snapshot, colors, header)
+            NowHeader(snapshot, colors, header, buttonHeight = buttonHeight)
             if (large) {
-                Insights.headline(snapshot)?.takeIf { size.height >= 300.dp * scale && widgetShows(WidgetPart.INSIGHT) }?.let {
+                insight?.let {
                     Spacer(GlanceModifier.height(4.dp))
                     Text(
                         it,
@@ -94,6 +102,11 @@ private fun PronosticoContent(snapshot: WeatherSnapshot) {
         }
     }
 }
+
+/** Alto en dp de [DaysRow]: día, ícono de 28, máxima y mínima, y la lluvia si va. */
+private fun daysRowHeight(showRain: Boolean, scale: Float): Float =
+    textLineHeight(WidgetType.caption, scale) + 28f + textLineHeight(WidgetType.rowLabel, scale) +
+        if (showRain) textLineHeight(WidgetType.caption, scale) else 0f
 
 @Composable
 private fun DaysRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {

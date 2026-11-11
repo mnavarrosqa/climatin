@@ -27,15 +27,15 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -152,10 +152,10 @@ fun WelcomeScreen(
                                 Done(tr("Ubicación permitida", "Location allowed"))
                             } else {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Button(onClick = onAllowLocation) { Text(tr("Permitir ubicación", "Allow location")) }
+                                    Button(onClick = onAllowLocation, colors = skyButtonColors()) { Text(tr("Permitir ubicación", "Allow location")) }
                                     Spacer(Modifier.height(8.dp))
                                     // El texto ofrece usar solo ciudades: el botón lleva directo a buscarla.
-                                    FilledTonalButton(onClick = onPickCity) { Text(tr("Usar una ciudad", "Use a city")) }
+                                    FilledTonalButton(onClick = onPickCity, colors = skyTonalButtonColors()) { Text(tr("Usar una ciudad", "Use a city")) }
                                 }
                             }
                         },
@@ -171,16 +171,19 @@ fun WelcomeScreen(
                             if (canNotify && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 Done(tr("Avisos activados", "Alerts on"))
                             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                Button(onClick = { notifications.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
+                                Button(onClick = { notifications.launch(Manifest.permission.POST_NOTIFICATIONS) }, colors = skyButtonColors()) {
                                     Text(tr("Activar avisos", "Turn on alerts"))
                                 }
                             } else {
-                                Button(onClick = {
-                                    viewModel.setRainAlerts(true)
-                                    viewModel.setSmnAlerts(true)
-                                    canNotify = true
-                                    next()
-                                }) { Text(tr("Activar avisos", "Turn on alerts")) }
+                                Button(
+                                    onClick = {
+                                        viewModel.setRainAlerts(true)
+                                        viewModel.setSmnAlerts(true)
+                                        canNotify = true
+                                        next()
+                                    },
+                                    colors = skyButtonColors(),
+                                ) { Text(tr("Activar avisos", "Turn on alerts")) }
                             }
                         },
                     )
@@ -208,7 +211,7 @@ fun WelcomeScreen(
                                     ),
                                 )
                                 TabTip(
-                                    icon = { Icon(Icons.Rounded.Place, contentDescription = null, tint = OnSky) },
+                                    icon = { Icon(MapTabIcon, contentDescription = null, tint = OnSky) },
                                     name = NavTab.MAPA.label,
                                     text = tr(
                                         "La lluvia sobre el mapa, hora por hora.",
@@ -216,7 +219,7 @@ fun WelcomeScreen(
                                     ),
                                 )
                                 TabTip(
-                                    icon = { Icon(Icons.AutoMirrored.Rounded.List, contentDescription = null, tint = OnSky) },
+                                    icon = { Icon(CitiesTabIcon, contentDescription = null, tint = OnSky) },
                                     name = NavTab.CIUDADES.label,
                                     text = tr(
                                         "Buscá y guardá ciudades. Deslizá una para quitarla o ponerle un apodo, y mantenela apretada para moverla.",
@@ -265,7 +268,7 @@ fun WelcomeScreen(
                         )
                     }
                 }
-                Button(onClick = next) {
+                Button(onClick = next, colors = skyButtonColors()) {
                     Text(if (pager.currentPage == pager.pageCount - 1) tr("Empezar", "Get started") else tr("Siguiente", "Next"))
                 }
             }
@@ -280,32 +283,50 @@ private fun Step(visual: @Composable () -> Unit, title: String, text: String, ac
             .fillMaxSize()
             // Apaisado o con letra grande no entra: se desplaza en vez de cortarse.
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 32.dp, vertical = 16.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         visual()
         Spacer(Modifier.height(28.dp))
-        Text(
-            title,
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Medium),
-            color = OnSky,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyLarge,
-            color = OnSkyVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 480.dp),
-        )
-        if (action != null) {
-            Spacer(Modifier.height(24.dp))
-            action()
+        // Título, texto y acción en el vidrio de las tarjetas: sobre el cielo de día despejado el
+        // blanco suelto apenas se leía.
+        SkyGlass(Modifier.widthIn(max = 520.dp).fillMaxWidth()) {
+            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Medium),
+                    color = OnSky,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = SkySurface.contentVariant,
+                    textAlign = TextAlign.Center,
+                )
+                if (action != null) {
+                    Spacer(Modifier.height(24.dp))
+                    action()
+                }
+            }
         }
     }
 }
+
+/**
+ * Botón principal sobre el cielo o su vidrio: blanco con el tinte del vidrio como texto. El
+ * primario del tema (con color dinámico, cualquiera) se perdía sobre el cielo.
+ */
+@Composable
+internal fun skyButtonColors(): ButtonColors =
+    ButtonDefaults.buttonColors(containerColor = SkySurface.content, contentColor = SkySurface.Tint)
+
+/** Secundario sobre el cielo: blanco translúcido, como la marca de la barra, con texto blanco. */
+@Composable
+internal fun skyTonalButtonColors(): ButtonColors =
+    ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha = 0.18f), contentColor = SkySurface.content)
 
 @Composable
 private fun Done(label: String) {

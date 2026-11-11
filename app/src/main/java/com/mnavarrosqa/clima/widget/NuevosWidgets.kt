@@ -92,10 +92,24 @@ class ProximaHoraWidget : SimpleWeatherWidget() {
         }
         // Seco: en vez de un gráfico vacío, cuándo es la próxima lluvia de los próximos días.
         val dry = !raining && minutesUntilRain == null && bars.all { it.second < 0.2f }
-        val chartHeight = (size.height - 32.dp - 40.dp * scale).coerceAtLeast(0.dp)
+        // Arriba, el título y la fila de la ciudad con ⟳ y ›; el gráfico se queda con el resto.
+        // Antes se reservaban 40 dp fijos para las dos líneas, que con el ⟳ de 32 ya medían unos 52.
+        val titleLine = textLineHeight(WidgetType.title, scale)
+        val captionLine = textLineHeight(WidgetType.caption, scale)
+        fun textBlock(button: androidx.compose.ui.unit.Dp) = titleLine + maxOf(button.value, captionLine)
+        fun chartFor(button: androidx.compose.ui.unit.Dp) =
+            (size.height - WidgetPadding.vertical * 2 - textBlock(button).dp).coerceAtLeast(0.dp)
+        val margins = WidgetPadding.vertical.value * 2
+        val buttonHeight = when {
+            // Con gráfico: botones de 40 solo si el gráfico sigue midiendo ProximaRoomyChart.
+            !dry && chartFor(WidgetTouch.tight) >= ProximaMinChart -> if (chartFor(WidgetTouch.full) >= ProximaRoomyChart) WidgetTouch.full else WidgetTouch.tight
+            // Seco: abajo va la próxima lluvia en hasta dos líneas.
+            dry -> headerlessButton(size.height, margins + textBlock(WidgetTouch.full) + textLineHeight(WidgetType.rowLabel, scale) * 2)
+            else -> headerlessButton(size.height, margins + textBlock(WidgetTouch.full))
+        }
+        val chartHeight = chartFor(buttonHeight)
         // Bajo, el gráfico no se lee: queda solo el texto.
-        val showChart = !dry && chartHeight >= 44.dp
-        // El gráfico se calculó con 16 dp arriba y abajo: con 12 quedan 8 dp de aire para el ⟳.
+        val showChart = !dry && chartHeight >= ProximaMinChart
         WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.vertical)) {
             Column(modifier = GlanceModifier.fillMaxSize()) {
                 Text(
@@ -103,9 +117,9 @@ class ProximaHoraWidget : SimpleWeatherWidget() {
                     maxLines = 1,
                     style = TextStyle(color = colors.text, fontSize = WidgetType.title, fontWeight = FontWeight.Medium),
                 )
-                PlaceLabel(snapshot, colors, fontSize = WidgetType.caption)
+                PlaceLabel(snapshot, colors, fontSize = WidgetType.caption, buttonHeight = buttonHeight)
                 if (showChart) {
-                    val chartWidth = size.width - 32.dp
+                    val chartWidth = size.width - WidgetPadding.horizontal * 2
                     val density = context.resources.displayMetrics.density
                     val bitmap = ChartBitmap.renderRainBars(
                         context,
@@ -134,6 +148,10 @@ class ProximaHoraWidget : SimpleWeatherWidget() {
         }
     }
 
+    /** 40 dp si [needed] (con el botón de 40 incluido) entra en [available]; si no, 32. */
+    private fun headerlessButton(available: androidx.compose.ui.unit.Dp, needed: Float) =
+        if (available.value >= needed + WidgetTouch.slack.value) WidgetTouch.full else WidgetTouch.tight
+
     /** "Próxima lluvia: jueves 60%" con el primer día con 30% o más, o "Sin lluvia a la vista". */
     private fun nextRainText(snapshot: WeatherSnapshot): String {
         val today = snapshot.nowAtPlace().toLocalDate()
@@ -150,6 +168,12 @@ class ProximaHoraWidget : SimpleWeatherWidget() {
         return tr("Próxima lluvia: $name $chance%", "Next rain: $name $chance%")
     }
 }
+
+/** Gráfico de lluvia más bajo que esto no se lee: queda solo el texto. */
+private val ProximaMinChart = 44.dp
+
+/** Para agrandar los botones, el gráfico tiene que seguir midiendo esto. */
+private val ProximaRoomyChart = 56.dp
 
 class ProximaHoraWidgetReceiver : SimpleWeatherReceiver() {
     override val glanceAppWidget: GlanceAppWidget = ProximaHoraWidget()

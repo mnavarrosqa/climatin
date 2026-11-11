@@ -2,8 +2,6 @@ package com.mnavarrosqa.clima.ui
 
 import com.mnavarrosqa.clima.data.tr
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -23,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -69,8 +66,9 @@ fun CityCard(
     /** Deja a la derecha el lugar del "⋮" aunque no lo tenga, para que las temperaturas queden en columna. */
     alignWithMenu: Boolean = false,
 ) {
-    val shadow = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.35f), Offset(0f, 1f), 8f))
-    val shape = RoundedCornerShape(22.dp)
+    // La misma sombra y los mismos blancos que la temperatura grande del pronóstico.
+    val shadow = TextStyle().onSky()
+    val shape = ClimaShapes.tile
     val today = snapshot?.today()
     val minMax = today?.let { tr("Máx", "High") + " ${it.max.degrees()}  " + tr("Mín", "Low") + " ${it.min.degrees()}" }
     // TalkBack la lee de una vez: "Córdoba, 14:30, 23°, despejado, máx 25°, mín 12°".
@@ -100,13 +98,14 @@ fun CityCard(
             starFraction = 0.35f,
         )
         // Un velo suave arriba y abajo para que el nombre y el estado se lean sobre cualquier cielo.
+        // Más liviano que el del pronóstico (SkySurface.veil): acá no hay tarjetas de vidrio encima.
         Box(
             Modifier
                 .matchParentSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.12f),
-                        0.45f to Color.Transparent,
+                        0f to Color.Black.copy(alpha = 0.16f),
+                        0.45f to Color.Black.copy(alpha = 0.04f),
                         1f to Color.Black.copy(alpha = 0.26f),
                     ),
                 ),
@@ -127,14 +126,14 @@ fun CityCard(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (icon != null) {
-                            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Icon(icon, contentDescription = null, tint = SkySurface.content, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
                         }
                         Text(
                             name,
                             style = MaterialTheme.typography.titleLarge.merge(shadow),
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
+                            color = SkySurface.content,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -144,7 +143,7 @@ fun CityCard(
                             subtitle,
                             style = MaterialTheme.typography.bodySmall.merge(shadow),
                             fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.9f),
+                            color = SkySurface.contentVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -162,7 +161,7 @@ fun CityCard(
                             WeatherCodes.description(it.current.code),
                             style = MaterialTheme.typography.bodyMedium.merge(shadow),
                             fontWeight = FontWeight.Medium,
-                            color = Color.White,
+                            color = SkySurface.content,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -183,7 +182,7 @@ fun CityCard(
                         lineHeight = 46.sp,
                         fontWeight = FontWeight.Light,
                         fontFamily = Flex,
-                        color = Color.White,
+                        color = SkySurface.content,
                         style = shadow,
                     )
                     if (minMax != null) {
@@ -191,7 +190,7 @@ fun CityCard(
                             minMax,
                             style = MaterialTheme.typography.bodySmall.merge(shadow),
                             fontWeight = FontWeight.Medium,
-                            color = Color.White,
+                            color = SkySurface.content,
                         )
                     }
                 }

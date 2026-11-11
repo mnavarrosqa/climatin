@@ -103,12 +103,19 @@ fun PlaceLabel(
     colors: WidgetColors,
     fontSize: TextUnit,
     fontWeight: FontWeight = FontWeight.Normal,
-    /** Botones de 40 dp de alto en vez de 32: solo donde el diseño tiene esos 8 dp de sobra. */
-    roomy: Boolean = false,
+    /**
+     * Alto de ⟳ y ›: 40 dp salvo donde el diseño no tiene esos 8 dp (lo decide [headerButton] y
+     * el que llama lo descuenta del alto que reparte).
+     */
+    buttonHeight: Dp = WidgetTouch.full,
 ) {
-    // Ancho: 40 dp si el widget es ancho; en los angostos el nombre de la ciudad ya entra justo.
-    val buttonWidth = if (LocalSize.current.width >= WidgetTouch.wideFrom) WidgetTouch.full else WidgetTouch.tight
-    val buttonHeight = if (roomy) WidgetTouch.full else WidgetTouch.tight
+    // Ancho: más ancho cuanto más ancho el widget; en los angostos el nombre de la ciudad ya entra justo.
+    val widgetWidth = LocalSize.current.width
+    val buttonWidth = when {
+        widgetWidth >= WidgetTouch.widestFrom -> WidgetTouch.wide
+        widgetWidth >= WidgetTouch.wideFrom -> WidgetTouch.full
+        else -> WidgetTouch.tight
+    }
     val now = System.currentTimeMillis()
     val refreshing = (currentState(WidgetPrefs.REFRESHING_AT) ?: 0L) > now - 90_000
     val failed = (currentState(WidgetPrefs.REFRESH_FAILED_AT) ?: 0L) > now - 10 * 60_000

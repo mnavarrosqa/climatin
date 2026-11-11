@@ -114,9 +114,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.material.icons.rounded.Place
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -174,6 +172,14 @@ import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.updatedAt
 import com.mnavarrosqa.clima.data.ageText
 import kotlin.math.roundToInt
+import kotlin.math.sign
+import android.view.accessibility.AccessibilityManager
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 internal val OnSky = Color.White
 internal val OnSkyVariant = Color.White.copy(alpha = 0.9f)
@@ -377,9 +383,24 @@ fun WeatherRoute(
     // La entrada escalonada de las tarjetas corre una vez por apertura de la app, la primera vez
     // que se ve el pronóstico; no en cada vuelta de otra pestaña. No es estado: se anota y listo.
     val forecastShownAt = remember { LongArray(1) }
+    // El pronóstico pide esconder la barra al bajar. La raíz no lee el valor: solo la barra, así
+    // el desplazamiento no recompone todo esto.
+    val forecastHidesBar = remember { mutableStateOf(false) }
+    // Con TalkBack (exploración táctil) la barra no se esconde nunca: no se la encontraría.
+    val touchExploring = remember { mutableStateOf(false) }
+    DisposableEffect(context) {
+        val manager = context.getSystemService(AccessibilityManager::class.java)
+        touchExploring.value = manager?.isTouchExplorationEnabled == true
+        val listener = AccessibilityManager.TouchExplorationStateChangeListener { touchExploring.value = it }
+        manager?.addTouchExplorationStateChangeListener(listener)
+        onDispose { manager?.removeTouchExplorationStateChangeListener(listener) }
+    }
+    // Cada vez que se vuelve a tocar Clima estando en Clima, sube: el pronóstico mira si cambió.
+    val scrollToTop = remember { mutableIntStateOf(0) }
     val selectTab: (NavTab) -> Unit = { tab ->
         when (tab) {
             NavTab.CLIMA -> {
+                if (screen == "clima") scrollToTop.intValue++
                 radarAt = null
                 showCities = false
                 showSettings = false
@@ -411,15 +432,19 @@ fun WeatherRoute(
         if (rail && showBar) {
             // Detrás del riel sigue lo que hay al lado: el cielo (con su mismo velo) o el fondo del tema.
             if (overSky) {
-                val kind = if (screen == "clima") tabSnapshot?.current?.code?.let(WeatherCodes::kind) else null
-                val isDay = if (screen == "clima") tabSnapshot?.current?.isDay else null
+                val onForecast = screen == "clima"
+                val kind = (if (onForecast) tabSnapshot?.current?.code?.let(WeatherCodes::kind) else null) ?: WeatherKind.PARTLY
+                val isDay = (if (onForecast) tabSnapshot?.current?.isDay else null) ?: true
+                // Los mismos colores (con amanecer y atardecer) y el mismo velo que la página del
+                // pronóstico: si no, la franja del riel se veía de otro tono.
+                val sky = SkyTime.colors(kind, isDay, if (onForecast) tabSnapshot else null)
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(Brush.verticalGradient(skyColors(kind ?: WeatherKind.PARTLY, isDay ?: true)))
+                        .background(Brush.verticalGradient(sky))
                         .background(
-                            if (screen == "clima") {
-                                Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.3f), 0.5f to Color.Transparent)
+                            if (onForecast) {
+                                SkySurface.veil(SkySurface.brightness(sky))
                             } else {
                                 Brush.verticalGradient(listOf(PermissionScrim, PermissionScrim))
                             },
@@ -538,6 +563,8 @@ fun WeatherRoute(
                                 onOpenCities = { showCities = true },
                                 onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
                                 shownAt = forecastShownAt[0],
+                                onBarHiddenChange = { forecastHidesBar.value = it },
+                                scrollToTop = scrollToTop.intValue,
                                 deepLink = cityTarget ?: deepLink,
                                 onDeepLinkHandled = {
                                     cityTarget = null
@@ -549,7 +576,7 @@ fun WeatherRoute(
                 }
             }
         }
-        val bar: @Composable (Boolean) -> Unit = { vertical ->
+        val bar: @Composable (Boolean, Modifier) -> Unit = { vertical, barModifier ->
             FloatingNavBar(
                 selected = when (screen) {
                     "ciudades" -> NavTab.CIUDADES
@@ -560,7 +587,7 @@ fun WeatherRoute(
                 overSky = screen == "clima" || screen == "permiso",
                 mapEnabled = mapSnapshot != null || radarAt != null,
                 onSelect = selectTab,
-                icon = { tab, tint ->
+                icon = { tab, tint, selected ->
                     when (tab) {
                         // El clima de ahora de la ciudad que se mira, como ícono.
                         NavTab.CLIMA -> Image(
@@ -568,11 +595,12 @@ fun WeatherRoute(
                             contentDescription = null,
                             modifier = Modifier.size(24.dp),
                         )
-                        NavTab.MAPA -> Icon(Icons.Rounded.Place, contentDescription = null, tint = tint)
-                        NavTab.CIUDADES -> Icon(Icons.AutoMirrored.Rounded.List, contentDescription = null, tint = tint)
+                        NavTab.MAPA -> Icon(if (selected) MapTabIconFilled else MapTabIcon, contentDescription = null, tint = tint)
+                        NavTab.CIUDADES -> Icon(if (selected) CitiesTabIconFilled else CitiesTabIcon, contentDescription = null, tint = tint)
                         NavTab.AJUSTES -> Icon(Icons.Rounded.Settings, contentDescription = null, tint = tint)
                     }
                 },
+                modifier = barModifier,
                 vertical = vertical,
             )
         }
@@ -585,7 +613,7 @@ fun WeatherRoute(
                     .align(Alignment.CenterStart)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
                     .padding(start = 12.dp),
-            ) { bar(true) }
+            ) { bar(true, Modifier) }
         } else {
             AnimatedVisibility(
                 visible = showBar,
@@ -595,7 +623,23 @@ fun WeatherRoute(
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) { bar(false) }
+            ) {
+                // Al bajar en el pronóstico se va para abajo y vuelve al subir; en las otras
+                // pestañas, con TalkBack y en el riel, siempre está. Se lee acá adentro: cambiar
+                // de dirección recompone solo la barra, y el resorte solo la redibuja.
+                val hideOnScroll = screen == "clima" && forecastHidesBar.value && !touchExploring.value
+                val hidden = animateFloatAsState(if (hideOnScroll) 1f else 0f, Motion.gentle(), label = "barra al desplazar")
+                val navBottom = WindowInsets.navigationBars.getBottom(LocalDensity.current)
+                bar(
+                    false,
+                    Modifier.graphicsLayer {
+                        val gone = hidden.value.coerceIn(0f, 1f)
+                        // Sale entera por debajo del borde, con su margen y la barra del sistema.
+                        translationY = gone * (size.height + 12.dp.toPx() + navBottom)
+                        alpha = 1f - gone
+                    },
+                )
+            }
         }
     }
 }
@@ -618,7 +662,7 @@ private fun PermissionScreen(onAllow: () -> Unit, onPickCity: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(start = 32.dp, end = 32.dp, top = 32.dp, bottom = 32.dp + LocalBottomBarSpace.current),
+                .padding(start = 20.dp, end = 20.dp, top = 32.dp, bottom = 32.dp + LocalBottomBarSpace.current),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -628,24 +672,33 @@ private fun PermissionScreen(onAllow: () -> Unit, onPickCity: () -> Unit) {
                 modifier = Modifier.size(140.dp),
             )
             Spacer(Modifier.height(24.dp))
-            Text(
-                tr("El clima donde estés", "The weather wherever you are"),
-                style = MaterialTheme.typography.headlineMedium.onSky(),
-                color = OnSky,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                tr("Necesito tu ubicación aproximada para mostrarte el pronóstico y mantener los widgets al día.", "I need your approximate location to show the forecast and keep the widgets up to date."),
-                style = MaterialTheme.typography.bodyLarge.onSky(),
-                color = OnSkyVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = 480.dp),
-            )
-            Spacer(Modifier.height(32.dp))
-            Button(onClick = onAllow) { Text(tr("Permitir ubicación", "Allow location")) }
-            Spacer(Modifier.height(8.dp))
-            FilledTonalButton(onClick = onPickCity) { Text(tr("Elegir una ciudad", "Pick a city")) }
+            // El mismo vidrio que las tarjetas del pronóstico: el texto blanco se lee aunque el
+            // cielo de día sea muy claro, y los botones no traen colores del tema sobre el cielo.
+            SkyGlass(Modifier.widthIn(max = 480.dp).fillMaxWidth()) {
+                Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        tr("El clima donde estés", "The weather wherever you are"),
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = SkySurface.content,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        tr("Necesito tu ubicación aproximada para mostrarte el pronóstico y mantener los widgets al día.", "I need your approximate location to show the forecast and keep the widgets up to date."),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = SkySurface.contentVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    Button(onClick = onAllow, colors = skyButtonColors(), modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("Permitir ubicación", "Allow location"))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(onClick = onPickCity, colors = skyTonalButtonColors(), modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("Elegir una ciudad", "Pick a city"))
+                    }
+                }
+            }
         }
     }
 }
@@ -661,6 +714,8 @@ private fun WeatherPager(
     shownAt: Long,
     deepLink: DeepLinkTarget?,
     onDeepLinkHandled: () -> Unit,
+    onBarHiddenChange: (Boolean) -> Unit = {},
+    scrollToTop: Int = 0,
 ) {
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val errors by viewModel.errors.collectAsStateWithLifecycle()
@@ -693,6 +748,14 @@ private fun WeatherPager(
     val collapsed = remember { mutableStateMapOf<String, Boolean>() }
     // Páginas que se están desplazando ahora.
     val scrolling = remember { mutableStateMapOf<String, Boolean>() }
+    // Páginas que piden esconder la barra (se bajó en su lista): manda la que se mira.
+    val hidesBar = remember { mutableStateMapOf<String, Boolean>() }
+    val currentPages by rememberUpdatedState(pages)
+    val reportBarHidden by rememberUpdatedState(onBarHiddenChange)
+    LaunchedEffect(pagerState) {
+        snapshotFlow { hidesBar[currentPages.getOrElse(pagerState.currentPage) { "" }] == true }
+            .collect { reportBarHidden(it) }
+    }
     val skyId = pages.getOrElse(pagerState.currentPage) { CURRENT_PLACE_ID }
     val skySnapshot by remember(skyId) { viewModel.snapshots(skyId) }
         .collectAsStateWithLifecycle(viewModel.cached(skyId))
@@ -765,6 +828,8 @@ private fun WeatherPager(
                         onDayOpened = { pendingDay = null },
                         onCollapsedChange = { collapsed[placeId] = it },
                         onScrollingChange = { scrolling[placeId] = it },
+                        onHideBarChange = { hidesBar[placeId] = it },
+                        scrollToTop = scrollToTop,
                         openAlert = openAlert,
                         shownAt = shownAt,
                         // Una sola ciudad: arriba no hay puntos y el encabezado puede subir.
@@ -940,6 +1005,8 @@ private fun WeatherPage(
     banner: (@Composable () -> Unit)? = null,
     shownAt: Long = 0L,
     compactTop: Boolean = false,
+    onHideBarChange: (Boolean) -> Unit = {},
+    scrollToTop: Int = 0,
 ) {
     val cards = viewModel.cards.collectAsStateWithLifecycle().value.visible
     val snapshot by remember(placeId) { viewModel.snapshots(placeId) }
@@ -973,6 +1040,8 @@ private fun WeatherPage(
         onPickCity = onPickCity,
         onScrollingChange = onScrollingChange,
         compactTop = compactTop,
+        onHideBarChange = onHideBarChange,
+        scrollToTop = scrollToTop,
     )
 }
 
@@ -1005,6 +1074,10 @@ fun ForecastContent(
     onPickCity: () -> Unit = {},
     onScrollingChange: (Boolean) -> Unit = {},
     compactTop: Boolean = false,
+    /** Si la barra de abajo debería esconderse (se bajó en la lista). Se avisa solo al cambiar. */
+    onHideBarChange: (Boolean) -> Unit = {},
+    /** Al cambiar (volver a tocar Clima), las listas suben al principio. */
+    scrollToTop: Int = 0,
 ) {
     // La lista del resumen (la única en pantallas angostas) decide si el encabezado se achica.
     val summaryState = rememberLazyListState()
@@ -1015,6 +1088,46 @@ fun ForecastContent(
         derivedStateOf { summaryState.isScrollInProgress || middleState.isScrollInProgress || lastState.isScrollInProgress }
     }
     LaunchedEffect(scrolling) { onScrollingChange(scrolling) }
+    // Barra de abajo: al bajar pide esconderse y al subir, volver. Se acumula el recorrido en una
+    // dirección (un temblor del dedo no la mueve) y, empujando más allá del final, vuelve.
+    val barSlop = with(LocalDensity.current) { 24.dp.toPx() }
+    val wantsBarHidden = remember { mutableStateOf(false) }
+    val barScroll = remember(barSlop) {
+        object : NestedScrollConnection {
+            private var travel = 0f
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < -0.5f) {
+                    // Llegó al final y se sigue empujando: que se vea para poder ir a otra pestaña.
+                    travel = 0f
+                    wantsBarHidden.value = false
+                } else if (consumed.y != 0f) {
+                    travel = if (travel == 0f || consumed.y.sign == travel.sign) travel + consumed.y else consumed.y
+                    if (travel < -barSlop) wantsBarHidden.value = true else if (travel > barSlop) wantsBarHidden.value = false
+                }
+                return Offset.Zero
+            }
+        }
+    }
+    // Arriba de todo siempre se ve. snapshotFlow: se avisa solo al cambiar, sin recomponer el
+    // pronóstico con cada píxel.
+    val reportHideBar by rememberUpdatedState(onHideBarChange)
+    LaunchedEffect(Unit) {
+        snapshotFlow {
+            wantsBarHidden.value &&
+                (summaryState.canScrollBackward || middleState.canScrollBackward || lastState.canScrollBackward)
+        }.collect { reportHideBar(it) }
+    }
+    // Lo que ya valía al armarse no cuenta: si no, al volver de otra pestaña subiría solo.
+    val initialScrollToTop = remember { scrollToTop }
+    LaunchedEffect(scrollToTop) {
+        if (scrollToTop != initialScrollToTop) {
+            // Solo las listas que están en pantalla y bajaron: las otras no tienen a dónde subir.
+            listOf(summaryState, middleState, lastState).forEach { state ->
+                if (state.canScrollBackward) launch { state.animateScrollToItem(0) }
+            }
+        }
+    }
     // Un reloj por minuto: "Actualizado hace…", el aviso de datos viejos y la lluvia de la
     // próxima hora siguen al día aunque la pantalla quede abierta.
     val minute by produceState(System.currentTimeMillis()) {
@@ -1224,6 +1337,7 @@ fun ForecastContent(
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
+            .nestedScroll(barScroll)
             // Velo oscuro: fuerte arriba, donde la temperatura va directo sobre el cielo, y en toda
             // la lista según cuán claro es el cielo, para que el blanco de las tarjetas se lea.
             .background(SkySurface.veil(skyBrightness)),

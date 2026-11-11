@@ -222,13 +222,26 @@ class SemanaWidget : SimpleWeatherWidget() {
         // letra agrandada los días quedaban cortados. Bajo, el encabezado de una línea.
         val scale = fontScale()
         val header = if (size.height >= 220.dp * scale) HeaderSize.COMPACT else HeaderSize.INLINE
-        val dayCount = ((size.height.value - header.reserve.value * scale - 24f - 6f) / (30f * scale)).toInt().coerceIn(2, 7)
+        // Márgenes (12 + 12) y 6 de aire entre el encabezado y los días.
+        val fixed = WidgetPadding.vertical.value * 2 + 6f
+        val rowHeight = 30f * scale
+        // Primero cuántos días entran con botones de 32; después, si lo que sobra alcanza para
+        // los 8 dp de más, los botones van de 40 sin perder ningún día.
+        val tightHeader = headerHeight(header, scale, WidgetTouch.tight)
+        val dayCount = ((size.height.value - tightHeader - fixed) / rowHeight).toInt().coerceIn(2, 7)
+        val buttonHeight = headerButton(header, size.height, fixed + dayCount * rowHeight, scale)
         WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.vertical)) {
             Column(modifier = GlanceModifier.fillMaxSize()) {
-                NowHeader(snapshot, colors, header)
+                NowHeader(snapshot, colors, header, buttonHeight = buttonHeight)
                 Spacer(GlanceModifier.defaultWeight())
                 // Mínima | barra | máxima, como Clima grande y las tarjetas de la app.
-                DayRangeList(snapshot, snapshot.upcomingDays(dayCount), colors, innerWidth = size.width - 32.dp, rowHeight = 30.dp * scale)
+                DayRangeList(
+                    snapshot,
+                    snapshot.upcomingDays(dayCount),
+                    colors,
+                    innerWidth = size.width - WidgetPadding.horizontal * 2,
+                    rowHeight = rowHeight.dp,
+                )
             }
         }
     }

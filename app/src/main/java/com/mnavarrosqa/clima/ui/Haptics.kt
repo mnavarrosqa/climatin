@@ -56,4 +56,14 @@ object Haptics {
             compose(view.context, Triple(VibrationEffect.Composition.PRIMITIVE_TICK, 0.5f, 0))
         if (!done) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
+
+    /**
+     * Al cambiar de pestaña en la barra: un clic corto, algo más firme que [tick] porque cambia
+     * toda la pantalla, pero sin llegar al golpe de confirmar.
+     */
+    fun tab(view: View) {
+        val done = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            compose(view.context, Triple(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.4f, 0))
+        if (!done) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+    }
 }

@@ -1,0 +1,4 @@
+• Barra de abajo nueva: la pestaña elegida se desliza, se esconde al bajar en el pronóstico y vuelve al subir; tocar Clima otra vez sube al principio
+• Mismo diseño en Ciudades, Ajustes, el mapa y la bienvenida
+• Widgets con botones más grandes donde entran y galería con miniatura de cada widget puesto
+• Ordenar tarjetas más cómodo

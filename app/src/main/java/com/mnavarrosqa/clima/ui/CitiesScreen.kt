@@ -277,7 +277,7 @@ fun CitiesScreen(
                         }
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(14.dp),
+                    shape = ClimaShapes.inner,
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -299,6 +299,7 @@ fun CitiesScreen(
             itemsIndexed(search.results, key = { _, place -> "r-" + place.id }) { index, place ->
                 // Las que ya están guardadas se marcan: agregarlas de nuevo no hacía nada.
                 val saved = places.any { it.id == place.id }
+                // Por fuera, las esquinas de un grupo (las de ClimaShapes.tile); entre filas, chicas.
                 val top = if (index == 0) 24.dp else 4.dp
                 val bottom = if (index == search.results.lastIndex) 24.dp else 4.dp
                 ListItem(
@@ -398,7 +399,7 @@ fun CitiesScreen(
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .clip(RoundedCornerShape(24.dp))
+                                .clip(ClimaShapes.tile)
                                 .background(if (toStart) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer)
                                 .padding(horizontal = 24.dp),
                             contentAlignment = if (toStart) Alignment.CenterEnd else Alignment.CenterStart,
@@ -433,7 +434,7 @@ fun CitiesScreen(
                             )
                         },
                         modifier = Modifier
-                            .shadow(elevation, RoundedCornerShape(22.dp))
+                            .shadow(elevation, ClimaShapes.tile)
                             .pointerInput(id) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = {
@@ -538,7 +539,7 @@ private fun CityMenu(
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
-            Icon(Icons.Rounded.MoreVert, contentDescription = tr("Opciones de $name", "Options for $name"), tint = Color.White)
+            Icon(Icons.Rounded.MoreVert, contentDescription = tr("Opciones de $name", "Options for $name"), tint = SkySurface.content)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(

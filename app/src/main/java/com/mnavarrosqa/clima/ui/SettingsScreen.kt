@@ -54,6 +54,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material3.Button
 import androidx.compose.ui.graphics.vector.addPathNodes
@@ -64,6 +65,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
@@ -274,6 +277,9 @@ private fun SettingsScaffold(title: String, onBack: (() -> Unit)?, content: Lazy
     }
 }
 
+/** Entre fila y fila de un grupo las esquinas son chicas; las grandes (ClimaShapes.tile) las pone el grupo. */
+private val RowShape = RoundedCornerShape(4.dp)
+
 /**
  * Filas agrupadas como en los ajustes de Android 14+: el grupo tiene las puntas bien redondeadas
  * y entre fila y fila queda una separación fina.
@@ -283,7 +289,7 @@ private fun Rows(content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp)),
+            .clip(ClimaShapes.tile),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) { content() }
 }
@@ -314,7 +320,7 @@ private fun SettingRow(
             containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
         ),
         modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RowShape)
             // Solo la categoría abierta se anuncia como elegida; las demás filas no dicen nada de más.
             .then(if (selected) Modifier.semantics { this.selected = true } else Modifier)
             .then(
@@ -346,12 +352,11 @@ private fun CategoryIcon(background: Color, vector: ImageVector? = null, content
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(
+    // El título compartido, con el margen de las listas de Ajustes.
+    ClimaSectionTitle(
         text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
         // Encabezado: TalkBack permite saltar de sección en sección.
-        modifier = Modifier
+        Modifier
             .padding(start = 16.dp, top = 24.dp, bottom = 8.dp)
             .semantics { heading() },
     )
@@ -640,7 +645,7 @@ private fun LazyListScope.appearancePage() {
         // "Del fondo de pantalla" es Material You: solo desde Android 12.
         val accents = Accent.entries.filter { it != Accent.WALLPAPER || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S }
         val selected = if (Appearance.dynamicColors || Appearance.accent != Accent.WALLPAPER) Appearance.accent else Accent.BLUE
-        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = ClimaShapes.tile) {
             Column(Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
                 Row(
                     Modifier
@@ -679,7 +684,7 @@ private fun LazyListScope.appearancePage() {
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
         val current = AppIcon.current(context)
-        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = ClimaShapes.tile) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -731,7 +736,7 @@ private fun Swatch(
     val ring by animateDpAsState(if (selected) 3.dp else 0.dp, label = "anillo")
     Column(
         Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(ClimaShapes.inner)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 4.dp)
             .widthIn(min = dimension + 12.dp),
@@ -778,7 +783,7 @@ private fun LazyListScope.screenPage(viewModel: WeatherViewModel) {
             ChoiceRow(tr("Tamaño del número", "Number size"), HeroSize.entries, Appearance.heroSize, { it.label }) {
                 Appearance.setHeroSize(context, it)
             }
-            Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(4.dp)) {
+            Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RowShape) {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -827,13 +832,16 @@ private fun LazyListScope.screenPage(viewModel: WeatherViewModel) {
                 SettingRow(
                     card.label,
                     trailing = {
+                        // Subir y bajar van en un menú: con dos botones más el interruptor, al nombre
+                        // de la tarjeta le quedaba menos de media fila.
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { viewModel.setCards(layout.move(card, -1)) }, enabled = index > 0) {
-                                Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = tr("Subir", "Move up"))
-                            }
-                            IconButton(onClick = { viewModel.setCards(layout.move(card, 1)) }, enabled = index < layout.order.lastIndex) {
-                                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = tr("Bajar", "Move down"))
-                            }
+                            CardOrderMenu(
+                                name = card.label,
+                                canMoveUp = index > 0,
+                                canMoveDown = index < layout.order.lastIndex,
+                                onMove = { viewModel.setCards(layout.move(card, it)) },
+                            )
+                            Spacer(Modifier.width(4.dp))
                             Switch(
                                 checked = card !in layout.hidden,
                                 onCheckedChange = { viewModel.setCards(layout.toggle(card, it)) },
@@ -842,6 +850,33 @@ private fun LazyListScope.screenPage(viewModel: WeatherViewModel) {
                     },
                 )
             }
+        }
+    }
+}
+
+/** El "⋮" de cada tarjeta del pronóstico: subirla o bajarla en el orden. */
+@Composable
+private fun CardOrderMenu(name: String, canMoveUp: Boolean, canMoveDown: Boolean, onMove: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        // IconButton ya ocupa 48 dp de toque.
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Rounded.MoreVert, contentDescription = tr("Mover $name", "Move $name"))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            // El menú queda abierto al mover: para llevar una tarjeta varios lugares no hay que reabrirlo.
+            DropdownMenuItem(
+                text = { Text(tr("Subir", "Move up")) },
+                leadingIcon = { Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = null) },
+                enabled = canMoveUp,
+                onClick = { onMove(-1) },
+            )
+            DropdownMenuItem(
+                text = { Text(tr("Bajar", "Move down")) },
+                leadingIcon = { Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = null) },
+                enabled = canMoveDown,
+                onClick = { onMove(1) },
+            )
         }
     }
 }
@@ -880,7 +915,7 @@ private fun LazyListScope.unitsPage(viewModel: WeatherViewModel) {
 
 @Composable
 private fun <T> ChoiceRow(label: String, options: List<T>, selected: T, labelOf: (T) -> String, onSelect: (T) -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(4.dp)) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RowShape) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -1041,7 +1076,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
     SettingsScaffold(tr("Notificaciones", "Notifications"), onBack = onBack) {
         if (!canNotify) {
             item {
-                Surface(color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer, shape = RoundedCornerShape(24.dp)) {
+                Surface(color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer, shape = ClimaShapes.tile) {
                     Column(Modifier.padding(16.dp)) {
                         Text(tr("Las notificaciones de Climatin están apagadas", "Climatin notifications are off"), style = MaterialTheme.typography.titleSmall)
                         Text(
@@ -1056,7 +1091,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
         }
         if (System.currentTimeMillis() < notify.mutedUntil) {
             item {
-                Surface(color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer, shape = RoundedCornerShape(24.dp)) {
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer, shape = ClimaShapes.tile) {
                     Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             tr("Avisos pausados hasta mañana (salvo alertas rojas)", "Alerts paused until tomorrow (except red alerts)"),
@@ -1073,7 +1108,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
         // "Salgo ahora" es una acción, no un ajuste: va arriba de todo, como tarjeta con su botón.
         item {
             val active = Outing.active(context) && Outing.endsAt > 0
-            Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = RoundedCornerShape(24.dp)) {
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = ClimaShapes.tile) {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     Text(
                         if (active) {
@@ -1473,7 +1508,7 @@ private fun LazyListScope.aboutPage(viewModel: WeatherViewModel, onShowWelcome: 
         val installed = remember { Updates.installedVersion(context) }
         val fromPlay = remember { AppShare.isPlayBuild(context) }
         val appIcon = AppIcon.current(context)
-        Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = RoundedCornerShape(28.dp)) {
+        Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = ClimaShapes.card) {
             Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 // El ícono de la app que está elegido, armado como en la pantalla de inicio.
                 Box(Modifier.size(72.dp).clip(CircleShape)) {

@@ -4,6 +4,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -49,9 +50,11 @@ import com.mnavarrosqa.clima.data.Place
 import kotlin.math.PI
 import kotlin.math.atan
 import kotlin.math.sinh
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -676,10 +679,12 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // El lugar del mapa, donde iba la flecha: el mapa es una pestaña, no hay a dónde volver.
+            // Vidrio oscuro como la barra de abajo: se lee igual sobre el mapa claro y el oscuro.
             Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                shape = RoundedCornerShape(20.dp),
+                color = SkySurface.bar,
+                contentColor = SkySurface.content,
+                shape = ClimaShapes.pill,
+                border = BorderStroke(1.dp, SkySurface.barBorder),
                 modifier = Modifier
                     .weight(1f, fill = false)
                     .padding(end = 12.dp)
@@ -692,7 +697,7 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
                 }
             }
             // Vuelve al lugar elegido, con el zoom del principio.
-            FilledTonalIconButton(onClick = {
+            MapButton(onClick = {
                 zoom = 7
                 scale = 1f
                 centerX = Geo.tileX(longitude, 7)
@@ -719,14 +724,14 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
                 .padding(end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilledTonalIconButton(onClick = {
+            MapButton(onClick = {
                 if (zoom < RainMap.MAX_ZOOM) {
                     zoom++; centerX *= 2; centerY *= 2
                 }
             }) {
                 Icon(Icons.Rounded.Add, contentDescription = tr("Acercar", "Zoom in"))
             }
-            FilledTonalIconButton(onClick = {
+            MapButton(onClick = {
                 if (zoom > RainMap.MIN_ZOOM) {
                     zoom--; centerX /= 2; centerY /= 2
                 }
@@ -752,145 +757,159 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
         }
         // En la hoja, el contenido queda arriba de la barra de abajo.
         val contentModifier: Modifier = if (wide) Modifier else Modifier.navigationBarsPadding().padding(bottom = barSpace)
+        // El mismo vidrio que el pronóstico, pero casi opaco: por detrás pasan los nombres del mapa
+        // y los colores del radar, y acá hay letra chica.
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f),
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = if (wide) RoundedCornerShape(28.dp) else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            color = MapSheetGlass,
+            contentColor = SkySurface.content,
+            shape = if (wide) ClimaShapes.card else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            border = BorderStroke(1.dp, SkySurface.border),
             modifier = sheetModifier,
         ) {
-            Column(contentModifier.animateContentSize()) {
-                // Línea fina mientras se baja algo (modelo o radar); el lugar queda reservado
-                // para que la hoja no salte.
-                Box(Modifier.fillMaxWidth().height(3.dp)) {
-                    if (loading || radarLoading || (frames.isEmpty() && error == null)) {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 28.dp)
-                                .height(2.dp)
-                                .semantics { contentDescription = tr("Cargando", "Loading") },
-                        )
-                    }
-                }
-                val known = shown.epochSeconds >= 0
-                val title = if (known) frameLabel(shown.epochSeconds, zone, minutes = shown.radar) else tr("Mapa de lluvia", "Rain map")
-                // Qué se está viendo: lo que midió el radar, o lo que calcula el modelo (pasado o futuro).
-                val kind = when {
-                    shown.radar -> tr("Radar", "Radar")
-                    shown.epochSeconds > System.currentTimeMillis() / 1000 -> tr("Pronóstico", "Forecast")
-                    else -> tr("Estimación del modelo", "Model estimate")
-                }
-                Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 7.dp, bottom = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            if (known) {
-                                Text(kind, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                            }
-                            // La hora que se ve, grande; abajo, lo tocado o el error.
-                            Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            val status = error ?: probe?.second?.let { tr("Acá: ", "Here: ") + it }
-                                ?: if (frames.isEmpty()) tr("Cargando…", "Loading…") else null
-                            if (status != null) {
-                                Text(status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        if (error != null) {
-                            TextButton(onClick = { attempt++ }) { Text(tr("Reintentar", "Retry")) }
-                        }
-                        // "Ahora" solo si la línea de tiempo no está ya ahí.
-                        if (frames.size > 1 && !atNow) {
-                            TextButton(onClick = { scrub(nowPosition) }) { Text(tr("Ahora", "Now")) }
-                        }
-                        // La leyenda y las fuentes, a pedido: la hoja tapa menos mapa.
-                        IconButton(onClick = { showInfo = !showInfo }) {
-                            Icon(
-                                Icons.Rounded.Info,
-                                contentDescription = if (showInfo) {
-                                    tr("Ocultar la leyenda y las fuentes", "Hide legend and sources")
-                                } else {
-                                    tr("Ver la leyenda y las fuentes", "Show legend and sources")
-                                },
-                                tint = if (showInfo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            // Lo de adentro pide sus colores al vidrio (surfaceInk), no al tema.
+            OnSkyGlass {
+                val ink = surfaceInk()
+                Column(contentModifier.animateContentSize()) {
+                    // Línea fina mientras se baja algo (modelo o radar); el lugar queda reservado
+                    // para que la hoja no salte.
+                    Box(Modifier.fillMaxWidth().height(3.dp)) {
+                        if (loading || radarLoading || (frames.isEmpty() && error == null)) {
+                            LinearProgressIndicator(
+                                color = ink.accent,
+                                trackColor = ink.track,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 28.dp)
+                                    .height(2.dp)
+                                    .semantics { contentDescription = tr("Cargando", "Loading") },
                             )
                         }
                     }
-                    if (frames.size > 1) {
-                        Spacer(Modifier.height(6.dp))
-                        Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            FilledTonalIconButton(onClick = { playing = !playing }) {
-                                if (playing) {
-                                    PauseGlyph(tr("Pausar", "Pause"))
-                                } else {
-                                    Icon(Icons.Rounded.PlayArrow, contentDescription = tr("Reproducir", "Play"))
+                    val known = shown.epochSeconds >= 0
+                    val title = if (known) frameLabel(shown.epochSeconds, zone, minutes = shown.radar) else tr("Mapa de lluvia", "Rain map")
+                    // Qué se está viendo: lo que midió el radar, o lo que calcula el modelo (pasado o futuro).
+                    val kind = when {
+                        shown.radar -> tr("Radar", "Radar")
+                        shown.epochSeconds > System.currentTimeMillis() / 1000 -> tr("Pronóstico", "Forecast")
+                        else -> tr("Estimación del modelo", "Model estimate")
+                    }
+                    // Los botones de texto con el celeste del vidrio: el primario del tema claro no se lee acá.
+                    val glassButton = ButtonDefaults.textButtonColors(contentColor = ink.accent)
+                    Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 7.dp, bottom = 12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                if (known) {
+                                    Text(kind, style = MaterialTheme.typography.labelMedium, color = ink.accent)
+                                }
+                                // La hora que se ve, grande; abajo, lo tocado o el error.
+                                Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val status = error ?: probe?.second?.let { tr("Acá: ", "Here: ") + it }
+                                    ?: if (frames.isEmpty()) tr("Cargando…", "Loading…") else null
+                                if (status != null) {
+                                    Text(status, style = MaterialTheme.typography.bodyMedium, color = ink.variant)
                                 }
                             }
-                            Spacer(Modifier.width(12.dp))
-                            // Lluvia en el centro del mapa, hora por hora: se ve de un vistazo cuándo llueve.
-                            val centerRain = remember(area, zoom, (centerX * 4).roundToInt(), (centerY * 4).roundToInt()) {
-                                area?.let { a ->
-                                    val f = 2.0.pow(zoom - a.zoom)
-                                    val col = ((centerX / f - a.x0) / (a.x1 - a.x0) * RainMap.COLUMNS).toInt().coerceIn(0, RainMap.COLUMNS - 1)
-                                    val row = ((centerY / f - a.y0) / (a.y1 - a.y0) * RainMap.ROWS).toInt().coerceIn(0, RainMap.ROWS - 1)
-                                    a.frames.map { it.values.getOrElse(row * RainMap.COLUMNS + col) { 0f } }
-                                }.orEmpty()
+                            if (error != null) {
+                                TextButton(onClick = { attempt++ }, colors = glassButton) { Text(tr("Reintentar", "Retry")) }
                             }
-                            // El tramo de la línea de tiempo que cubre el radar, si se está usando.
-                            val radarSpan = if (radarFrames.isEmpty()) {
-                                null
-                            } else {
-                                positionAt(frames, radarFrames.first().epochSeconds)..positionAt(frames, radarFrames.last().epochSeconds)
+                            // "Ahora" solo si la línea de tiempo no está ya ahí.
+                            if (frames.size > 1 && !atNow) {
+                                TextButton(onClick = { scrub(nowPosition) }, colors = glassButton) { Text(tr("Ahora", "Now")) }
                             }
-                            RainTimeline(
-                                frames = frames,
-                                rain = centerRain,
-                                position = { position.value },
-                                current = frameIndex,
-                                stateText = if (known) "$kind, $title" else title,
-                                radarSpan = radarSpan,
-                                zone = zone,
-                                onScrub = scrub,
-                                modifier = Modifier.weight(1f),
-                            )
+                            // La leyenda y las fuentes, a pedido: la hoja tapa menos mapa.
+                            IconButton(onClick = { showInfo = !showInfo }) {
+                                Icon(
+                                    Icons.Rounded.Info,
+                                    contentDescription = if (showInfo) {
+                                        tr("Ocultar la leyenda y las fuentes", "Hide legend and sources")
+                                    } else {
+                                        tr("Ver la leyenda y las fuentes", "Show legend and sources")
+                                    },
+                                    tint = if (showInfo) ink.accent else ink.variant,
+                                )
+                            }
                         }
-                    }
-                    if (showInfo) {
-                        Column(Modifier.padding(end = 12.dp)) {
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                if (onAddPlace != null) {
-                                    tr("Tocá el mapa para ver si llueve en un punto; mantené apretado para agregar una ciudad.", "Tap the map to see if it rains at a point; long-press to add a city.")
-                                } else {
-                                    tr("Tocá el mapa para ver si llueve en un punto.", "Tap the map to see if it rains at a point.")
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        if (frames.size > 1) {
                             Spacer(Modifier.height(6.dp))
-                            Text(
-                                tr(
-                                    "Hasta ahora se ve lo que midió el radar en las últimas 2 horas. De ahí en adelante, y donde el radar no muestra nada, se ve lo que calcula el modelo del pronóstico.",
-                                    "Up to now you see what the radar measured over the last 2 hours. From there on, and where the radar shows nothing, you see what the forecast model calculates.",
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                tr("Colores del pronóstico (el radar usa su propia escala)", "Forecast colors (the radar uses its own scale)"),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            RainLegend()
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                tr(
-                                    "Radar: RainViewer · Pronóstico: Open-Meteo · Mapa: Esri, HERE, Garmin, © OpenStreetMap",
-                                    "Radar: RainViewer · Forecast: Open-Meteo · Map: Esri, HERE, Garmin, © OpenStreetMap",
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                FilledTonalIconButton(
+                                    onClick = { playing = !playing },
+                                    colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = ink.track, contentColor = ink.content),
+                                ) {
+                                    if (playing) {
+                                        PauseGlyph(tr("Pausar", "Pause"))
+                                    } else {
+                                        Icon(Icons.Rounded.PlayArrow, contentDescription = tr("Reproducir", "Play"))
+                                    }
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                // Lluvia en el centro del mapa, hora por hora: se ve de un vistazo cuándo llueve.
+                                val centerRain = remember(area, zoom, (centerX * 4).roundToInt(), (centerY * 4).roundToInt()) {
+                                    area?.let { a ->
+                                        val f = 2.0.pow(zoom - a.zoom)
+                                        val col = ((centerX / f - a.x0) / (a.x1 - a.x0) * RainMap.COLUMNS).toInt().coerceIn(0, RainMap.COLUMNS - 1)
+                                        val row = ((centerY / f - a.y0) / (a.y1 - a.y0) * RainMap.ROWS).toInt().coerceIn(0, RainMap.ROWS - 1)
+                                        a.frames.map { it.values.getOrElse(row * RainMap.COLUMNS + col) { 0f } }
+                                    }.orEmpty()
+                                }
+                                // El tramo de la línea de tiempo que cubre el radar, si se está usando.
+                                val radarSpan = if (radarFrames.isEmpty()) {
+                                    null
+                                } else {
+                                    positionAt(frames, radarFrames.first().epochSeconds)..positionAt(frames, radarFrames.last().epochSeconds)
+                                }
+                                RainTimeline(
+                                    frames = frames,
+                                    rain = centerRain,
+                                    position = { position.value },
+                                    current = frameIndex,
+                                    stateText = if (known) "$kind, $title" else title,
+                                    radarSpan = radarSpan,
+                                    zone = zone,
+                                    onScrub = scrub,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                        if (showInfo) {
+                            Column(Modifier.padding(end = 12.dp)) {
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    if (onAddPlace != null) {
+                                        tr("Tocá el mapa para ver si llueve en un punto; mantené apretado para agregar una ciudad.", "Tap the map to see if it rains at a point; long-press to add a city.")
+                                    } else {
+                                        tr("Tocá el mapa para ver si llueve en un punto.", "Tap the map to see if it rains at a point.")
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = ink.variant,
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    tr(
+                                        "Hasta ahora se ve lo que midió el radar en las últimas 2 horas. De ahí en adelante, y donde el radar no muestra nada, se ve lo que calcula el modelo del pronóstico.",
+                                        "Up to now you see what the radar measured over the last 2 hours. From there on, and where the radar shows nothing, you see what the forecast model calculates.",
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = ink.variant,
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    tr("Colores del pronóstico (el radar usa su propia escala)", "Forecast colors (the radar uses its own scale)"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = ink.variant,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                RainLegend()
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    tr(
+                                        "Radar: RainViewer · Pronóstico: Open-Meteo · Mapa: Esri, HERE, Garmin, © OpenStreetMap",
+                                        "Radar: RainViewer · Forecast: Open-Meteo · Map: Esri, HERE, Garmin, © OpenStreetMap",
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = ink.variant,
+                                )
+                            }
                         }
                     }
                 }
@@ -961,6 +980,27 @@ private fun radarPosition(images: List<RadarImage>, time: Long): Float? {
     return (next - 1) + (time - a).toFloat() / (b - a).coerceAtLeast(1L).toFloat()
 }
 
+/**
+ * La hoja de la línea de tiempo: el tono del vidrio del cielo, casi opaco. Con la opacidad de las
+ * tarjetas del pronóstico las etiquetas chicas se mezclaban con los nombres del mapa claro.
+ */
+private val MapSheetGlass = SkySurface.Tint.copy(alpha = 0.86f)
+
+/** Botón redondo flotando sobre el mapa (volver al lugar, acercar, alejar), del vidrio de la barra. */
+@Composable
+private fun MapButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    // Surface con onClick ya se anuncia como botón y reserva 48 dp de toque alrededor de los 40 que se ven.
+    Surface(
+        onClick = onClick,
+        color = SkySurface.bar,
+        contentColor = SkySurface.content,
+        shape = ClimaShapes.pill,
+        border = BorderStroke(1.dp, SkySurface.barBorder),
+    ) {
+        Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { content() }
+    }
+}
+
 /** El "−" de alejar, dibujado: el juego de íconos del proyecto no trae uno. */
 @Composable
 private fun MinusGlyph(description: String) {
@@ -1002,7 +1042,8 @@ private fun RainTimeline(
     onScrub: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = MaterialTheme.colorScheme
+    // Los colores de donde esté dibujada (acá, el vidrio de la hoja).
+    val ink = surfaceInk()
     val nowIndex = frames.indexOfLast { it.epochSeconds <= System.currentTimeMillis() / 1000 }
     val last = frames.lastIndex.toFloat()
     Column(modifier) {
@@ -1040,7 +1081,7 @@ private fun RainTimeline(
             frames.indices.forEach { i ->
                 val mm = rain.getOrElse(i) { 0f }
                 val h = if (mm < 0.1f) 3.dp.toPx() else (maxBar * (mm / 6f).coerceIn(0.18f, 1f))
-                val color = if (mm < 0.1f) colors.onSurface.copy(alpha = 0.14f) else Color(rainColorOf(mm))
+                val color = if (mm < 0.1f) ink.track else Color(rainColorOf(mm))
                 // Las horas que ya pasaron, más tenues.
                 val alpha = if (nowIndex >= 0 && i < nowIndex) 0.55f else 1f
                 drawRoundRect(
@@ -1052,13 +1093,14 @@ private fun RainTimeline(
             }
             if (nowIndex >= 0) {
                 val x = slot * nowIndex + slot / 2
-                drawLine(colors.onSurfaceVariant.copy(alpha = 0.6f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+                drawLine(ink.variant.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
             }
             // Cursor: se lee la posición al dibujar, así moverse no recompone nada.
             val x = slot * position() + slot / 2
-            drawLine(colors.primary, Offset(x, 4.dp.toPx()), Offset(x, size.height), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
-            drawCircle(colors.primary, radius = 6.dp.toPx(), center = Offset(x, 6.dp.toPx()))
-            drawCircle(colors.surface, radius = 2.5.dp.toPx(), center = Offset(x, 6.dp.toPx()))
+            // Del color del texto y no del acento: el celeste se confundía con las barras de llovizna.
+            drawLine(ink.content, Offset(x, 4.dp.toPx()), Offset(x, size.height), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+            drawCircle(ink.content, radius = 6.dp.toPx(), center = Offset(x, 6.dp.toPx()))
+            drawCircle(ink.knockout, radius = 2.5.dp.toPx(), center = Offset(x, 6.dp.toPx()))
         }
         // Horas cada 3 y "Ahora" en su lugar.
         Row(Modifier.fillMaxWidth()) {
@@ -1071,7 +1113,7 @@ private fun RainTimeline(
                 Text(
                     label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (i == nowIndex) colors.primary else colors.onSurfaceVariant,
+                    color = if (i == nowIndex) ink.accent else ink.variant,
                     maxLines = 1,
                     softWrap = false,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -1083,11 +1125,11 @@ private fun RainTimeline(
         if (radarSpan != null) {
             val measurer = rememberTextMeasurer()
             val style = MaterialTheme.typography.labelSmall
-            val radarWord = remember(style, colors.primary) {
-                measurer.measure(tr("Radar", "Radar"), style.copy(color = colors.primary))
+            val radarWord = remember(style, ink.accent) {
+                measurer.measure(tr("Radar", "Radar"), style.copy(color = ink.accent))
             }
-            val forecastWord = remember(style, colors.onSurfaceVariant) {
-                measurer.measure(tr("Pronóstico", "Forecast"), style.copy(color = colors.onSurfaceVariant))
+            val forecastWord = remember(style, ink.variant) {
+                measurer.measure(tr("Pronóstico", "Forecast"), style.copy(color = ink.variant))
             }
             Canvas(
                 Modifier
@@ -1099,9 +1141,9 @@ private fun RainTimeline(
                 val start = slot * radarSpan.start + slot / 2
                 val end = slot * radarSpan.endInclusive + slot / 2
                 val y = 2.dp.toPx()
-                drawLine(colors.outlineVariant, Offset(0f, y), Offset(size.width, y), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
-                drawLine(colors.primary, Offset(start, y), Offset(end, y), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
-                drawLine(colors.onSurfaceVariant, Offset(end, 0f), Offset(end, 8.dp.toPx()), strokeWidth = 1.dp.toPx())
+                drawLine(ink.track, Offset(0f, y), Offset(size.width, y), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+                drawLine(ink.accent, Offset(start, y), Offset(end, y), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+                drawLine(ink.variant, Offset(end, 0f), Offset(end, 8.dp.toPx()), strokeWidth = 1.dp.toPx())
                 val gap = 5.dp.toPx()
                 val top = 5.dp.toPx()
                 // "Radar" termina en el corte y "Pronóstico" empieza ahí, sin salirse de la línea.
@@ -1138,10 +1180,10 @@ private fun RainLegend() {
                     Modifier
                         .fillMaxWidth()
                         .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
+                        .clip(ClimaShapes.pill)
                         .background(color),
                 )
-                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(label, style = MaterialTheme.typography.labelSmall, color = surfaceInk().variant)
             }
         }
     }

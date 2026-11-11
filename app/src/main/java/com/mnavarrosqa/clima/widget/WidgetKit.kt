@@ -62,6 +62,11 @@ object WidgetType {
     val tempTiny: TextUnit = 20.sp
     /** Temperatura de una fila (Ciudades). */
     val tempRow: TextUnit = 24.sp
+    /** Temperatura del encabezado de una línea ([HeaderSize.INLINE]). */
+    val tempInline: TextUnit = 28.sp
+    /** Fecha de Vistazo; [dateTight] en el de una fila de la grilla o con letra grande. */
+    val date: TextUnit = 24.sp
+    val dateTight: TextUnit = 20.sp
 }
 
 /** Márgenes interiores de los widgets: uno solo para todos, así los bordes quedan alineados entre sí. */
@@ -77,15 +82,25 @@ object WidgetPadding {
 }
 
 /**
- * Botones ⟳ y ›: un ícono de [icon] dentro de una caja de toque más grande. [full] es el mínimo
- * cómodo; [tight] queda para los diseños donde 8 dp más cortan el contenido.
+ * Botones ⟳ y ›: un ícono de [icon] dentro de una caja de toque más grande. [full] es el alto
+ * cómodo y el de casi todos los diseños; [tight] queda para los que con 8 dp más se cortan
+ * (lo decide [headerButton]).
  */
 object WidgetTouch {
     val icon: Dp = 16.dp
     val full: Dp = 40.dp
     val tight: Dp = 32.dp
+    /** Ancho en los widgets muy anchos: ahí el nombre de la ciudad sigue entrando. */
+    val wide: Dp = 48.dp
     /** Desde este ancho de widget los botones pueden ser [full] de ancho sin comerse el nombre de la ciudad. */
     val wideFrom: Dp = 280.dp
+    /** Desde este ancho, [wide]. */
+    val widestFrom: Dp = 340.dp
+    /**
+     * Margen antes de agrandar los botones: el alto que informa el launcher no siempre es el
+     * real, y es mejor un botón de 32 que una fila cortada.
+     */
+    val slack: Dp = 4.dp
 }
 
 /**
@@ -94,15 +109,37 @@ object WidgetTouch {
  */
 fun textLineHeight(fontSize: TextUnit, scale: Float): Float = fontSize.value * 1.34f * scale
 
-/**
- * Tamaño del encabezado. [reserve] es el alto aproximado que ocupa con letra normal (hay que
- * multiplicarlo por [fontScale]); sirve para repartir lo que queda entre horas, días o gráfico.
- */
-enum class HeaderSize(val reserve: Dp) {
+/** Tamaño del encabezado; [headerHeight] dice cuánto ocupa. */
+enum class HeaderSize {
     /** Una línea: ciudad a la izquierda, ícono y temperatura a la derecha. Para widgets bajos. */
-    INLINE(40.dp),
-    COMPACT(78.dp),
-    FULL(90.dp),
+    INLINE,
+    COMPACT,
+    FULL,
+}
+
+/**
+ * Alto en dp de [NowHeader] con botones de [button] de alto, con la letra del sistema. Glance no
+ * tiene márgenes negativos: un botón más alto agranda la fila de la ciudad y con ella todo el
+ * encabezado, así que lo que se reparte después (horas, días, gráfico) tiene que salir de acá.
+ */
+fun headerHeight(size: HeaderSize, scale: Float, button: Dp): Float {
+    val place = maxOf(button.value, textLineHeight(WidgetType.place, scale))
+    if (size == HeaderSize.INLINE) return maxOf(place, 24f, textLineHeight(WidgetType.tempInline, scale))
+    val compact = size == HeaderSize.COMPACT
+    val left = place + textLineHeight(if (compact) WidgetType.bigCompact else WidgetType.bigLarge, scale)
+    // Se cuenta la línea de máxima y mínima aunque esté oculta: sobra un poco, no falta.
+    val right = (if (compact) 26f else 32f) + textLineHeight(WidgetType.condition, scale) + textLineHeight(WidgetType.range, scale)
+    return maxOf(left, right)
+}
+
+/**
+ * Alto de los botones del encabezado: [WidgetTouch.full] si, con todo lo demás del diseño
+ * ([others], en dp: márgenes, horas, días, el mínimo del gráfico) y el encabezado agrandado,
+ * todavía entra en [available]; si no, [WidgetTouch.tight]. Primero el contenido, después el botón.
+ */
+fun headerButton(size: HeaderSize, available: Dp, others: Float, scale: Float): Dp {
+    val needed = others + headerHeight(size, scale, WidgetTouch.full) + WidgetTouch.slack.value
+    return if (available.value >= needed) WidgetTouch.full else WidgetTouch.tight
 }
 
 /** Máxima y mínima de hoy, en una línea ("Máx 25°  Mín 12°"). */
@@ -119,14 +156,14 @@ fun NowHeader(
     snapshot: WeatherSnapshot,
     colors: WidgetColors,
     size: HeaderSize = HeaderSize.FULL,
-    /** Botones de 40 dp de alto: suma 8 dp al encabezado, solo para diseños con ese lugar. */
-    roomyButtons: Boolean = false,
+    /** Alto de ⟳ y ›; tiene que ser el mismo que se usó en [headerHeight] para repartir el alto. */
+    buttonHeight: Dp = WidgetTouch.full,
 ) {
     val current = snapshot.current
     if (size == HeaderSize.INLINE) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = GlanceModifier.defaultWeight()) {
-                PlaceLabel(snapshot, colors, fontSize = WidgetType.place, fontWeight = FontWeight.Medium)
+                PlaceLabel(snapshot, colors, fontSize = WidgetType.place, fontWeight = FontWeight.Medium, buttonHeight = buttonHeight)
             }
             Image(
                 provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
@@ -137,7 +174,7 @@ fun NowHeader(
             Text(
                 current.temperature.degrees(),
                 maxLines = 1,
-                style = TextStyle(color = colors.text, fontSize = 28.sp),
+                style = TextStyle(color = colors.text, fontSize = WidgetType.tempInline),
             )
         }
         return
@@ -145,7 +182,7 @@ fun NowHeader(
     val compact = size == HeaderSize.COMPACT
     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Column(modifier = GlanceModifier.defaultWeight()) {
-            PlaceLabel(snapshot, colors, fontSize = WidgetType.place, fontWeight = FontWeight.Medium, roomy = roomyButtons)
+            PlaceLabel(snapshot, colors, fontSize = WidgetType.place, fontWeight = FontWeight.Medium, buttonHeight = buttonHeight)
             Text(
                 current.temperature.degrees(),
                 maxLines = 1,

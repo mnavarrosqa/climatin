@@ -73,8 +73,8 @@ private fun ClimaContent(snapshot: WeatherSnapshot) {
             // Grande (4×4): además, los próximos días, como el widget grande del Clima de Apple.
             // Con menos de 260 dp de ancho las filas de días no entran (día, mín, barra y máx).
             size.height >= 330.dp * scale && size.width >= ClimaWidget.LARGE_MIN_WIDTH -> LargeContent(snapshot)
-            // Desde 220 sobra lugar: encabezado grande y botones de 40 dp de alto.
-            size.height >= 220.dp * scale -> WideContent(snapshot, compact = false, showHours = true, roomyButtons = true)
+            // Desde 220: encabezado grande y las horas.
+            size.height >= 220.dp * scale -> WideContent(snapshot, compact = false, showHours = true)
             size.height >= 176.dp * scale -> WideContent(snapshot, compact = true, showHours = true)
             size.height >= 150.dp * scale -> WideContent(snapshot, compact = false, showHours = false)
             else -> WideContent(snapshot, compact = true, showHours = false)
@@ -139,8 +139,9 @@ private fun SquareContent(snapshot: WeatherSnapshot) {
     // La temperatura toma un tercio del ancho (en dp: al pasarla a sp se divide por la letra del sistema).
     val fullTemp = (size.width.value * 0.32f).coerceIn(SQUARE_MIN_TEMP, 64f)
     val captionLine = textLineHeight(WidgetType.caption, scale)
-    // Encabezado: lo más alto entre el ⟳ (32), el ícono del clima (32) y el nombre de la ciudad.
-    val headerHeight = maxOf(WidgetTouch.tight.value, textLineHeight(WidgetType.place, scale))
+    val placeLine = textLineHeight(WidgetType.place, scale)
+    // Encabezado: lo más alto entre el ⟳ (32 para el cálculo), el ícono del clima (32) y el nombre de la ciudad.
+    val headerHeight = maxOf(WidgetTouch.tight.value, placeLine)
     // Todo menos la temperatura y la línea de máxima y mínima, con las horas incluidas.
     val fixedWithHours = WidgetPadding.small.value * 2 + headerHeight + captionLine +
         SquareHoursGap.value + hoursRowHeight(colors, scale) + SQUARE_SLACK
@@ -157,11 +158,20 @@ private fun SquareContent(snapshot: WeatherSnapshot) {
     val showHours = tempHours != null
     val showRange = rangeText != null && (!showHours || tempKeepingRange != null)
     val tempSize = ((tempHours ?: fullTemp) / scale).sp
+    // El ⟳ de 40 dp solo si sobra alto después de repartirlo con botones de 32: en un 2×2 las
+    // horas y la temperatura grande valen más que 8 dp de botón.
+    val tempLine = textLineHeight(1.sp, 1f) * (tempHours ?: fullTemp)
+    val used = if (showHours) {
+        fixedWithHours + (if (showRange) captionLine else 0f) + tempLine
+    } else {
+        WidgetPadding.small.value * 2 + headerHeight + tempLine + captionLine + (if (showRange) captionLine else 0f) + SQUARE_SLACK
+    }
+    val buttonHeight = if (size.height.value - used >= maxOf(WidgetTouch.full.value, placeLine) - headerHeight) WidgetTouch.full else WidgetTouch.tight
     WidgetSurface(colors, modifier = GlanceModifier.padding(WidgetPadding.small)) {
         Column(modifier = GlanceModifier.fillMaxSize()) {
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = GlanceModifier.defaultWeight()) {
-                    PlaceLabel(snapshot, colors, fontSize = WidgetType.place, fontWeight = FontWeight.Medium)
+                    PlaceLabel(snapshot, colors, fontSize = WidgetType.place, fontWeight = FontWeight.Medium, buttonHeight = buttonHeight)
                 }
                 Image(
                     provider = ImageProvider(WeatherCodes.icon(current.code, current.isDay)),
@@ -198,12 +208,21 @@ private fun SquareContent(snapshot: WeatherSnapshot) {
  * próximas horas sobre el cielo, sin recuadro.
  */
 @Composable
-private fun WideContent(snapshot: WeatherSnapshot, compact: Boolean, showHours: Boolean, roomyButtons: Boolean = false) {
+private fun WideContent(snapshot: WeatherSnapshot, compact: Boolean, showHours: Boolean) {
     val colors = climaColors(snapshot)
+    val scale = fontScale()
     val vertical = if (compact) WidgetPadding.verticalTight else WidgetPadding.vertical
+    val header = if (compact) HeaderSize.COMPACT else HeaderSize.FULL
+    // Lo que va debajo del encabezado: las horas, o la frase del momento (hasta dos líneas).
+    val below = when {
+        showHours -> hoursRowHeight(colors, scale)
+        !compact -> textLineHeight(WidgetType.caption, scale) * 2
+        else -> 0f
+    }
+    val buttonHeight = headerButton(header, LocalSize.current.height, vertical.value * 2 + below, scale)
     WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = vertical)) {
         Column(modifier = GlanceModifier.fillMaxSize()) {
-            NowHeader(snapshot, colors, if (compact) HeaderSize.COMPACT else HeaderSize.FULL, roomyButtons = roomyButtons)
+            NowHeader(snapshot, colors, header, buttonHeight = buttonHeight)
             if (!showHours && !compact && widgetShows(WidgetPart.INSIGHT)) {
                 // La frase del momento: lluvia, UV, cambio de temperatura, atardecer…
                 Insights.headline(snapshot)?.let {
@@ -225,14 +244,18 @@ private fun LargeContent(snapshot: WeatherSnapshot) {
     val colors = climaColors(snapshot)
     val size = LocalSize.current
     val scale = fontScale()
-    // Cada día ocupa unos 30 dp; arriba van el encabezado (con botones de 40 dp) y las horas (unos 208).
-    val dayCount = ((size.height.value - 208f * scale) / (30f * scale)).toInt().coerceIn(3, 7)
+    // Cada día ocupa unos 30 dp; arriba van los márgenes, el encabezado con botones de 40 dp, las
+    // horas y la línea (10 + 8 + 1 + 4). Antes era un 208 fijo, que solo valía para las horas sin recuadro.
+    val top = WidgetPadding.vertical.value * 2 + headerHeight(HeaderSize.FULL, scale, WidgetTouch.full) +
+        hoursRowHeight(colors, scale) + 23f
+    val dayCount = ((size.height.value - top) / (30f * scale)).toInt().coerceIn(3, 7)
     WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.vertical)) {
         // Dos grupos y no una sola lista: Glance corta una Column a los 10 hijos, y 6 de arriba
         // más 7 días eran 13 (se perdían los últimos días).
         Column(modifier = GlanceModifier.fillMaxSize()) {
             Column(modifier = GlanceModifier.fillMaxWidth()) {
-                NowHeader(snapshot, colors, HeaderSize.FULL, roomyButtons = true)
+                // El grande siempre tiene lugar: los días se cuentan con el encabezado de 40 dp.
+                NowHeader(snapshot, colors, HeaderSize.FULL, buttonHeight = WidgetTouch.full)
                 Spacer(GlanceModifier.height(10.dp))
                 HoursRow(snapshot, count = 6, colors = colors)
                 Spacer(GlanceModifier.height(8.dp))

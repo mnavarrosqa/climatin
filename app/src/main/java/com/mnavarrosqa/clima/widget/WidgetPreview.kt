@@ -1,5 +1,7 @@
 package com.mnavarrosqa.clima.widget
 
+import android.view.MotionEvent
+import android.view.View
 import android.widget.FrameLayout
 import android.widget.RemoteViews
 import androidx.compose.foundation.background
@@ -30,7 +32,16 @@ import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.tr
 import com.mnavarrosqa.clima.ui.skyColors
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * Cuántas vistas previas se arman a la vez. Cada una compone el widget entero y dibuja sus
+ * imágenes (cielo, gráficos): con la lista de "En tu pantalla de inicio" llena, armarlas todas
+ * juntas trababa la pantalla. Las demás esperan su turno.
+ */
+private val previewSlots = Semaphore(2)
 
 /**
  * El widget de verdad: se arma con Glance igual que en la pantalla de inicio, con los ajustes que
@@ -43,6 +54,11 @@ fun GlanceWidgetPreview(
     size: DpSize,
     config: WidgetConfig,
     modifier: Modifier = Modifier,
+    /**
+     * Si los toques llegan al widget. Falso cuando la vista previa va dentro de algo tocable (una
+     * fila): si no, los botones del widget se quedaban con el toque y abrían la app.
+     */
+    interactive: Boolean = true,
     /** Lo que se muestra si el widget no se puede armar acá: nunca queda el recuadro vacío. */
     fallback: @Composable () -> Unit = {},
 ) {
@@ -53,10 +69,13 @@ fun GlanceWidgetPreview(
         val state = mutablePreferencesOf().also { config.writeTo(it) }
         try {
             // Con tope: si Glance no termina de armarlo, se muestra el respaldo y queda anotado.
-            val remote = withTimeoutOrNull(8_000) {
-                GlanceRemoteViews().compose(context, size, state) {
-                    CompositionLocalProvider(LocalWidgetPreview provides true) { kind.widget().Body() }
-                }.remoteViews
+            // La espera del turno no cuenta para el tope.
+            val remote = previewSlots.withPermit {
+                withTimeoutOrNull(8_000) {
+                    GlanceRemoteViews().compose(context, size, state) {
+                        CompositionLocalProvider(LocalWidgetPreview provides true) { kind.widget().Body() }
+                    }.remoteViews
+                }
             }
             if (remote != null) {
                 views = remote
@@ -80,7 +99,20 @@ fun GlanceWidgetPreview(
             fallback()
         } else {
             AndroidView(
-                factory = { FrameLayout(it) },
+                factory = { viewContext ->
+                    if (interactive) {
+                        FrameLayout(viewContext)
+                    } else {
+                        // Se queda con todos los toques sin usarlos: así siguen hasta la fila de
+                        // Compose que la contiene. TalkBack lee la fila, no el widget de adentro.
+                        object : FrameLayout(viewContext) {
+                            override fun onInterceptTouchEvent(event: MotionEvent?): Boolean = true
+
+                            @Suppress("ClickableViewAccessibility")
+                            override fun onTouchEvent(event: MotionEvent?): Boolean = false
+                        }.apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS }
+                    }
+                },
                 update = { frame ->
                     frame.removeAllViews()
                     runCatching { frame.addView(remote.apply(frame.context, frame)) }

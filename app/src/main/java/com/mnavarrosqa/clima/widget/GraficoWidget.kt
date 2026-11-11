@@ -55,12 +55,14 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
     val context = LocalContext.current
     val size = LocalSize.current
     val scale = fontScale()
-    val padding = 16.dp
     // El encabezado compacto de Clima si hay alto; en el 4×2 bajo, el de una línea.
     val header = if (size.height >= 170.dp * scale) HeaderSize.COMPACT else HeaderSize.INLINE
-    // Con letra grande el encabezado crece: si no, tapaba el gráfico.
-    val chartWidth = size.width - padding * 2
-    val chartHeight = (size.height - padding * 2 - header.reserve * scale - 8.dp).coerceAtLeast(40.dp)
+    // Botones de 40 dp solo si el gráfico sigue midiendo al menos GraphRoomyChart.
+    val vertical = WidgetPadding.vertical.value * 2 + GraphGap.value
+    val buttonHeight = headerButton(header, size.height, vertical + GraphRoomyChart.value, scale)
+    // Con letra grande o botones más altos el encabezado crece: el gráfico se achica para no taparlo.
+    val chartWidth = size.width - WidgetPadding.horizontal * 2
+    val chartHeight = (size.height - (vertical + headerHeight(header, scale, buttonHeight)).dp).coerceAtLeast(40.dp)
     val hourCount = (chartWidth.value / 44f).roundToInt().coerceIn(4, 12)
     val density = context.resources.displayMetrics.density
     val bitmap = ChartBitmap.render(
@@ -72,9 +74,9 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
         accent = chartAccent(),
     )
 
-    WidgetSurface(colors, modifier = GlanceModifier.padding(padding)) {
+    WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.vertical)) {
         Column(modifier = GlanceModifier.fillMaxSize()) {
-            NowHeader(snapshot, colors, header)
+            NowHeader(snapshot, colors, header, buttonHeight = buttonHeight)
             Spacer(GlanceModifier.defaultWeight())
             Image(
                 provider = ImageProvider(bitmap),
@@ -85,6 +87,12 @@ private fun GraficoContent(snapshot: WeatherSnapshot) {
         }
     }
 }
+
+/** Aire mínimo entre el encabezado y el gráfico (el Spacer con peso pone lo que sobre). */
+private val GraphGap = 8.dp
+
+/** Con menos alto que esto el gráfico deja de leerse bien: antes que eso, botones de 32. */
+private val GraphRoomyChart = 56.dp
 
 class GraficoWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = GraficoWidget()
