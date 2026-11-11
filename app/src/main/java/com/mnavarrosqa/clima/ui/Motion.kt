@@ -1,10 +1,18 @@
 package com.mnavarrosqa.clima.ui
 
 import android.os.SystemClock
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -22,12 +30,25 @@ import kotlinx.coroutines.delay
 object Motion {
     fun <T> gentle() = spring<T>(dampingRatio = 0.85f, stiffness = Spring.StiffnessLow)
     fun <T> snappy() = spring<T>(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow)
+
+    /**
+     * Entre pestañas de la barra: un fundido corto, sin escala. Son pantallas hermanas; que una
+     * "entre" agrandándose daba a entender que se abría algo encima.
+     */
+    fun tabSwitch(): ContentTransform =
+        fadeIn(tween(150, delayMillis = 60)).togetherWith(fadeOut(tween(90)))
+
+    /** Al abrir algo encima (comparar, la bienvenida): entra agrandándose y lo de atrás se apaga. */
+    fun drillIn(): ContentTransform =
+        (fadeIn(tween(320, delayMillis = 60)) + scaleIn(tween(380, easing = EaseOutCubic), initialScale = 0.94f))
+            .togetherWith(fadeOut(tween(180)) + scaleOut(tween(220), targetScale = 1.03f))
 }
 
 /**
  * Entrada escalonada: el elemento sube y aparece con un pequeño retraso según su posición.
- * Solo anima durante el primer segundo y medio de la pantalla ([shownAt]); los elementos que
- * aparecen después al desplazar ya están quietos.
+ * Solo anima durante el primer segundo y medio desde [shownAt] (la primera vez que se ve el
+ * pronóstico al abrir la app); lo que aparece después, al desplazar o al volver de otra pestaña,
+ * ya está quieto.
  */
 @Composable
 fun Modifier.reveal(index: Int, shownAt: Long): Modifier {

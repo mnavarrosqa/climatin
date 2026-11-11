@@ -40,7 +40,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -105,9 +110,14 @@ import kotlinx.coroutines.flow.first
 @Composable
 fun CitiesScreen(
     viewModel: WeatherViewModel,
-    onBack: () -> Unit,
     onLocationPermission: (Boolean) -> Unit,
     onOpenPlace: (String) -> Unit = {},
+    // Comparar ciudades: hace falta más de un lugar ([canCompare]).
+    canCompare: Boolean = false,
+    onCompare: () -> Unit = {},
+    // Al llegar desde "Elegir una ciudad" el buscador toma el foco; [onSearchFocused] avisa que ya se hizo.
+    focusSearch: Boolean = false,
+    onSearchFocused: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val places by viewModel.places.collectAsStateWithLifecycle()
@@ -130,6 +140,20 @@ fun CitiesScreen(
     }
 
     val listState = rememberLazyListState()
+    val searchFocus = remember { FocusRequester() }
+    /** Sube al buscador y le da el foco (abre el teclado). */
+    suspend fun focusSearchField() {
+        listState.scrollToItem(0)
+        // Un cuadro para que el campo esté en la lista antes de pedirle el foco.
+        withFrameNanos { }
+        runCatching { searchFocus.requestFocus() }
+    }
+    LaunchedEffect(focusSearch) {
+        if (focusSearch) {
+            focusSearchField()
+            onSearchFocused()
+        }
+    }
     val reorder = remember { CityReorder(listState).apply { order = places.map { it.id } } }
     // Mientras no se arrastra, el orden es el guardado.
     LaunchedEffect(places) { if (reorder.dragging == null) reorder.order = places.map { it.id } }
@@ -207,13 +231,15 @@ fun CitiesScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        snackbarHost = { SnackbarHost(snackbar) },
+        // Arriba de la barra flotante: debajo, "Deshacer" no se veía ni se podía tocar.
+        snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = LocalBottomBarSpace.current)) },
         topBar = {
             LargeTopAppBar(
                 title = { Text(tr("Ciudades", "Cities")) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Volver", "Back"))
+                // Sin flecha de volver: es una pestaña de la barra, no una pantalla abierta encima.
+                actions = {
+                    IconButton(onClick = onCompare, enabled = canCompare) {
+                        Icon(CompareIcon, contentDescription = tr("Comparar ciudades", "Compare cities"))
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -241,7 +267,8 @@ fun CitiesScreen(
                     onValueChange = { query = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 12.dp),
+                        .padding(bottom = 12.dp)
+                        .focusRequester(searchFocus),
                     placeholder = { Text(tr("Buscar una ciudad", "Search for a city")) },
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                     trailingIcon = if (query.isEmpty()) null else {
@@ -268,9 +295,12 @@ fun CitiesScreen(
                 query.trim().length >= 2 && search.query != query.trim() && search.results.isEmpty() ->
                     item { Hint(tr("Buscando…", "Searching…")) }
             }
-            items(search.results, key = { "r-" + it.id }) { place ->
+            // Los resultados van juntos en un grupo redondeado, como las filas de Ajustes.
+            itemsIndexed(search.results, key = { _, place -> "r-" + place.id }) { index, place ->
                 // Las que ya están guardadas se marcan: agregarlas de nuevo no hacía nada.
                 val saved = places.any { it.id == place.id }
+                val top = if (index == 0) 24.dp else 4.dp
+                val bottom = if (index == search.results.lastIndex) 24.dp else 4.dp
                 ListItem(
                     headlineContent = { Text(place.name) },
                     supportingContent = place.detail?.let { detail -> @Composable { Text(detail) } },
@@ -282,16 +312,19 @@ fun CitiesScreen(
                             Icon(Icons.Rounded.Add, contentDescription = tr("Agregar", "Add"))
                         }
                     },
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
-                    modifier = Modifier.clickable {
-                        if (saved) {
-                            onOpenPlace(place.id)
-                        } else {
-                            viewModel.addPlace(place)
-                            justAdded = place
-                        }
-                        query = ""
-                    },
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                    modifier = Modifier
+                        .padding(bottom = 2.dp)
+                        .clip(RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom))
+                        .clickable {
+                            if (saved) {
+                                onOpenPlace(place.id)
+                            } else {
+                                viewModel.addPlace(place)
+                                justAdded = place
+                            }
+                            query = ""
+                        },
                 )
             }
 
@@ -428,13 +461,54 @@ fun CitiesScreen(
                 }
             }
 
-            item {
-                Hint(
-                    tr(
-                        "Deslizá a la izquierda para quitar y a la derecha para ponerle un apodo. Mantené apretada para moverla.",
-                        "Swipe left to remove and right to nickname. Press and hold to move it.",
-                    ),
-                )
+            if (places.isEmpty()) {
+                // Sin ciudades guardadas: qué se puede hacer acá, con el buscador a un toque.
+                item(key = "vacio") {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Place,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(40.dp),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            tr("Agregá tu primera ciudad", "Add your first city"),
+                            style = MaterialTheme.typography.titleLarge,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            tr(
+                                "Buscala por nombre para ver su clima, compararla con otras y usarla en los widgets.",
+                                "Search by name to see its weather, compare it with others and use it in widgets.",
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.widthIn(max = 360.dp),
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Button(onClick = { scope.launch { focusSearchField() } }) {
+                            Text(tr("Buscar una ciudad", "Search for a city"))
+                        }
+                    }
+                }
+            } else {
+                // Los gestos solo tienen sentido con alguna ciudad a la vista.
+                item {
+                    Hint(
+                        tr(
+                            "Deslizá a la izquierda para quitar y a la derecha para ponerle un apodo. Mantené apretada para moverla.",
+                            "Swipe left to remove and right to nickname. Press and hold to move it.",
+                        ),
+                    )
+                }
             }
             }
         }

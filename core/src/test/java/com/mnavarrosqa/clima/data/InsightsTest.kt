@@ -67,6 +67,16 @@ class InsightsTest {
     }
 
     @Test
+    fun lluviaSoloDelRadarNoDiceCuandoPara() {
+        // Lo que guarda el repositorio cuando el radar ve lluvia y el modelo no: "ahora" pasa a
+        // lluvia leve y las horas siguen secas. No se sabe cuándo para.
+        val byRadar = snapshot(code = 61, precipitation = 0.2).copy(rainByRadar = true)
+        assertNull(Insights.headline(byRadar))
+        // Sin la marca, las mismas horas secas sí dan una hora.
+        assertTrue(Insights.headline(snapshot(code = 61, precipitation = 0.2))!!.startsWith("Para de llover"))
+    }
+
+    @Test
     fun cuandoParaDeNevar() {
         val hours = (0..8).map { i ->
             Hour(hour.plusHours(i.toLong()).toString(), -2.0, if (i < 3) 73 else 3, if (i < 3) 90 else 10, true)

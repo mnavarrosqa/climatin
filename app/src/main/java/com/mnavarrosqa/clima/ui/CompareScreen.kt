@@ -64,14 +64,24 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.tr
 import com.mnavarrosqa.clima.data.windText
+import com.mnavarrosqa.clima.data.mmText
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalConfiguration
 import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 
-/** Cuántas ciudades entran lado a lado: con más, en un teléfono las columnas no se leen. */
-private const val MAX_COMPARED = 3
+/**
+ * Cuántas ciudades entran lado a lado según el ancho en dp: tres en un teléfono (con más, las
+ * columnas no se leen), cuatro en un plegable abierto y cinco en una tablet.
+ */
+private fun maxCompared(widthDp: Int): Int = when {
+    widthDp >= 840 -> 5
+    widthDp >= 600 -> 4
+    else -> 3
+}
 
 /** Ícono de "comparar": tres barras redondeadas (no está entre los íconos básicos de Material). */
 internal val CompareIcon: ImageVector by lazy {
@@ -92,7 +102,7 @@ internal val CompareIcon: ImageVector by lazy {
 }
 
 /**
- * Dos o tres lugares guardados (incluida "Mi ubicación") lado a lado: ahora, máxima y mínima de
+ * Dos o más lugares guardados (incluida "Mi ubicación") lado a lado: ahora, máxima y mínima de
  * hoy, lluvia, viento, UV y la curva de las próximas 12 horas. Las curvas comparten la escala,
  * así se ve de un vistazo cuál está más fresco.
  */
@@ -107,9 +117,12 @@ fun CompareScreen(viewModel: WeatherViewModel, initialIds: List<String>, onBack:
         places.forEach { add(it.id) }
     }
     // Se guarda como texto para que la elección sobreviva a girar la pantalla.
-    var chosenText by rememberSaveable { mutableStateOf(initialIds.take(MAX_COMPARED).joinToString("|")) }
-    // Una ciudad quitada mientras tanto deja de compararse.
-    val chosen = chosenText.split('|').filter { it.isNotEmpty() && it in options }
+    val widthDp = LocalConfiguration.current.screenWidthDp
+    val maxCompared = maxCompared(widthDp)
+    var chosenText by rememberSaveable { mutableStateOf(initialIds.take(maxCompared).joinToString("|")) }
+    // Una ciudad quitada mientras tanto deja de compararse; si la pantalla se angostó (plegable
+    // cerrado), quedan las que entran.
+    val chosen = chosenText.split('|').filter { it.isNotEmpty() && it in options }.take(maxCompared)
     fun nameOf(id: String): String =
         if (id == CURRENT_PLACE_ID) tr("Mi ubicación", "My location") else places.firstOrNull { it.id == id }?.shownName ?: id
 
@@ -148,12 +161,13 @@ fun CompareScreen(viewModel: WeatherViewModel, initialIds: List<String>, onBack:
                 .padding(top = padding.calculateTopPadding())
                 .navigationBarsPadding()
                 .wrapContentWidth(Alignment.CenterHorizontally)
-                .widthIn(max = 720.dp)
+                // Con cuatro o cinco columnas hace falta más ancho que con tres.
+                .widthIn(max = if (maxCompared > 3) 960.dp else 720.dp)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                tr("Elegí hasta $MAX_COMPARED lugares", "Pick up to $MAX_COMPARED places"),
+                tr("Elegí hasta $maxCompared lugares", "Pick up to $maxCompared places"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -170,7 +184,7 @@ fun CompareScreen(viewModel: WeatherViewModel, initialIds: List<String>, onBack:
                             // Siempre queda al menos uno.
                             if (next.isNotEmpty()) chosenText = next.joinToString("|")
                         },
-                        enabled = selected || chosen.size < MAX_COMPARED,
+                        enabled = selected || chosen.size < maxCompared,
                         label = { Text(nameOf(id), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = when {
                             selected -> ({ Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp)) })
@@ -203,7 +217,14 @@ fun CompareScreen(viewModel: WeatherViewModel, initialIds: List<String>, onBack:
                         )
                         Spacer(Modifier.height(6.dp))
                         if (snapshot == null) {
-                            Text(tr("Sin pronóstico todavía", "No forecast yet"), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                            Text(
+                                tr("Sin pronóstico todavía", "No forecast yet"),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                            // Sin esto la columna quedaba vacía hasta la próxima actualización automática.
+                            TextButton(onClick = viewModel::refresh) { Text(tr("Reintentar", "Retry")) }
                         } else {
                             val current = snapshot.withCurrentFromHours().current
                             Image(
@@ -234,7 +255,7 @@ fun CompareScreen(viewModel: WeatherViewModel, initialIds: List<String>, onBack:
                 val sum = today?.precipitationSum
                 when {
                     chance == null -> null
-                    sum != null && sum >= 0.1 -> "$chance% · ${(sum * 10).roundToInt() / 10.0} mm"
+                    sum != null && sum >= 0.1 -> "$chance% · ${mmText(sum)}"
                     else -> "$chance%"
                 }
             }
@@ -299,17 +320,13 @@ private fun CompareRow(
 private fun CompareSection(label: String?, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(24.dp),
+        shape = ClimaShapes.tile,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 14.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 16.dp)) {
             if (label != null) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-                )
+                // El mismo título en versalitas que las tarjetas del pronóstico.
+                CardLabel(label, Modifier.padding(start = 8.dp, bottom = 10.dp))
             }
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
         }

@@ -1,5 +1,6 @@
 package com.mnavarrosqa.clima.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -27,11 +28,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Place
@@ -51,6 +51,9 @@ import kotlin.math.atan
 import kotlin.math.sinh
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,36 +68,54 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mnavarrosqa.clima.data.CURRENT_PLACE_ID
 import com.mnavarrosqa.clima.data.Geo
+import com.mnavarrosqa.clima.data.RadarImage
+import com.mnavarrosqa.clima.data.RadarList
 import com.mnavarrosqa.clima.data.RainFrame
 import com.mnavarrosqa.clima.data.RainMap
 import com.mnavarrosqa.clima.data.WeatherRepository
+import com.mnavarrosqa.clima.data.mmText
 import com.mnavarrosqa.clima.data.shortHour
 import com.mnavarrosqa.clima.data.tr
 import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.time.Instant
 import java.time.ZoneId
 import kotlin.math.abs
@@ -122,28 +143,60 @@ private class RainArea(
 /** Un lugar marcado en el mapa: tus ciudades y donde estás. */
 private class MapPin(val name: String, val latitude: Double, val longitude: Double, val here: Boolean)
 
+/** Lo que hay en pantalla: lo que midió el radar o lo que calcula el modelo, y de qué hora. */
+private data class Shown(val radar: Boolean, val epochSeconds: Long)
+
 /**
- * Mapa de lluvia animado (3 horas atrás y 12 adelante). Se arrastra, se pellizca para acercar,
- * doble toque acerca y tocar un punto dice cuánto llueve ahí a esa hora. Muestra tus ciudades.
- * Mantener apretado un punto ofrece agregarlo a tus ciudades ([onAddPlace]).
+ * Lo último que se cargó del modelo. Vive con el proceso: al volver a la pestaña del mapa no se
+ * le pide de nuevo a Open-Meteo, que limita las consultas por minuto.
  */
+private var keptArea: Pair<Long, RainArea>? = null
+private const val KEPT_AREA_MS = 10 * 60_000L
+
+/**
+ * Teselas del radar que se tienen a la vez (las de la pantalla por cada imagen de las dos horas).
+ * Si no entran, el radar se pide con menos zoom y se estira: son menos descargas y menos memoria.
+ */
+private const val RADAR_TILE_BUDGET = 160
+
+/** Margen alrededor de la primera y la última imagen del radar en que todavía se muestra. */
+private const val RADAR_SLACK_SECONDS = 5 * 60L
+
+/**
+ * Mapa de lluvia animado (3 horas atrás y 12 adelante). Hasta ahora se ve lo que midió el radar
+ * (RainViewer, cada 10 minutos, donde hay cobertura); de ahí en adelante, y donde el radar no
+ * muestra nada, lo que calcula el modelo de Open-Meteo. Se arrastra, se pellizca para acercar,
+ * doble toque acerca y tocar un punto dice si llueve ahí a esa hora. Muestra tus ciudades.
+ * Mantener apretado un punto ofrece agregarlo a tus ciudades ([onAddPlace]).
+ *
+ * Es una pestaña de la barra: no tiene flecha de volver y [onBack] no se usa (el botón atrás del
+ * sistema lo atiende la raíz). El centro, el zoom y la hora elegida se guardan al cambiar de pestaña.
+ */
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPlace: ((Place) -> Unit)? = null) {
     // El tema elegido en la app (claro u oscuro), no el del sistema.
     val dark = LocalDarkTheme.current
     val context = LocalContext.current
     // Vista: zoom entero de las teselas, escala del pellizco (0,75 a 1,5) y centro en teselas.
-    var zoom by rememberSaveable { mutableIntStateOf(7) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var centerX by rememberSaveable { mutableDoubleStateOf(Geo.tileX(longitude, 7)) }
-    var centerY by rememberSaveable { mutableDoubleStateOf(Geo.tileY(latitude, 7)) }
-    var area by remember { mutableStateOf<RainArea?>(null) }
+    // Con el lugar como clave: al abrir el mapa de otra ciudad no vuelve a la vista de la anterior.
+    var zoom by rememberSaveable(latitude, longitude) { mutableIntStateOf(7) }
+    var scale by rememberSaveable(latitude, longitude) { mutableFloatStateOf(1f) }
+    var centerX by rememberSaveable(latitude, longitude) { mutableDoubleStateOf(Geo.tileX(longitude, 7)) }
+    var centerY by rememberSaveable(latitude, longitude) { mutableDoubleStateOf(Geo.tileY(latitude, 7)) }
+    var area by remember {
+        mutableStateOf(keptArea?.takeIf { System.currentTimeMillis() - it.first < KEPT_AREA_MS }?.second)
+    }
+    // La hora que se estaba viendo (epoch), para volver a ella al regresar a la pestaña. En un
+    // arreglo y no en un estado: se escribe en cada cuadro y nadie tiene que recomponerse por eso.
+    val savedTime = rememberSaveable { longArrayOf(-1L) }
     // Posición en la línea de tiempo, continua (2,4 es "entre las 2 y las 3"): la lluvia se funde de
     // una hora a la otra en vez de saltar.
-    val position = remember { Animatable(0f) }
+    val position = remember { Animatable(startPosition(area?.frames.orEmpty(), savedTime[0], null)) }
     val frameIndex by remember { derivedStateOf { position.value.roundToInt() } }
     val scope = rememberCoroutineScope()
-    var playing by remember { mutableStateOf(true) }
+    var playing by rememberSaveable { mutableStateOf(true) }
+    var showInfo by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     // Sube para volver a intentar después de un error.
@@ -152,13 +205,23 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
     var lastAttempt by remember { mutableIntStateOf(0) }
     // Lo que dice el punto tocado: "Lluvia moderada · 2,1 mm".
     var probe by remember { mutableStateOf<Pair<Offset, String>?>(null) }
-    // Las horas del mapa en la zona del lugar que se mira, no en la del teléfono.
+    // Radar: la lista de imágenes (null si no se pudo bajar: queda solo el modelo), las teselas
+    // que se usan ahora y si alguna trae algo. Sin nada en ninguna (zona sin cobertura, o seca
+    // las dos horas) se muestra el modelo, como antes.
+    var radarList by remember { mutableStateOf<RadarList?>(null) }
+    val radarImages = remember { mutableStateMapOf<String, ImageBitmap>() }
+    var radarSeen by remember { mutableStateOf(false) }
+    var radarLoading by remember { mutableStateOf(false) }
     val cached = remember { WeatherRepository.get(context).allCached() }
-    val zone = remember(latitude, longitude) {
+    val snapshot = remember(latitude, longitude) {
         cached.firstOrNull { abs(it.latitude - latitude) < 0.01 && abs(it.longitude - longitude) < 0.01 }
-            ?.timezone?.let { runCatching { ZoneId.of(it) }.getOrNull() }
-            ?: ZoneId.systemDefault()
     }
+    // Las horas del mapa en la zona del lugar que se mira, no en la del teléfono.
+    val zone = remember(snapshot) {
+        snapshot?.timezone?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
+    }
+    // El nombre que va arriba, donde antes estaba la flecha.
+    val placeName = if (snapshot == null) tr("Mapa de lluvia", "Rain map") else snapshot.place ?: tr("Mi ubicación", "My location")
     // Las ciudades agregadas desde el mapa se marcan enseguida, sin esperar su pronóstico.
     val addedPins = remember { mutableStateListOf<MapPin>() }
     val pins = remember(addedPins.size) {
@@ -187,6 +250,20 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
     val tileScope = rememberCoroutineScope()
     val tilesInFlight = remember { mutableSetOf<String>() }
     val frames = area?.frames.orEmpty()
+
+    // La lista del radar cambia cada 10 minutos: se vuelve a pedir mientras el mapa está abierto.
+    // Si falla queda la anterior, o ninguna.
+    LaunchedEffect(attempt) {
+        while (true) {
+            RainMap.radarList()?.let { radarList = it }
+            delay(5 * 60_000L + 5_000L)
+        }
+    }
+    // Se anota la hora que se ve para volver a ella al regresar a la pestaña.
+    LaunchedEffect(frames) {
+        if (frames.isEmpty()) return@LaunchedEffect
+        snapshotFlow { position.value }.collect { savedTime[0] = timeAt(frames, it) }
+    }
 
     // Reproducir: avanza parejo, una hora cada 0,9 s; al final espera un poco y vuelve al principio.
     LaunchedEffect(playing, frames.size) {
@@ -275,11 +352,14 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
                 runCatching { RainMap.load(x0, y0, x1, y1, requestZoom) }
                     .onSuccess { result ->
                         val first = area == null
-                        area = RainArea(x0, y0, x1, y1, requestZoom, result, result.map(RainMap::overlay))
-                        if (first || position.value > result.lastIndex) {
-                            // Arranca en la hora actual.
-                            val now = System.currentTimeMillis() / 1000
-                            position.snapTo(result.indexOfLast { it.epochSeconds <= now }.coerceAtLeast(0).toFloat())
+                        val fresh = RainArea(x0, y0, x1, y1, requestZoom, result, result.map(RainMap::overlay))
+                        area = fresh
+                        keptArea = System.currentTimeMillis() to fresh
+                        if (first) {
+                            // Arranca en la hora que se estaba viendo, o en la actual.
+                            position.snapTo(startPosition(result, savedTime[0], null))
+                        } else if (position.value > result.lastIndex) {
+                            position.snapTo(startPosition(result, -1L, null))
                         }
                     }
                     .onFailure { failure ->
@@ -297,7 +377,87 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
             }
         }
 
-        val frame = frames.getOrNull(frameIndex)
+        // Radar: se pide con el zoom del mapa (hasta el máximo gratuito) o con menos si las teselas
+        // de todas las imágenes no entran en el tope. Depende del zoom y del tamaño de la pantalla,
+        // no de dónde está el centro: arrastrar no lo cambia.
+        val radar = radarList
+        val radarCount = radar?.frames?.size ?: 0
+        val radarZoom = radarZoomFor(zoom, widthPx, heightPx, radarCount)
+        // Cuántas teselas del mapa ocupa de lado una del radar.
+        val radarFactor = 2.0.pow(zoom - radarZoom)
+        val radarX0 = floor((centerX - halfW) / radarFactor).toInt()
+        val radarX1 = floor((centerX + halfW) / radarFactor).toInt()
+        val radarY0 = floor((centerY - halfH) / radarFactor).toInt().coerceAtLeast(0)
+        val radarY1 = floor((centerY + halfH) / radarFactor).toInt().coerceAtMost((1 shl radarZoom) - 1)
+        val radarTiles = remember(radarX0, radarX1, radarY0, radarY1) {
+            buildList {
+                for (x in radarX0..radarX1) {
+                    for (y in radarY0..radarY1) add(Tile(x, y))
+                }
+            }
+        }
+        // Dirección de cada tesela, por imagen: se arma una vez y no en cada cuadro del dibujo.
+        val radarUrls = remember(radar, radarTiles, radarZoom) {
+            if (radar == null) {
+                emptyList()
+            } else {
+                val world = 1 shl radarZoom
+                radar.frames.map { image ->
+                    radarTiles.map { RainMap.radarTileUrl(radar.host, image.path, radarZoom, Math.floorMod(it.x, world), it.y) }
+                }
+            }
+        }
+        LaunchedEffect(radarUrls) {
+            if (radarUrls.isEmpty()) return@LaunchedEffect
+            val wanted = HashSet<String>()
+            radarUrls.forEach { wanted.addAll(it) }
+            // Lo que ya no se ve se suelta; lo que quedó en memoria de antes se toma sin bajar.
+            radarImages.keys.retainAll(wanted)
+            wanted.forEach { url ->
+                if (url !in radarImages) RainMap.radarCached(url)?.let { radarImages[url] = it }
+            }
+            radarSeen = radarImages.values.any { !RainMap.isBlank(it) }
+            // De la imagen más nueva a la más vieja: lo de ahora es lo primero que se quiere ver.
+            val missing = radarUrls.asReversed().flatten().distinct().filter { it !in radarImages }
+            if (missing.isEmpty()) return@LaunchedEffect
+            // Con una pausa, para no pedir mientras se arrastra.
+            delay(300)
+            radarLoading = true
+            try {
+                val gate = Semaphore(4)
+                coroutineScope {
+                    missing.forEach { url ->
+                        launch {
+                            gate.withPermit {
+                                RainMap.radarTile(url)?.let { tile ->
+                                    radarImages[url] = tile
+                                    if (!RainMap.isBlank(tile)) radarSeen = true
+                                }
+                            }
+                        }
+                    }
+                }
+            } finally {
+                radarLoading = false
+            }
+        }
+        // Las imágenes del radar que se usan: ninguna si no trajo nada para lo que se ve.
+        val radarFrames: List<RadarImage> = if (radar != null && radarSeen) radar.frames else emptyList()
+        // Qué hay en pantalla. Cambia unas pocas veces por vuelta, no en cada cuadro.
+        val shown by remember(frames, radarFrames) {
+            derivedStateOf {
+                val index = radarPosition(radarFrames, timeAt(frames, position.value))?.roundToInt()
+                if (index != null) {
+                    Shown(true, radarFrames[index.coerceIn(0, radarFrames.lastIndex)].epochSeconds)
+                } else {
+                    Shown(false, frames.getOrNull(position.value.roundToInt())?.epochSeconds ?: -1L)
+                }
+            }
+        }
+        // "Ahora" en la línea de tiempo: la última imagen del radar si hay, o la hora en curso.
+        val nowPosition = startPosition(frames, -1L, radarFrames.lastOrNull()?.epochSeconds)
+        val atNow by remember(nowPosition) { derivedStateOf { abs(position.value - nowPosition) < 0.5f } }
+
         val markerColor = MaterialTheme.colorScheme.primary
         val measurer = rememberTextMeasurer()
         val pinStyle = TextStyle(
@@ -305,6 +465,8 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
         )
+        // Borde del color del mapa alrededor de cada nombre: sin él no se leía sobre calles y lluvia.
+        val pinHalo = if (dark) Color(0xE61B1D21) else Color(0xE6FFFFFF)
         // Los nombres se miden una vez: el mapa se redibuja en cada cuadro mientras se reproduce.
         val pinLabels = remember(pins, pinStyle) { pins.map { measurer.measure(it.name, pinStyle) } }
 
@@ -320,6 +482,44 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
             if (col !in 0 until RainMap.COLUMNS || row !in 0 until RainMap.ROWS) return null
             return a.frames.getOrNull(frameIndex)?.values?.getOrNull(row * RainMap.COLUMNS + col)
         }
+
+        /** Lo que marca el radar en un punto de la pantalla, en la imagen que se ve; null si no se sabe. */
+        fun radarAt(point: Offset, w: Float, h: Float): String? {
+            val index = radarPosition(radarFrames, timeAt(frames, position.value))?.roundToInt() ?: return null
+            val tile = 512f * scale
+            val tx = (centerX + (point.x - w / 2) / tile) / radarFactor
+            val ty = (centerY + (point.y - h / 2) / tile) / radarFactor
+            val slot = radarTiles.indexOf(Tile(floor(tx).toInt(), floor(ty).toInt()))
+            val image = radarUrls.getOrNull(index)?.getOrNull(slot)?.let { radarImages[it] } ?: return null
+            // El radar da colores, no milímetros: se dice si marca lluvia o no.
+            return if (RainMap.radarWet(image, tx - floor(tx), ty - floor(ty))) {
+                tr("Lluvia según el radar", "Rain on the radar")
+            } else {
+                tr("Sin lluvia según el radar", "No rain on the radar")
+            }
+        }
+
+        val pinReach = with(density) { 22.dp.toPx() }
+        // Tocar: dice qué llueve en el punto; si es una de tus ciudades, además centra el mapa en ella.
+        val onMapTap: (Offset, Float, Float) -> Unit = { point, w, h ->
+            val tile = 512f * scale
+            val pin = pins.firstOrNull {
+                val x = w / 2 + ((Geo.tileX(it.longitude, zoom) - centerX) * tile).toFloat()
+                val y = h / 2 + ((Geo.tileY(it.latitude, zoom) - centerY) * tile).toFloat()
+                abs(x - point.x) < pinReach && abs(y - point.y) < pinReach
+            }
+            // Se lee antes de mover el mapa.
+            val text = if (shown.radar) radarAt(point, w, h) else rainAt(point, w, h)?.let { rainText(it) }
+            if (pin != null) {
+                centerX = Geo.tileX(pin.longitude, zoom)
+                centerY = Geo.tileY(pin.latitude, zoom)
+                probe = text?.let { Offset(w / 2, h / 2) to it }
+            } else {
+                probe = text?.let { point to it }
+            }
+        }
+        // Los gestos se instalan una sola vez: así llaman siempre a la versión de esta composición.
+        val tapHandler = rememberUpdatedState(onMapTap)
 
         Canvas(
             Modifier
@@ -358,10 +558,7 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
                                 zoom++; centerX *= 2; centerY *= 2
                             }
                         },
-                        onTap = { point ->
-                            val mm = rainAt(point, size.width.toFloat(), size.height.toFloat())
-                            probe = if (mm == null) null else point to rainText(mm)
-                        },
+                        onTap = { point -> tapHandler.value(point, size.width.toFloat(), size.height.toFloat()) },
                         onLongPress = { point ->
                             // Del punto de la pantalla a latitud y longitud (Mercator, al revés).
                             val tile = 512f * scale
@@ -403,7 +600,33 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
                     drawImage(it, dstOffset = IntOffset(p.x.roundToInt(), p.y.roundToInt()), dstSize = tileSize)
                 }
             }
-            loaded?.let { a ->
+            // Hasta la última imagen del radar se dibuja el radar; después, o si no trajo nada, el modelo.
+            val radarPos = radarPosition(radarFrames, timeAt(frames, position.value))
+            if (radarPos != null) {
+                fun radarLayer(index: Int, alpha: Float) {
+                    val urls = radarUrls.getOrNull(index) ?: return
+                    if (alpha <= 0.01f) return
+                    radarTiles.forEachIndexed { slot, tile ->
+                        val image = urls.getOrNull(slot)?.let { radarImages[it] } ?: return@forEachIndexed
+                        if (RainMap.isBlank(image)) return@forEachIndexed
+                        // Las esquinas se redondean por separado: así no quedan rayas entre teselas.
+                        val corner = screen(tile.x * radarFactor, tile.y * radarFactor)
+                        val opposite = screen((tile.x + 1) * radarFactor, (tile.y + 1) * radarFactor)
+                        val left = corner.x.roundToInt()
+                        val top = corner.y.roundToInt()
+                        val w = opposite.x.roundToInt() - left
+                        val h = opposite.y.roundToInt() - top
+                        if (w > 0 && h > 0) {
+                            drawImage(image, dstOffset = IntOffset(left, top), dstSize = IntSize(w, h), alpha = alpha * 0.85f)
+                        }
+                    }
+                }
+                // Entre dos imágenes se mezclan las dos, igual que el modelo entre dos horas.
+                val i0 = floor(radarPos).toInt()
+                val t = radarPos - i0
+                radarLayer(i0, sqrt(1f - t))
+                if (t > 0.01f) radarLayer(i0 + 1, sqrt(t))
+            } else loaded?.let { a ->
                 val topLeft = screen(a.x0 * factor, a.y0 * factor)
                 val bottomRight = screen(a.x1 * factor, a.y1 * factor)
                 val dstOffset = IntOffset(topLeft.x.roundToInt(), topLeft.y.roundToInt())
@@ -428,8 +651,10 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
                 if (p.x < -40 || p.y < -40 || p.x > this.size.width + 40 || p.y > this.size.height + 40) return@forEachIndexed
                 drawCircle(Color.White, radius = (if (pin.here) 9 else 6).dp.toPx(), center = p)
                 drawCircle(if (pin.here) markerColor else Color(0xFF5C6370), radius = (if (pin.here) 6 else 4).dp.toPx(), center = p)
-                val label = pinLabels[index]
-                drawText(label, topLeft = Offset(p.x + 10.dp.toPx(), p.y - label.size.height / 2f))
+                val label = pinLabels.getOrNull(index) ?: return@forEachIndexed
+                val at = Offset(p.x + 10.dp.toPx(), p.y - label.size.height / 2f)
+                drawText(label, color = pinHalo, topLeft = at, drawStyle = Stroke(width = 3.dp.toPx(), join = StrokeJoin.Round))
+                drawText(label, topLeft = at)
             }
             probe?.let { (point, _) ->
                 drawCircle(Color.White, radius = 7.dp.toPx(), center = point)
@@ -447,12 +672,25 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
                 .statusBarsPadding()
                 .padding(12.dp)
                 .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilledTonalIconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Volver", "Back"))
+            // El lugar del mapa, donde iba la flecha: el mapa es una pestaña, no hay a dónde volver.
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .padding(end = 12.dp)
+                    .height(40.dp),
+            ) {
+                Row(Modifier.padding(start = 10.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Place, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(placeName, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-            Spacer(Modifier.weight(1f))
             // Vuelve al lugar elegido, con el zoom del principio.
             FilledTonalIconButton(onClick = {
                 zoom = 7
@@ -493,114 +731,273 @@ fun RadarScreen(latitude: Double, longitude: Double, onBack: () -> Unit, onAddPl
                     zoom--; centerX /= 2; centerY /= 2
                 }
             }) {
-                Text("−", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = tr("Alejar", "Zoom out") })
+                MinusGlyph(tr("Alejar", "Zoom out"))
             }
         }
 
+        // Pantalla ancha: una tarjeta flotante abajo al principio y el mapa a todo el ancho; en
+        // el teléfono, la hoja de borde a borde que llega hasta abajo, detrás de la barra flotante.
+        val wide = maxWidth >= 720.dp
+        val barSpace = LocalBottomBarSpace.current
+        val sheetModifier = if (wide) {
+            Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp + barSpace)
+                .width(380.dp)
+        } else {
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+        }
+        // En la hoja, el contenido queda arriba de la barra de abajo.
+        val contentModifier: Modifier = if (wide) Modifier else Modifier.navigationBarsPadding().padding(bottom = barSpace)
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.95f),
             contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .widthIn(max = 720.dp)
-                .fillMaxWidth(),
+            shape = if (wide) RoundedCornerShape(28.dp) else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            modifier = sheetModifier,
         ) {
-            Column(
-                Modifier
-                    .navigationBarsPadding()
-                    // La hoja llega hasta abajo, detrás de la barra flotante: su contenido queda arriba.
-                    .padding(bottom = LocalBottomBarSpace.current)
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        // La hora que se ve, grande; abajo, lo tocado o el error.
-                        Text(
-                            frame?.let { frameLabel(it, zone) } ?: tr("Mapa de lluvia", "Rain map"),
-                            style = MaterialTheme.typography.titleLarge,
+            Column(contentModifier.animateContentSize()) {
+                // Línea fina mientras se baja algo (modelo o radar); el lugar queda reservado
+                // para que la hoja no salte.
+                Box(Modifier.fillMaxWidth().height(3.dp)) {
+                    if (loading || radarLoading || (frames.isEmpty() && error == null)) {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 28.dp)
+                                .height(2.dp)
+                                .semantics { contentDescription = tr("Cargando", "Loading") },
                         )
-                        Text(
-                            error ?: probe?.second?.let { tr("Acá: ", "Here: ") + it }
-                                ?: if (frame == null) {
-                                    tr("Cargando…", "Loading…")
-                                } else if (onAddPlace != null) {
-                                    tr("Tocá el mapa para ver cuánto llueve; mantené apretado para agregar una ciudad", "Tap the map to see how much it rains; long-press to add a city")
-                                } else {
-                                    tr("Tocá el mapa para ver cuánto llueve", "Tap the map to see how much it rains")
-                                },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (error != null) {
-                        TextButton(onClick = { attempt++ }) { Text(tr("Reintentar", "Retry")) }
-                    } else if (loading && area != null) {
-                        Text(tr("Actualizando…", "Updating…"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    // "Ahora" solo si la línea de tiempo no está ya en la hora actual.
-                    val nowIndex = frames.indexOfLast { it.epochSeconds <= System.currentTimeMillis() / 1000 }
-                    if (frames.size > 1 && nowIndex >= 0 && frameIndex != nowIndex) {
-                        TextButton(onClick = { scrub(nowIndex.toFloat()) }) { Text(tr("Ahora", "Now")) }
                     }
                 }
-                if (frames.size > 1) {
-                    Spacer(Modifier.height(8.dp))
+                val known = shown.epochSeconds >= 0
+                val title = if (known) frameLabel(shown.epochSeconds, zone, minutes = shown.radar) else tr("Mapa de lluvia", "Rain map")
+                // Qué se está viendo: lo que midió el radar, o lo que calcula el modelo (pasado o futuro).
+                val kind = when {
+                    shown.radar -> tr("Radar", "Radar")
+                    shown.epochSeconds > System.currentTimeMillis() / 1000 -> tr("Pronóstico", "Forecast")
+                    else -> tr("Estimación del modelo", "Model estimate")
+                }
+                Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 7.dp, bottom = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        FilledTonalIconButton(onClick = { playing = !playing }) {
-                            if (playing) {
-                                Text("❚❚", style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { contentDescription = tr("Pausar", "Pause") })
-                            } else {
-                                Icon(Icons.Rounded.PlayArrow, contentDescription = tr("Reproducir", "Play"))
+                        Column(Modifier.weight(1f)) {
+                            if (known) {
+                                Text(kind, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+                            // La hora que se ve, grande; abajo, lo tocado o el error.
+                            Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val status = error ?: probe?.second?.let { tr("Acá: ", "Here: ") + it }
+                                ?: if (frames.isEmpty()) tr("Cargando…", "Loading…") else null
+                            if (status != null) {
+                                Text(status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        Spacer(Modifier.width(12.dp))
-                        // Lluvia en el centro del mapa, hora por hora: se ve de un vistazo cuándo llueve.
-                        val centerRain = remember(area, zoom, (centerX * 4).roundToInt(), (centerY * 4).roundToInt()) {
-                            area?.let { a ->
-                                val f = 2.0.pow(zoom - a.zoom)
-                                val col = ((centerX / f - a.x0) / (a.x1 - a.x0) * RainMap.COLUMNS).toInt().coerceIn(0, RainMap.COLUMNS - 1)
-                                val row = ((centerY / f - a.y0) / (a.y1 - a.y0) * RainMap.ROWS).toInt().coerceIn(0, RainMap.ROWS - 1)
-                                a.frames.map { it.values.getOrElse(row * RainMap.COLUMNS + col) { 0f } }
-                            }.orEmpty()
+                        if (error != null) {
+                            TextButton(onClick = { attempt++ }) { Text(tr("Reintentar", "Retry")) }
                         }
-                        RainTimeline(
-                            frames = frames,
-                            rain = centerRain,
-                            position = { position.value },
-                            zone = zone,
-                            onScrub = scrub,
-                            modifier = Modifier.weight(1f),
-                        )
+                        // "Ahora" solo si la línea de tiempo no está ya ahí.
+                        if (frames.size > 1 && !atNow) {
+                            TextButton(onClick = { scrub(nowPosition) }) { Text(tr("Ahora", "Now")) }
+                        }
+                        // La leyenda y las fuentes, a pedido: la hoja tapa menos mapa.
+                        IconButton(onClick = { showInfo = !showInfo }) {
+                            Icon(
+                                Icons.Rounded.Info,
+                                contentDescription = if (showInfo) {
+                                    tr("Ocultar la leyenda y las fuentes", "Hide legend and sources")
+                                } else {
+                                    tr("Ver la leyenda y las fuentes", "Show legend and sources")
+                                },
+                                tint = if (showInfo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (frames.size > 1) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(Modifier.padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            FilledTonalIconButton(onClick = { playing = !playing }) {
+                                if (playing) {
+                                    PauseGlyph(tr("Pausar", "Pause"))
+                                } else {
+                                    Icon(Icons.Rounded.PlayArrow, contentDescription = tr("Reproducir", "Play"))
+                                }
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            // Lluvia en el centro del mapa, hora por hora: se ve de un vistazo cuándo llueve.
+                            val centerRain = remember(area, zoom, (centerX * 4).roundToInt(), (centerY * 4).roundToInt()) {
+                                area?.let { a ->
+                                    val f = 2.0.pow(zoom - a.zoom)
+                                    val col = ((centerX / f - a.x0) / (a.x1 - a.x0) * RainMap.COLUMNS).toInt().coerceIn(0, RainMap.COLUMNS - 1)
+                                    val row = ((centerY / f - a.y0) / (a.y1 - a.y0) * RainMap.ROWS).toInt().coerceIn(0, RainMap.ROWS - 1)
+                                    a.frames.map { it.values.getOrElse(row * RainMap.COLUMNS + col) { 0f } }
+                                }.orEmpty()
+                            }
+                            // El tramo de la línea de tiempo que cubre el radar, si se está usando.
+                            val radarSpan = if (radarFrames.isEmpty()) {
+                                null
+                            } else {
+                                positionAt(frames, radarFrames.first().epochSeconds)..positionAt(frames, radarFrames.last().epochSeconds)
+                            }
+                            RainTimeline(
+                                frames = frames,
+                                rain = centerRain,
+                                position = { position.value },
+                                current = frameIndex,
+                                stateText = if (known) "$kind, $title" else title,
+                                radarSpan = radarSpan,
+                                zone = zone,
+                                onScrub = scrub,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                    if (showInfo) {
+                        Column(Modifier.padding(end = 12.dp)) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                if (onAddPlace != null) {
+                                    tr("Tocá el mapa para ver si llueve en un punto; mantené apretado para agregar una ciudad.", "Tap the map to see if it rains at a point; long-press to add a city.")
+                                } else {
+                                    tr("Tocá el mapa para ver si llueve en un punto.", "Tap the map to see if it rains at a point.")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                tr(
+                                    "Hasta ahora se ve lo que midió el radar en las últimas 2 horas. De ahí en adelante, y donde el radar no muestra nada, se ve lo que calcula el modelo del pronóstico.",
+                                    "Up to now you see what the radar measured over the last 2 hours. From there on, and where the radar shows nothing, you see what the forecast model calculates.",
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                tr("Colores del pronóstico (el radar usa su propia escala)", "Forecast colors (the radar uses its own scale)"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            RainLegend()
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                tr(
+                                    "Radar: RainViewer · Pronóstico: Open-Meteo · Mapa: Esri, HERE, Garmin, © OpenStreetMap",
+                                    "Radar: RainViewer · Forecast: Open-Meteo · Map: Esri, HERE, Garmin, © OpenStreetMap",
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                RainLegend()
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    tr(
-                        "Lluvia calculada por Open-Meteo (pronóstico, no radar) · Mapa: Esri, HERE, Garmin, © OpenStreetMap",
-                        "Rain modeled by Open-Meteo (forecast, not radar) · Map: Esri, HERE, Garmin, © OpenStreetMap",
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
+    }
+}
+
+/** El zoom con que se pide el radar: el del mapa, hasta el máximo gratuito, o menos si no entra en el tope. */
+private fun radarZoomFor(zoom: Int, widthPx: Float, heightPx: Float, images: Int): Int {
+    var z = minOf(zoom, RainMap.RADAR_MAX_ZOOM)
+    while (z > 0 && radarTileCount(widthPx, heightPx, zoom - z) * images > RADAR_TILE_BUDGET) z--
+    return z
+}
+
+/** Cuántas teselas del radar puede hacer falta para cubrir la pantalla si cada una se estira [levels] niveles. */
+private fun radarTileCount(widthPx: Float, heightPx: Float, levels: Int): Int {
+    val side = 512f * (1 shl levels.coerceIn(0, 12))
+    return (ceil(widthPx / side).toInt() + 1) * (ceil(heightPx / side).toInt() + 1)
+}
+
+/** La hora (epoch) de una posición continua de la línea de tiempo; -1 si no hay horas. */
+private fun timeAt(frames: List<RainFrame>, position: Float): Long {
+    if (frames.isEmpty()) return -1L
+    val p = position.coerceIn(0f, frames.lastIndex.toFloat())
+    val i = floor(p).toInt()
+    val a = frames[i].epochSeconds
+    val b = frames[(i + 1).coerceAtMost(frames.lastIndex)].epochSeconds
+    return a + ((b - a) * (p - i)).toLong()
+}
+
+/** La posición de la línea de tiempo que corresponde a una hora, sin salirse de los extremos. */
+private fun positionAt(frames: List<RainFrame>, time: Long): Float {
+    if (frames.size < 2 || time <= frames.first().epochSeconds) return 0f
+    val next = frames.indexOfFirst { it.epochSeconds > time }
+    if (next < 1) return frames.lastIndex.toFloat()
+    val a = frames[next - 1].epochSeconds
+    val b = frames[next].epochSeconds
+    return (next - 1) + (time - a).toFloat() / (b - a).coerceAtLeast(1L).toFloat()
+}
+
+/**
+ * Dónde arranca la línea de tiempo: en la hora guardada ([savedTime]) si sigue entre las cargadas;
+ * si no, en la última imagen del radar ([radarTime]) o en la hora en curso.
+ */
+private fun startPosition(frames: List<RainFrame>, savedTime: Long, radarTime: Long?): Float {
+    if (frames.isEmpty()) return 0f
+    val range = frames.first().epochSeconds..frames.last().epochSeconds
+    if (savedTime in range) return positionAt(frames, savedTime)
+    if (radarTime != null && radarTime in range) return positionAt(frames, radarTime)
+    val now = System.currentTimeMillis() / 1000
+    return frames.indexOfLast { it.epochSeconds <= now }.coerceAtLeast(0).toFloat()
+}
+
+/**
+ * Posición continua entre las imágenes del radar para una hora (1,5 es "entre la segunda y la
+ * tercera"), o null si esa hora no la cubre el radar: es más vieja que la primera o es futuro.
+ */
+private fun radarPosition(images: List<RadarImage>, time: Long): Float? {
+    if (images.isEmpty() || time < 0) return null
+    if (time < images.first().epochSeconds - RADAR_SLACK_SECONDS) return null
+    if (time > images.last().epochSeconds + RADAR_SLACK_SECONDS) return null
+    val next = images.indexOfFirst { it.epochSeconds > time }
+    if (next < 0) return images.lastIndex.toFloat()
+    if (next == 0) return 0f
+    val a = images[next - 1].epochSeconds
+    val b = images[next].epochSeconds
+    return (next - 1) + (time - a).toFloat() / (b - a).coerceAtLeast(1L).toFloat()
+}
+
+/** El "−" de alejar, dibujado: el juego de íconos del proyecto no trae uno. */
+@Composable
+private fun MinusGlyph(description: String) {
+    val color = LocalContentColor.current
+    Canvas(Modifier.size(24.dp).semantics { contentDescription = description }) {
+        val y = size.height / 2
+        drawLine(color, Offset(size.width * 0.23f, y), Offset(size.width * 0.77f, y), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+    }
+}
+
+/** Las dos barras de pausa, dibujadas, del mismo tamaño que el ícono de reproducir. */
+@Composable
+private fun PauseGlyph(description: String) {
+    val color = LocalContentColor.current
+    Canvas(Modifier.size(24.dp).semantics { contentDescription = description }) {
+        val bar = Size(size.width / 6f, size.height * 0.5f)
+        val top = (size.height - bar.height) / 2
+        val radius = CornerRadius(bar.width / 3)
+        drawRoundRect(color, topLeft = Offset(size.width / 2 - bar.width * 1.5f, top), size = bar, cornerRadius = radius)
+        drawRoundRect(color, topLeft = Offset(size.width / 2 + bar.width * 0.5f, top), size = bar, cornerRadius = radius)
     }
 }
 
 /**
  * Línea de tiempo propia: una barra por hora con la lluvia en el centro del mapa (del color de su
  * intensidad), una marca en la hora actual y el cursor que se arrastra o se toca. El cursor se
- * mueve parejo, sin saltos de hora en hora.
+ * mueve parejo, sin saltos de hora en hora. Si se está usando el radar, abajo se marca qué tramo
+ * es radar ([radarSpan], en posiciones) y dónde empieza el pronóstico.
  */
 @Composable
 private fun RainTimeline(
     frames: List<RainFrame>,
     rain: List<Float>,
     position: () -> Float,
+    current: Int,
+    stateText: String,
+    radarSpan: ClosedFloatingPointRange<Float>?,
     zone: ZoneId,
     onScrub: (Float) -> Unit,
     modifier: Modifier = Modifier,
@@ -613,7 +1010,20 @@ private fun RainTimeline(
             Modifier
                 .fillMaxWidth()
                 .height(44.dp)
-                .semantics { contentDescription = tr("Línea de tiempo de la lluvia", "Rain timeline") }
+                // Para TalkBack es un control deslizante: una hora por paso.
+                .semantics {
+                    contentDescription = tr("Línea de tiempo de la lluvia", "Rain timeline")
+                    stateDescription = stateText
+                    progressBarRangeInfo = ProgressBarRangeInfo(
+                        current.toFloat().coerceIn(0f, last.coerceAtLeast(0f)),
+                        0f..last.coerceAtLeast(0f),
+                        (frames.size - 2).coerceAtLeast(0),
+                    )
+                    setProgress(action = { value ->
+                        onScrub(value.roundToInt().toFloat())
+                        true
+                    })
+                }
                 .pointerInput(frames.size) {
                     detectTapGestures { onScrub(it.x / size.width * frames.size - 0.5f) }
                 }
@@ -636,8 +1046,8 @@ private fun RainTimeline(
                 drawRoundRect(
                     color.copy(alpha = color.alpha * alpha),
                     topLeft = Offset(slot * i + (slot - barWidth) / 2, size.height - h),
-                    size = androidx.compose.ui.geometry.Size(barWidth, h),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2),
+                    size = Size(barWidth, h),
+                    cornerRadius = CornerRadius(barWidth / 2),
                 )
             }
             if (nowIndex >= 0) {
@@ -646,7 +1056,7 @@ private fun RainTimeline(
             }
             // Cursor: se lee la posición al dibujar, así moverse no recompone nada.
             val x = slot * position() + slot / 2
-            drawLine(colors.primary, Offset(x, 4.dp.toPx()), Offset(x, size.height), strokeWidth = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(colors.primary, Offset(x, 4.dp.toPx()), Offset(x, size.height), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
             drawCircle(colors.primary, radius = 6.dp.toPx(), center = Offset(x, 6.dp.toPx()))
             drawCircle(colors.surface, radius = 2.5.dp.toPx(), center = Offset(x, 6.dp.toPx()))
         }
@@ -655,7 +1065,7 @@ private fun RainTimeline(
             frames.indices.forEach { i ->
                 val label = when {
                     i == nowIndex -> tr("Ahora", "Now")
-                    i % 3 == 0 && kotlin.math.abs(i - nowIndex) > 1 -> timeOf(frames[i], zone)
+                    i % 3 == 0 && abs(i - nowIndex) > 1 -> timeOf(frames[i].epochSeconds, zone)
                     else -> ""
                 }
                 Text(
@@ -667,6 +1077,36 @@ private fun RainTimeline(
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.weight(1f).wrapContentWidth(unbounded = true),
                 )
+            }
+        }
+        // Dónde termina lo medido y empieza lo calculado: "Radar | Pronóstico".
+        if (radarSpan != null) {
+            val measurer = rememberTextMeasurer()
+            val style = MaterialTheme.typography.labelSmall
+            val radarWord = remember(style, colors.primary) {
+                measurer.measure(tr("Radar", "Radar"), style.copy(color = colors.primary))
+            }
+            val forecastWord = remember(style, colors.onSurfaceVariant) {
+                measurer.measure(tr("Pronóstico", "Forecast"), style.copy(color = colors.onSurfaceVariant))
+            }
+            Canvas(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp)
+                    .height(22.dp),
+            ) {
+                val slot = size.width / frames.size
+                val start = slot * radarSpan.start + slot / 2
+                val end = slot * radarSpan.endInclusive + slot / 2
+                val y = 2.dp.toPx()
+                drawLine(colors.outlineVariant, Offset(0f, y), Offset(size.width, y), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+                drawLine(colors.primary, Offset(start, y), Offset(end, y), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+                drawLine(colors.onSurfaceVariant, Offset(end, 0f), Offset(end, 8.dp.toPx()), strokeWidth = 1.dp.toPx())
+                val gap = 5.dp.toPx()
+                val top = 5.dp.toPx()
+                // "Radar" termina en el corte y "Pronóstico" empieza ahí, sin salirse de la línea.
+                drawText(radarWord, topLeft = Offset((end - gap - radarWord.size.width).coerceAtLeast(0f), top))
+                drawText(forecastWord, topLeft = Offset((end + gap).coerceAtMost(size.width - forecastWord.size.width).coerceAtLeast(0f), top))
             }
         }
     }
@@ -709,7 +1149,8 @@ private fun RainLegend() {
 
 /** "Lluvia moderada · 2,1 mm" para el punto tocado. */
 private fun rainText(mm: Float): String {
-    val amount = String.format(java.util.Locale.getDefault(), "%.1f mm", mm)
+    // En la unidad elegida (mm o pulgadas).
+    val amount = mmText(mm.toDouble())
     return when {
         mm < 0.1f -> tr("Sin lluvia", "No rain")
         mm < 0.5f -> tr("Llovizna", "Drizzle") + " · $amount"
@@ -720,17 +1161,22 @@ private fun rainText(mm: Float): String {
     }
 }
 
-private fun timeOf(frame: RainFrame, zone: ZoneId): String =
-    shortHour(Instant.ofEpochSecond(frame.epochSeconds).atZone(zone).toLocalDateTime())
+private fun timeOf(epochSeconds: Long, zone: ZoneId): String =
+    shortHour(Instant.ofEpochSecond(epochSeconds).atZone(zone).toLocalDateTime())
 
-private fun frameLabel(frame: RainFrame, zone: ZoneId): String {
-    val hours = ((frame.epochSeconds - System.currentTimeMillis() / 1000) / 3600.0).roundToInt()
+/** "14:20 · hace 20 min". [minutes]: para el radar, que va de a 10 minutos; el modelo va por hora. */
+private fun frameLabel(epochSeconds: Long, zone: ZoneId, minutes: Boolean): String {
+    val seconds = epochSeconds - System.currentTimeMillis() / 1000
+    val mins = (seconds / 60.0).roundToInt()
+    val hours = (seconds / 3600.0).roundToInt()
     val relative = when {
+        minutes && abs(mins) < 3 -> tr("ahora", "now")
+        minutes && abs(mins) < 60 -> if (mins < 0) tr("hace ${-mins} min", "${-mins} min ago") else tr("en $mins min", "in $mins min")
         hours == 0 -> tr("ahora", "now")
         hours < 0 -> tr("hace ${-hours} h", "${-hours} h ago")
         else -> tr("en $hours h", "in $hours h")
     }
-    return "${timeOf(frame, zone)} · $relative"
+    return "${timeOf(epochSeconds, zone)} · $relative"
 }
 
 /**

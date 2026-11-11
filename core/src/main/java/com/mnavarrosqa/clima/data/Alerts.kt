@@ -23,6 +23,29 @@ data class WeatherAlert(
     /** Ya venció (si el SMN no responde, las guardadas pueden quedar viejas). Sin fecha, no vence. */
     fun isExpired(now: java.time.OffsetDateTime = java.time.OffsetDateTime.now()): Boolean =
         expires?.let { runCatching { java.time.OffsetDateTime.parse(it).isBefore(now) }.getOrNull() } ?: false
+
+    /**
+     * Lo que dice la alerta, sin su id: el SMN manda una por zona, con ids distintos y el mismo
+     * texto. Sirve para no repetirlas y para seguirlas aunque cambie cuál de las dos queda.
+     */
+    val textSignature: String
+        get() = listOf(event.trim().lowercase(), severity.orEmpty(), headline?.trim().orEmpty(), description?.trim().orEmpty())
+            .joinToString("\u0001")
+}
+
+/**
+ * Saca las alertas repetidas (mismo texto en dos zonas). De cada grupo queda la que vence más
+ * tarde, y entre iguales la de id menor: así no depende del orden en que las manda el SMN.
+ */
+fun List<WeatherAlert>.withoutRepeats(): List<WeatherAlert> {
+    fun end(alert: WeatherAlert): Long = alert.expires
+        ?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
+        ?: Long.MAX_VALUE
+    val best = groupBy { it.textSignature }.mapValues { (_, same) ->
+        same.sortedWith(compareByDescending<WeatherAlert> { end(it) }.thenBy { it.id }).first()
+    }
+    // En el orden en que llegaron.
+    return map { it.textSignature }.distinct().mapNotNull { best[it] }
 }
 
 object Geo {

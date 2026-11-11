@@ -67,7 +67,8 @@ fun ForecastSkeleton(status: String? = null) {
             ) { text ->
                 Text(
                     text,
-                    style = MaterialTheme.typography.titleMedium,
+                    // Con sombra, como el resto del texto suelto sobre el cielo: de día no se leía.
+                    style = MaterialTheme.typography.titleMedium.onSky(),
                     color = OnSky,
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )
@@ -77,14 +78,14 @@ fun ForecastSkeleton(status: String? = null) {
             Bone(shimmer, Modifier.width(160.dp).height(24.dp))
             Bone(shimmer, Modifier.width(120.dp).height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Bone(shimmer, Modifier.width(150.dp).height(96.dp), RoundedCornerShape(28.dp))
+                Bone(shimmer, Modifier.width(150.dp).height(96.dp), ClimaShapes.card)
                 Bone(shimmer, Modifier.size(96.dp), CircleShape)
             }
             Bone(shimmer, Modifier.width(200.dp).height(16.dp))
         }
         Bone(shimmer, Modifier.fillMaxWidth().height(36.dp), CircleShape)
-        Bone(shimmer, Modifier.fillMaxWidth().height(170.dp), RoundedCornerShape(28.dp))
-        Bone(shimmer, Modifier.fillMaxWidth().height(280.dp), RoundedCornerShape(28.dp))
+        Bone(shimmer, Modifier.fillMaxWidth().height(170.dp), ClimaShapes.card)
+        Bone(shimmer, Modifier.fillMaxWidth().height(280.dp), ClimaShapes.card)
     }
 }
 

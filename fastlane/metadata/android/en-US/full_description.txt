@@ -1,0 +1,21 @@
+Climatin is a beautiful, full-featured weather app with an animated sky that changes with the real weather and the time of day, and that adapts to your Android colors (Material You).
+
+What's inside:
+• Animated sky that follows the weather and the time: sun, clouds, rain, snow, fog, storms, stars, sunrise and sunset.
+• Hourly and 14-day forecast, with details when you tap a day and a line that sums up what's coming.
+• Rain alerts: when it starts, how long it lasts, how heavy it is and when it stops.
+• Animated rain map.
+• Details: feels like, UV with its hours, wind, humidity, dew point, pressure, visibility, air quality and pollen, sun and moon, rainfall, and whether it's warm or cold for the season.
+• Official alerts from Argentina's National Weather Service (SMN) for places in Argentina.
+• Alerts that fit you: daily summary, My routine (the weather before you leave and come back), big changes, frost, wind, very high UV, poor air and golden hour, with quiet hours.
+• Live on Android 16: incoming rain with a countdown, orange and red alerts, and the temperature in the status bar.
+• Heading out: two hours of live weather where you are.
+• Multiple cities: search them, reorder them, give them a nickname, compare them side by side and share the forecast as an image.
+• Eleven widgets with the sky as background or in your color, customizable and with a real preview.
+• Live wallpaper with the sky of the real weather.
+• Built for foldables and tablets too: two and three columns when there's room.
+• Wear OS app with a tile and a complication.
+• Personalization: light or dark theme, accent color, app icon, the cards you choose, and an animated, reduced or still sky.
+• Your choice of units: °C/°F, km/h, m/s, mph or knots, hPa, inHg or mmHg, and 12 or 24-hour time.
+
+No ads, no accounts. Your location is approximate and is only used to fetch the forecast. Weather data comes from Open-Meteo and the base map from Esri.

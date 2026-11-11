@@ -72,7 +72,7 @@ private fun PronosticoContent(snapshot: WeatherSnapshot) {
         else -> HeaderSize.INLINE
     }
     val dayCount = if (size.width >= 300.dp) 5 else 4
-    WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+    WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.vertical)) {
         // Ocupa todo el alto y los días van abajo, como en Clima: si no, el contenido quedaba
         // flotando en el medio del cielo.
         Column(modifier = GlanceModifier.fillMaxSize()) {

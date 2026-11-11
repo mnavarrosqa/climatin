@@ -162,7 +162,7 @@ class PildoraWidget : SimpleWeatherWidget() {
         val iconSize = (size.height * 0.55f).coerceIn(24.dp, 48.dp)
         WidgetSurface(
             colors,
-            modifier = GlanceModifier.padding(horizontal = 16.dp),
+            modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal),
             cornerRadius = size.height / 2,
         ) {
             Row(
@@ -223,7 +223,7 @@ class SemanaWidget : SimpleWeatherWidget() {
         val scale = fontScale()
         val header = if (size.height >= 220.dp * scale) HeaderSize.COMPACT else HeaderSize.INLINE
         val dayCount = ((size.height.value - header.reserve.value * scale - 24f - 6f) / (30f * scale)).toInt().coerceIn(2, 7)
-        WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.vertical)) {
             Column(modifier = GlanceModifier.fillMaxSize()) {
                 NowHeader(snapshot, colors, header)
                 Spacer(GlanceModifier.defaultWeight())
@@ -307,12 +307,13 @@ class SolWidget : SimpleWeatherWidget() {
                 accent = chartAccent(),
             )
         }
-        WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {
+        // El arco se calculó con 16 dp arriba y abajo: con 12 quedan 8 dp de aire para los textos.
+        WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.vertical)) {
             Column(modifier = GlanceModifier.fillMaxSize()) {
                 Text(
                     title,
                     maxLines = 1,
-                    style = TextStyle(color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Medium),
+                    style = TextStyle(color = colors.text, fontSize = WidgetType.title, fontWeight = FontWeight.Medium),
                 )
                 caption?.let {
                     Text(it, maxLines = 1, style = TextStyle(color = colors.textVariant, fontSize = WidgetType.caption))

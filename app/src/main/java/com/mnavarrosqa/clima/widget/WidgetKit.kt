@@ -54,7 +54,45 @@ object WidgetType {
     val rowLabel: TextUnit = 14.sp
     /** Textos chicos: horas, probabilidad de lluvia, notas. */
     val caption: TextUnit = 12.sp
+    /** Título de los widgets que arrancan con una frase (Sol, Próxima hora), en Medium. */
+    val title: TextUnit = 15.sp
+    /** Línea de texto corrido (la de Vistazo). */
+    val body: TextUnit = 16.sp
+    /** Temperatura al lado de un ícono en un widget mínimo (Clima 1×1). */
+    val tempTiny: TextUnit = 20.sp
+    /** Temperatura de una fila (Ciudades). */
+    val tempRow: TextUnit = 24.sp
 }
+
+/** Márgenes interiores de los widgets: uno solo para todos, así los bordes quedan alineados entre sí. */
+object WidgetPadding {
+    val horizontal: Dp = 16.dp
+    val vertical: Dp = 12.dp
+    /** Vertical de los widgets bajos (una fila de la grilla), donde cada dp cuenta. */
+    val verticalTight: Dp = 8.dp
+    /** Todos los lados en los widgets chicos (2×2). */
+    val small: Dp = 12.dp
+    /** Alrededor de un medidor redondo (Indicador). */
+    val gauge: Dp = 10.dp
+}
+
+/**
+ * Botones ⟳ y ›: un ícono de [icon] dentro de una caja de toque más grande. [full] es el mínimo
+ * cómodo; [tight] queda para los diseños donde 8 dp más cortan el contenido.
+ */
+object WidgetTouch {
+    val icon: Dp = 16.dp
+    val full: Dp = 40.dp
+    val tight: Dp = 32.dp
+    /** Desde este ancho de widget los botones pueden ser [full] de ancho sin comerse el nombre de la ciudad. */
+    val wideFrom: Dp = 280.dp
+}
+
+/**
+ * Alto de una línea de texto en dp. Android le suma aire arriba y abajo a cada línea (un 33 % del
+ * tamaño de letra en total); sin contarlo, los diseños calculados se pasaban del widget.
+ */
+fun textLineHeight(fontSize: TextUnit, scale: Float): Float = fontSize.value * 1.34f * scale
 
 /**
  * Tamaño del encabezado. [reserve] es el alto aproximado que ocupa con letra normal (hay que
@@ -77,7 +115,13 @@ fun todayRangeText(snapshot: WeatherSnapshot): String? = snapshot.today()?.let {
  * estado y máxima y mínima a la derecha.
  */
 @Composable
-fun NowHeader(snapshot: WeatherSnapshot, colors: WidgetColors, size: HeaderSize = HeaderSize.FULL) {
+fun NowHeader(
+    snapshot: WeatherSnapshot,
+    colors: WidgetColors,
+    size: HeaderSize = HeaderSize.FULL,
+    /** Botones de 40 dp de alto: suma 8 dp al encabezado, solo para diseños con ese lugar. */
+    roomyButtons: Boolean = false,
+) {
     val current = snapshot.current
     if (size == HeaderSize.INLINE) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -101,7 +145,7 @@ fun NowHeader(snapshot: WeatherSnapshot, colors: WidgetColors, size: HeaderSize 
     val compact = size == HeaderSize.COMPACT
     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Column(modifier = GlanceModifier.defaultWeight()) {
-            PlaceLabel(snapshot, colors, fontSize = WidgetType.place, fontWeight = FontWeight.Medium)
+            PlaceLabel(snapshot, colors, fontSize = WidgetType.place, fontWeight = FontWeight.Medium, roomy = roomyButtons)
             Text(
                 current.temperature.degrees(),
                 maxLines = 1,
@@ -226,6 +270,15 @@ fun DayRangeRow(
     }
 }
 
+/** Ícono de cada hora de [HoursRow] y aire del recuadro cuando va sobre un fondo de color. */
+private val HourIcon = 24.dp
+private val HoursBoxPadding = 6.dp
+
+/** Alto en dp que ocupa [HoursRow]: hay que restarlo antes de decidir si entra. */
+fun hoursRowHeight(colors: WidgetColors, scale: Float): Float =
+    textLineHeight(WidgetType.caption, scale) + HourIcon.value + textLineHeight(WidgetType.rowLabel, scale) +
+        if (colors.transparent) 0f else HoursBoxPadding.value * 2
+
 /**
  * Fila de próximas horas. Sobre el cielo (o sin fondo) va suelta, como en el Clima de Apple;
  * sobre un fondo de color, en un recuadro.
@@ -238,7 +291,7 @@ fun HoursRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {
     var modifier = GlanceModifier
         .fillMaxWidth()
         .clickable(openDay(snapshot.placeId, snapshot.nowAtPlace().toLocalDate().toString()))
-    if (!loose) modifier = modifier.background(colors.chip).cornerRadius(16.dp).padding(vertical = 6.dp)
+    if (!loose) modifier = modifier.background(colors.chip).cornerRadius(16.dp).padding(vertical = HoursBoxPadding)
     Row(modifier = modifier) {
         hours.forEachIndexed { index, hour ->
             Column(
@@ -253,7 +306,7 @@ fun HoursRow(snapshot: WeatherSnapshot, count: Int, colors: WidgetColors) {
                 Image(
                     provider = ImageProvider(WeatherCodes.icon(hour.code, hour.isDay)),
                     contentDescription = WeatherCodes.description(hour.code),
-                    modifier = GlanceModifier.size(24.dp).padding(vertical = 2.dp),
+                    modifier = GlanceModifier.size(HourIcon).padding(vertical = 2.dp),
                 )
                 Text(
                     hour.temperature.degrees(),

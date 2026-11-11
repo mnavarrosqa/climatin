@@ -50,7 +50,7 @@ class VistazoWidget : GlanceAppWidget(), PreviewableWidget {
 @Composable
 private fun VistazoContent(snapshot: WeatherSnapshot?) {
     val colors = widgetColors(snapshot, default = WidgetStyle.TRANSPARENT)
-    WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+    WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.verticalTight)) {
         Column(
             modifier = GlanceModifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
@@ -76,14 +76,14 @@ private fun VistazoContent(snapshot: WeatherSnapshot?) {
                     Text(
                         "${current.temperature.degrees()} ${WeatherCodes.description(current.code)}$place",
                         maxLines = 1,
-                        style = TextStyle(color = colors.text, fontSize = 16.sp),
+                        style = TextStyle(color = colors.text, fontSize = WidgetType.body),
                     )
                 }
                 Insights.headline(snapshot)?.takeIf { !tight && widgetShows(WidgetPart.INSIGHT) }?.let { headline ->
                     Text(
                         headline,
                         maxLines = 1,
-                        style = TextStyle(color = colors.textVariant, fontSize = 14.sp),
+                        style = TextStyle(color = colors.textVariant, fontSize = WidgetType.rowLabel),
                     )
                 }
             }

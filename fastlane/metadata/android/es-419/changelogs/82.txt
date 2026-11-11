@@ -1,0 +1,6 @@
+• Diseño nuevo: tarjetas, barra y alertas con el mismo vidrio sobre el cielo
+• Cada pestaña recuerda dónde estabas; con el plegable abierto la barra va al costado
+• Mapa con lluvia real del radar para las últimas horas
+• Unidades de lluvia y distancia (mm/in, km/mi)
+• Ajustes reordenados, política de privacidad y contacto
+• Arreglos: "para de llover" con lluvia del radar, "Deshacer" tapado en Ciudades, horas cortadas en el widget Clima

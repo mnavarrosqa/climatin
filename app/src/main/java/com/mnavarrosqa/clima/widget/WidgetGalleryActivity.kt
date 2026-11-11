@@ -8,6 +8,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -120,13 +121,12 @@ private fun WidgetGallery(onBack: () -> Unit) {
                                 ListItem(
                                     headlineContent = { Text(stringResource(kind.nameRes)) },
                                     supportingContent = { Text(stringResource(kind.descriptionRes)) },
-                                    trailingContent = {
-                                        IconButton(onClick = { edit(context, id) }) {
-                                            Icon(Icons.Rounded.Edit, contentDescription = tr("Personalizar", "Customize"))
-                                        }
-                                    },
+                                    // El lápiz solo indica: se toca toda la fila (antes, solo el lápiz).
+                                    trailingContent = { Icon(Icons.Rounded.Edit, contentDescription = null) },
                                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                                    modifier = Modifier.clip(RoundedCornerShape(20.dp)),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .clickable(onClickLabel = tr("Personalizar", "Customize")) { edit(context, id) },
                                 )
                             }
                         }

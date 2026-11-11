@@ -83,6 +83,10 @@ import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.PastWeather
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.mmText
+import com.mnavarrosqa.clima.data.visibilityText
+import com.mnavarrosqa.clima.data.distanceText
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.mnavarrosqa.clima.data.rainSoFarToday
 import com.mnavarrosqa.clima.data.rainfallText
 import com.mnavarrosqa.clima.data.seasonText
@@ -108,6 +112,9 @@ private class Detail(
 ) {
     /** Qué significa el dato y qué hacer con él; tocar la tarjeta lo muestra. */
     var info: String? = null
+
+    /** Ícono chico delante de la nota (la flecha de la presión que sube o baja). */
+    var noteIcon: ImageVector? = null
 }
 
 /** Punto de rocío (fórmula de Magnus): a partir de 16° el aire se siente pesado. */
@@ -255,8 +262,9 @@ private fun hourlyDetails(snapshot: WeatherSnapshot, past: PastWeather?, night: 
                         if (gust != null) {
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(tr("Ráfagas", "Gusts"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(windText(gust), style = MaterialTheme.typography.labelLarge)
+                                val ink = surfaceInk()
+                                Text(tr("Ráfagas", "Gusts"), style = MaterialTheme.typography.labelSmall, color = ink.variant)
+                                Text(windText(gust), style = MaterialTheme.typography.labelLarge, color = ink.content)
                                 GustBar((current.windSpeed / gust).toFloat())
                             }
                         }
@@ -409,7 +417,7 @@ private fun hourlyDetails(snapshot: WeatherSnapshot, past: PastWeather?, night: 
                     val until = next[last].dateTime.plusHours(1)
                     val total = (first..last).sumOf { rainHours[it].second ?: 0.0 }
                     tr("Probable de ${shortHour(from)} a ${shortHour(until)}", "Likely ${shortHour(from)}–${shortHour(until)}") +
-                        (if (total >= 0.1) " · " + String.format(java.util.Locale.US, "%.1f mm", total) else "")
+                        (if (total >= 0.1) " · " + mmText(total) else "")
                 } ?: tr("Próximas 24 horas", "Next 24 hours"),
                 // Sin lluvia, una tarjeta chica: las barras vacías dejaban una tarjeta ancha en blanco.
                 wide = rainHours.any { (it.first ?: 0) >= 10 },
@@ -450,11 +458,18 @@ private fun hourlyDetails(snapshot: WeatherSnapshot, past: PastWeather?, night: 
             val change = snapshot.pressureHoursAgo(3)?.let { before -> it - before }
             val trend = when {
                 change == null -> null
-                change <= -3 -> tr("↓ Baja rápido", "↓ Falling fast")
-                change <= -1 -> tr("↓ Bajando", "↓ Falling")
-                change >= 3 -> tr("↑ Sube rápido", "↑ Rising fast")
-                change >= 1 -> tr("↑ Subiendo", "↑ Rising")
+                change <= -3 -> tr("Baja rápido", "Falling fast")
+                change <= -1 -> tr("Bajando", "Falling")
+                change >= 3 -> tr("Sube rápido", "Rising fast")
+                change >= 1 -> tr("Subiendo", "Rising")
                 else -> tr("Estable", "Steady")
+            }
+            // La flecha va como ícono delante de la nota, no como un carácter del texto.
+            val trendIcon = when {
+                change == null -> null
+                change <= -1 -> ArrowDownIcon
+                change >= 1 -> ArrowUpIcon
+                else -> null
             }
             val series = snapshot.pressureSeries()
             add(
@@ -464,6 +479,7 @@ private fun hourlyDetails(snapshot: WeatherSnapshot, past: PastWeather?, night: 
                     trend,
                     visual = series?.let { (values, index) -> @Composable { Sparkline(values, nowIndex = index) } },
                 ).apply {
+                    noteIcon = trendIcon
                     info = tr(
                         "Presión del aire llevada al nivel del mar, para comparar entre lugares. Lo normal ronda los 1013 hPa; si baja rápido suele venir mal tiempo, y si sube, se estabiliza. La flecha compara con 3 horas atrás y la línea va de 12 horas atrás a 12 adelante.",
                         "Air pressure adjusted to sea level, so places can be compared. Around 1013 hPa is normal; a quick drop often means bad weather and a rise means it's settling. The arrow compares with 3 hours ago and the line goes from 12 hours ago to 12 ahead.",
@@ -478,7 +494,7 @@ private fun hourlyDetails(snapshot: WeatherSnapshot, past: PastWeather?, night: 
             add(
                 Detail(
                     tr("Visibilidad", "Visibility"),
-                    if (km >= 10) "+10 km" else if (km < 1) "${it.roundToInt()} m" else "${km.roundToInt()} km",
+                    visibilityText(it),
                     when {
                         fog?.now == true && fogAt != null -> tr("La niebla se levanta a las ${shortHour(fogAt)}", "Fog lifts at ${shortHour(fogAt)}")
                         fog?.now == true -> tr("Niebla por varias horas", "Fog for hours")
@@ -488,8 +504,8 @@ private fun hourlyDetails(snapshot: WeatherSnapshot, past: PastWeather?, night: 
                     },
                 ).apply {
                     info = tr(
-                        "Hasta dónde se ve. Con menos de 1 km hay niebla: manejá con luces bajas y más distancia.",
-                        "How far you can see. Under 1 km there's fog: drive with low beams and keep more distance.",
+                        "Hasta dónde se ve. Con menos de ${distanceText(1.0)} hay niebla: manejá con luces bajas y más distancia.",
+                        "How far you can see. Under ${distanceText(1.0)} there's fog: drive with low beams and keep more distance.",
                     )
                 },
             )
@@ -514,8 +530,8 @@ private const val PART_VISUAL = 2
 private fun TileRow(row: List<Detail>) {
     // Una tarjeta chica sola ocupa la mitad, con el lugar de al lado vacío.
     val columns = if (row.size == 1 && !row[0].wide) 2 else row.size
-    // El texto y los dibujos quedan fuera del Surface: el color de contenido se pone a mano.
-    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+    // El texto y los dibujos quedan fuera del Surface: los colores del vidrio se ponen a mano.
+    OnSkyGlass {
         Layout(
             content = {
                 row.forEachIndexed { i, detail ->
@@ -567,12 +583,10 @@ private fun TileBackground(detail: Detail, modifier: Modifier) {
             confirmButton = { TextButton(onClick = { open = false }) { Text(tr("Entendido", "Got it")) } },
         )
     }
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(24.dp),
+    SkyGlass(
+        shape = ClimaShapes.tile,
         modifier = modifier
-            .clip(RoundedCornerShape(24.dp))
+            .clip(ClimaShapes.tile)
             .then(if (info != null) Modifier.clickable(onClickLabel = tr("Qué significa", "What it means")) { open = true } else Modifier)
             // Una sola lectura para TalkBack, con la acción de ver qué significa.
             .clearAndSetSemantics {
@@ -590,18 +604,7 @@ private fun TileBackground(detail: Detail, modifier: Modifier) {
 /** Nombre, valor y nota. Va encima del fondo sin tomar toques (llegan al fondo) ni lectura propia. */
 @Composable
 private fun TileText(detail: Detail, modifier: Modifier) {
-    Column(modifier.clearAndSetSemantics { }) {
-        CardLabel(detail.label)
-        Spacer(Modifier.height(6.dp))
-        Text(detail.value, style = MaterialTheme.typography.titleLarge)
-        if (detail.note != null) {
-            Text(
-                detail.note,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    TileFacts(detail.label, detail.value, detail.note, detail.noteIcon, modifier.clearAndSetSemantics { })
 }
 
 /** El dibujo de la tarjeta, si tiene; si no, un hueco de tamaño cero. */
@@ -626,8 +629,10 @@ private fun growth(): State<Float> {
 /** Barra con la escala de colores y un punto en el valor actual. */
 @Composable
 private fun ScaleBar(fraction: Float, colors: List<Color>) {
-    val track = MaterialTheme.colorScheme.surfaceContainerHigh
-    val knob = MaterialTheme.colorScheme.onSurface
+    val ink = surfaceInk()
+    val track = ink.track
+    val ring = ink.knockout
+    val knob = ink.content
     val grow by growth()
     Canvas(
         Modifier
@@ -639,15 +644,15 @@ private fun ScaleBar(fraction: Float, colors: List<Color>) {
         drawLine(track, Offset(bar / 2, y), Offset(size.width - bar / 2, y), bar, StrokeCap.Round)
         drawLine(Brush.horizontalGradient(colors), Offset(bar / 2, y), Offset(size.width - bar / 2, y), bar, StrokeCap.Round)
         val x = bar / 2 + (size.width - bar) * fraction.coerceIn(0f, 1f) * grow
-        drawCircle(track, radius = 7.dp.toPx(), center = Offset(x, y))
+        drawCircle(ring, radius = 7.dp.toPx(), center = Offset(x, y))
         drawCircle(knob, radius = 5.dp.toPx(), center = Offset(x, y))
     }
 }
 
 /** Anillo de tres cuartos que se llena según el valor (humedad, chance de lluvia). */
 @Composable
-private fun RingGauge(fraction: Float, color: Color = MaterialTheme.colorScheme.primary) {
-    val track = MaterialTheme.colorScheme.surfaceContainerHigh
+private fun RingGauge(fraction: Float, color: Color = surfaceInk().accent) {
+    val track = surfaceInk().track
     val grow by growth()
     Canvas(Modifier.size(56.dp)) {
         val stroke = 7.dp.toPx()
@@ -669,17 +674,17 @@ private fun RingGauge(fraction: Float, color: Color = MaterialTheme.colorScheme.
 /** Brújula con los puntos cardinales y una flecha que apunta hacia donde sopla el viento. */
 @Composable
 private fun WindCompass(fromDegrees: Float) {
-    val colors = MaterialTheme.colorScheme
+    val ink = surfaceInk()
     val grow by growth()
     val measurer = rememberTextMeasurer()
-    val letterStyle = MaterialTheme.typography.labelSmall.copy(color = colors.onSurfaceVariant)
+    val letterStyle = MaterialTheme.typography.labelSmall.copy(color = ink.variant)
     val letters = remember(letterStyle) {
         (if (Lang.isSpanish) listOf("N", "E", "S", "O") else listOf("N", "E", "S", "W")).map { measurer.measure(it, letterStyle) }
     }
     Canvas(Modifier.size(64.dp)) {
         val radius = size.minDimension / 2
         val center = Offset(size.width / 2, size.height / 2)
-        drawCircle(colors.surfaceContainerHigh, radius = radius, center = center)
+        drawCircle(ink.track, radius = radius, center = center)
         // Letras en los cuatro puntos cardinales y marcas cortas en los intermedios.
         val letterRadius = radius - 9.dp.toPx()
         letters.forEachIndexed { i, layout ->
@@ -693,7 +698,7 @@ private fun WindCompass(fromDegrees: Float) {
             val outer = radius - 4.dp.toPx()
             val inner = outer - 3.dp.toPx()
             drawLine(
-                colors.onSurfaceVariant.copy(alpha = 0.5f),
+                ink.variant.copy(alpha = 0.5f),
                 Offset(center.x + inner * sin(angle).toFloat(), center.y - inner * cos(angle).toFloat()),
                 Offset(center.x + outer * sin(angle).toFloat(), center.y - outer * cos(angle).toFloat()),
                 1.5.dp.toPx(),
@@ -712,11 +717,11 @@ private fun WindCompass(fromDegrees: Float) {
                 close()
             }
             // La cola de donde viene, más finita; la punta hacia donde va.
-            drawLine(colors.primary.copy(alpha = 0.5f), Offset(center.x, center.y + length), center, 2.dp.toPx(), StrokeCap.Round)
-            drawLine(colors.primary, center, Offset(center.x, center.y - length + head * 0.7f), 3.dp.toPx(), StrokeCap.Round)
-            drawPath(arrow, colors.primary)
+            drawLine(ink.accent.copy(alpha = 0.5f), Offset(center.x, center.y + length), center, 2.dp.toPx(), StrokeCap.Round)
+            drawLine(ink.accent, center, Offset(center.x, center.y - length + head * 0.7f), 3.dp.toPx(), StrokeCap.Round)
+            drawPath(arrow, ink.accent)
         }
-        drawCircle(colors.primary, 3.dp.toPx(), center)
+        drawCircle(ink.accent, 3.dp.toPx(), center)
     }
 }
 
@@ -786,8 +791,8 @@ private fun skyDetail(snapshot: WeatherSnapshot): Pair<Detail, Boolean>? {
                 samples = samples,
                 now = Duration.between(dayStart, now).toMinutes() / 1440f,
                 body = null,
-                left = "↑ " + shortHour(rise),
-                right = "↓ " + shortHour(set),
+                left = SkyMark(rising = true, shortHour(rise)),
+                right = SkyMark(rising = false, shortHour(set)),
             )
         }.apply {
             val golden = set.minusHours(1)
@@ -830,7 +835,10 @@ private fun skyDetail(snapshot: WeatherSnapshot): Pair<Detail, Boolean>? {
         moonrise != null && moonrise.isAfter(now) -> tr("Sale a las ${shortHour(moonrise)}", "Rises at ${shortHour(moonrise)}")
         else -> tr("Bajo el horizonte esta noche", "Below the horizon tonight")
     }
-    val events = listOfNotNull(moonrise?.let { it to "↑ " + shortHour(it) }, moonset?.let { it to "↓ " + shortHour(it) }).sortedBy { it.first }
+    val events = listOfNotNull(
+        moonrise?.let { it to SkyMark(rising = true, shortHour(it)) },
+        moonset?.let { it to SkyMark(rising = false, shortHour(it)) },
+    ).sortedBy { it.first }
     val detail = Detail(
         tr("Luna", "Moon"),
         Moon.phaseName(date),
@@ -866,6 +874,24 @@ private const val SKY_SAMPLES = 97
 private fun durationText(minutes: Long): String =
     if (minutes >= 60) "${minutes / 60} h ${minutes % 60} min" else "$minutes min"
 
+/** Cuándo sale o se pone (el sol o la luna): la hora con su flecha, al pie del recorrido. */
+private class SkyMark(val rising: Boolean, val time: String)
+
+/** La hora de un [SkyMark] con la flecha como ícono (antes era un carácter "↑" o "↓"). */
+@Composable
+private fun SkyMarkLabel(mark: SkyMark?) {
+    if (mark == null) {
+        Spacer(Modifier.width(1.dp))
+        return
+    }
+    val ink = surfaceInk()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (mark.rising) ArrowUpIcon else ArrowDownIcon, contentDescription = null, tint = ink.variant, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(2.dp))
+        Text(mark.time, style = MaterialTheme.typography.labelMedium, color = ink.variant)
+    }
+}
+
 /** La luna que se dibuja en el recorrido, con su fase. */
 private class MoonBody(val age: Float, val southern: Boolean)
 
@@ -879,18 +905,20 @@ private fun SkyPath(
     samples: FloatArray,
     now: Float,
     body: MoonBody?,
-    left: String?,
-    right: String?,
+    left: SkyMark?,
+    right: SkyMark?,
     shade: ClosedFloatingPointRange<Float>? = null,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val darkTheme = LocalDarkTheme.current
+    val ink = surfaceInk()
+    // Sobre el vidrio oscuro van siempre los tonos claros.
+    val onDark = ink.onDark
     val grow by growth()
-    val dayColors = if (darkTheme) listOf(Color(0xFFFFB74D), Color(0xFFFFD54F)) else listOf(Color(0xFFF57C00), Color(0xFFFFA000))
-    val moonColor = if (darkTheme) Color(0xFFC5CAE9) else Color(0xFF5C6BC0)
-    val below = colors.onSurfaceVariant.copy(alpha = 0.55f)
-    val future = colors.onSurfaceVariant.copy(alpha = 0.35f)
-    val nightBand = colors.onSurface.copy(alpha = 0.06f)
+    val dayColors = if (onDark) listOf(Color(0xFFFFB74D), Color(0xFFFFD54F)) else listOf(Color(0xFFF57C00), Color(0xFFFFA000))
+    val moonColor = if (onDark) Color(0xFFC5CAE9) else Color(0xFF5C6BC0)
+    val below = ink.variant.copy(alpha = 0.55f)
+    val future = ink.variant.copy(alpha = 0.45f)
+    val nightBand = ink.content.copy(alpha = 0.08f)
+    val horizonLine = ink.variant.copy(alpha = 0.4f)
     Column {
         Canvas(
             Modifier
@@ -917,7 +945,7 @@ private fun SkyPath(
             val stroke = 3.dp.toPx()
             // Lo que falta: punteado y suave.
             drawPath(curve, future, style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 5.dp.toPx()))))
-            drawLine(colors.onSurfaceVariant.copy(alpha = 0.4f), Offset(0f, horizon), Offset(size.width, horizon), 1.dp.toPx())
+            drawLine(horizonLine, Offset(0f, horizon), Offset(size.width, horizon), 1.dp.toPx())
             // Lo que ya pasó: de color arriba del horizonte y gris abajo. Crece al aparecer.
             val shown = (now * grow).coerceIn(0f, 1f)
             clipRect(right = x(shown)) {
@@ -948,8 +976,8 @@ private fun SkyPath(
         }
         if (left != null || right != null) {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(left.orEmpty(), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
-                Text(right.orEmpty(), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                SkyMarkLabel(left)
+                SkyMarkLabel(right)
             }
         }
     }
@@ -958,7 +986,7 @@ private fun SkyPath(
 /** Línea chica de una serie (sensación, presión), con un punto en [nowIndex]. */
 @Composable
 private fun Sparkline(values: List<Double>, nowIndex: Int) {
-    val colors = MaterialTheme.colorScheme
+    val ink = surfaceInk()
     val grow by growth()
     Canvas(
         Modifier
@@ -977,18 +1005,18 @@ private fun Sparkline(values: List<Double>, nowIndex: Int) {
             values.indices.forEach { i -> point(i).let { if (i == 0) moveTo(it.x, it.y) else lineTo(it.x, it.y) } }
         }
         clipRect(right = size.width * grow) {
-            drawPath(path, colors.primary, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+            drawPath(path, ink.accent, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
         }
         val now = point(nowIndex.coerceIn(0, values.lastIndex))
-        drawCircle(colors.surface, 5.dp.toPx(), now)
-        drawCircle(colors.primary, 3.5.dp.toPx(), now)
+        drawCircle(ink.knockout, 5.dp.toPx(), now)
+        drawCircle(ink.content, 3.5.dp.toPx(), now)
     }
 }
 
 /** Barra de las ráfagas: la parte llena es el viento medio. */
 @Composable
 private fun GustBar(fraction: Float) {
-    val colors = MaterialTheme.colorScheme
+    val ink = surfaceInk()
     val grow by growth()
     Canvas(
         Modifier
@@ -997,8 +1025,8 @@ private fun GustBar(fraction: Float) {
             .height(8.dp),
     ) {
         val r = CornerRadius(size.height / 2)
-        drawRoundRect(colors.primary.copy(alpha = 0.25f), cornerRadius = r)
-        drawRoundRect(colors.primary, size = Size(size.width * fraction.coerceIn(0.05f, 1f) * grow, size.height), cornerRadius = r)
+        drawRoundRect(ink.accent.copy(alpha = 0.25f), cornerRadius = r)
+        drawRoundRect(ink.accent, size = Size(size.width * fraction.coerceIn(0.05f, 1f) * grow, size.height), cornerRadius = r)
     }
 }
 
@@ -1008,8 +1036,10 @@ private fun GustBar(fraction: Float) {
  */
 @Composable
 private fun RainBars(rain: List<Pair<Int?, Double?>>, labels: List<String>) {
-    val colors = MaterialTheme.colorScheme
-    val base = colors.tertiary
+    val ink = surfaceInk()
+    // Celeste fijo de lluvia: el terciario del tema se volvía violeta con color dinámico.
+    val base = ink.rain
+    val axis = ink.variant.copy(alpha = 0.3f)
     val grow by growth()
     Column {
         Canvas(
@@ -1019,7 +1049,7 @@ private fun RainBars(rain: List<Pair<Int?, Double?>>, labels: List<String>) {
         ) {
             val slot = size.width / rain.size
             val bar = slot * 0.6f
-            drawLine(colors.onSurfaceVariant.copy(alpha = 0.3f), Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
+            drawLine(axis, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
             rain.forEachIndexed { i, (probability, mm) ->
                 val p = (probability ?: 0) / 100f
                 if (p <= 0.02f) return@forEachIndexed
@@ -1039,7 +1069,7 @@ private fun RainBars(rain: List<Pair<Int?, Double?>>, labels: List<String>) {
                     Text(
                         if (i == 0) tr("Ahora", "Now") else label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = colors.onSurfaceVariant,
+                        color = ink.variant,
                         modifier = Modifier.weight(6f),
                     )
                 }

@@ -73,6 +73,16 @@ object NotifyPrefs {
         if (loaded) return
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         val d = NotifySettings()
+        // Quien tenía el UV de "Cambios bruscos" (ya no existe) sigue recibiéndolo por el aviso de
+        // UV. Se pasa una sola vez y con marca propia: mirar si "aviso_uv" estaba guardado no
+        // alcanzaba, porque cualquier cambio en los avisos lo guardaba en falso.
+        val migrated = p.getBoolean("uv_migrado", false)
+        val uvFromChanges = !migrated && p.getBoolean("cambios", d.changes) && p.getBoolean("cambios_uv", d.changeUv)
+        if (!migrated) {
+            val editor = p.edit().putBoolean("uv_migrado", true)
+            if (uvFromChanges) editor.putBoolean("aviso_uv", true)
+            editor.apply()
+        }
         settings = NotifySettings(
             rainLead = p.getInt("lluvia_anticipacion", d.rainLead),
             rainStops = p.getBoolean("lluvia_para", d.rainStops),
@@ -96,8 +106,7 @@ object NotifyPrefs {
             routineLeave = p.getInt("rutina_salida", d.routineLeave),
             routineBack = p.getInt("rutina_vuelta", d.routineBack),
             routineWeekdays = p.getBoolean("rutina_semana", d.routineWeekdays),
-            // Quien tenía el UV de "Cambios bruscos" (ya no existe) sigue recibiéndolo por este aviso.
-            uvAlert = p.getBoolean("aviso_uv", p.getBoolean("cambios", d.changes) && p.getBoolean("cambios_uv", d.changeUv)),
+            uvAlert = uvFromChanges || p.getBoolean("aviso_uv", d.uvAlert),
             airAlert = p.getBoolean("aviso_aire", d.airAlert),
         )
         loaded = true
@@ -176,7 +185,7 @@ object NotifyPrefs {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putLong("momento_$key", millis).apply()
     }
 
-    /** Alertas del SMN vigentes la última vez, "id|evento", para avisar cuando terminan. */
+    /** Alertas del SMN vigentes la última vez, "clave|evento", para avisar cuando terminan. */
     fun activeAlerts(context: Context): Set<String> =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getStringSet("alertas_activas", emptySet()).orEmpty()
 

@@ -5,9 +5,7 @@ import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
-import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
  * "¿Normal para la época?" y "Lluvia caída": cuentas con datos de días pasados. Viven en el
@@ -110,12 +108,6 @@ fun seasonText(todayMax: Double, normal: ClimateNormal, date: LocalDate): Season
         else -> tr("Normal para $month", "Normal for $month")
     }
     return SeasonText(sign + shown, "$note ($usual)")
-}
-
-/** Milímetros: con decimal si es poco ("2.5 mm"), redondeado si es mucho ("34 mm"). */
-fun mmText(mm: Double): String = when {
-    mm >= 10 -> "${mm.roundToInt()} mm"
-    else -> String.format(Locale.US, "%.1f", mm).removeSuffix(".0") + " mm"
 }
 
 /**

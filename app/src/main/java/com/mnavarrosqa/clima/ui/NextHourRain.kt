@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -47,8 +48,9 @@ fun nextHourRainForCard(snapshot: WeatherSnapshot): List<Double>? {
 fun NextHourRainCard(snapshot: WeatherSnapshot, values: List<Double>) {
     val outlook = snapshot.rainOutlook(withinMinutes = 120)
     val title = outlook?.let(::rainOutlookText) ?: tr("Lluvia en las próximas dos horas", "Rain in the next two hours")
-    val bar = MaterialTheme.colorScheme.primary
-    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    // Va sobre el vidrio del cielo: celeste de lluvia y blancos, no los colores del tema.
+    val bar = SkySurface.rain
+    val track = Color.White.copy(alpha = 0.12f)
     GlassCard(tr("Próxima hora", "Next hour")) {
         Column(
             Modifier
@@ -85,7 +87,7 @@ fun NextHourRainCard(snapshot: WeatherSnapshot, values: List<Double>) {
                     Text(
                         label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = SkySurface.contentVariant,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.weight(1f),
                     )

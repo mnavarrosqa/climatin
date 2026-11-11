@@ -25,6 +25,18 @@ class RainOutlookTest {
     )
 
     @Test
+    fun lluviaSoloDelRadarNoAnunciaQuePara() {
+        // El modelo no vio la lluvia: todo seco. Sin el radar no hay nada; con el radar corrigiendo
+        // "ahora" a lluvia tampoco tiene que salir "para de llover en unos minutos".
+        val dry = snapshot(code = 61, precipitation = 0.2, minutely = List(8) { 0.0 })
+        assertTrue(dry.rainOutlook() is RainOutlook.Stops)
+        assertNull(dry.copy(rainByRadar = true).rainOutlook())
+        // Aunque el modelo traiga lluvia para más tarde: ya está lloviendo, no "empieza".
+        val later = snapshot(code = 61, precipitation = 0.2, minutely = listOf(0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0))
+        assertNull(later.copy(rainByRadar = true).rainOutlook())
+    }
+
+    @Test
     fun sinLluviaNoHayAviso() {
         assertNull(snapshot(minutely = List(8) { 0.0 }).rainOutlook())
     }

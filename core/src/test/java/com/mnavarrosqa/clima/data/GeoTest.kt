@@ -6,6 +6,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GeoTest {
+    private fun alert(id: String, expires: String?, text: String = "Lluvias fuertes") =
+        WeatherAlert(id, "Lluvia", "Severe", text, "Detalle", null, expires)
+
+    @Test
+    fun alertasRepetidasEnDosZonas() {
+        val a = alert("zona-a", "2026-10-24T18:00:00-03:00")
+        val b = alert("zona-b", "2026-10-24T21:00:00-03:00")
+        val other = alert("otra", "2026-10-24T12:00:00-03:00", text = "Viento")
+        // Queda la que vence más tarde, venga en el orden que venga.
+        assertEquals(listOf("zona-b", "otra"), listOf(a, other, b).withoutRepeats().map { it.id })
+        assertEquals(listOf("otra", "zona-b"), listOf(other, b, a).withoutRepeats().map { it.id })
+        // Mismo vencimiento: la de id menor, no la primera.
+        val c = alert("zona-c", "2026-10-24T21:00:00-03:00")
+        assertEquals(listOf("zona-b"), listOf(c, b).withoutRepeats().map { it.id })
+        assertEquals(a.textSignature, b.textSignature)
+    }
+
     // Un cuadrado alrededor de Córdoba capital.
     private val cordoba = Geo.parsePolygon("-31.3,-64.3 -31.3,-64.1 -31.5,-64.1 -31.5,-64.3 -31.3,-64.3")
 

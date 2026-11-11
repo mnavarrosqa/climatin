@@ -71,6 +71,10 @@ import com.mnavarrosqa.clima.data.Hour
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.shortHour
+import com.mnavarrosqa.clima.data.compactHour
+import com.mnavarrosqa.clima.data.mmText
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.Icon
 
 private val SLOT = 60.dp
 
@@ -86,13 +90,15 @@ fun HourlyChart(
     alerts: List<AlertSpan> = emptyList(),
 ) {
     if (hours.isEmpty()) return
-    val colors = MaterialTheme.colorScheme
+    // Los colores salen de la superficie donde está el gráfico: blancos sobre el vidrio del
+    // pronóstico, los del tema en la hoja de un día.
+    val ink = surfaceInk()
     // Una entrada de caché por hora: si no, al dibujar la curva se vuelven a medir los 24 textos en cada cuadro.
     val measurer = rememberTextMeasurer(cacheSize = 32)
     // Recordado: el dibujo en caché del gráfico se rearma si cambia algo de lo que usa, y un estilo
     // nuevo en cada recomposición (al tocar una hora) lo rearmaba entero.
     val baseLabel = MaterialTheme.typography.labelLarge
-    val labelStyle = remember(baseLabel, colors.onSurface) { baseLabel.copy(color = colors.onSurface) }
+    val labelStyle = remember(baseLabel, ink.content) { baseLabel.copy(color = ink.content) }
     // La escala incluye la línea de ayer, para que no se salga del gráfico.
     val ghost = yesterday.takeIf { list -> list.size == hours.size && list.count { it != null } >= 2 }
     val min = minOf(hours.minOf { it.temperature }, ghost?.filterNotNull()?.minOrNull() ?: Double.MAX_VALUE)
@@ -114,20 +120,22 @@ fun HourlyChart(
     val scroll = rememberScrollState()
     // Hora y marca de sol de cada columna, calculadas una vez: Hour.dateTime parsea el texto en
     // cada acceso y antes se recalculaba en cada recomposición.
-    val labels = remember(hours) { hours.mapIndexed { i, h -> if (i == 0) tr("Ahora", "Now") else shortHour(h.dateTime) } }
+    val labels = remember(hours) { hours.mapIndexed { i, h -> if (i == 0) tr("Ahora", "Now") else compactHour(h.dateTime) } }
     val sunMarks = remember(hours, sunEvents) {
         hours.map { hour ->
             val start = hour.dateTime
             sunEvents.firstOrNull { !it.time.isBefore(start) && it.time.isBefore(start.plusHours(1)) }
         }
     }
-    val dark = LocalDarkTheme.current
-    val lineColors = remember(hours, dark) {
-        hours.map { TempColors.forTheme(TempColors.of(it.temperature), dark) }.let { if (it.size < 2) it + it else it }
+    val onDark = ink.onDark
+    val lineColors = remember(hours, onDark) {
+        hours.map { TempColors.forTheme(TempColors.of(it.temperature), onDark) }.let { if (it.size < 2) it + it else it }
     }
-    val highlight = colors.primary.copy(alpha = 0.12f)
-    val ghostColor = colors.onSurfaceVariant.copy(alpha = 0.55f)
-    val rainColor = Color(0xFF4A90E2).copy(alpha = 0.45f)
+    val highlight = ink.highlight
+    val ghostColor = ink.variant.copy(alpha = 0.6f)
+    val rainColor = ink.rain.copy(alpha = 0.5f)
+    val fillColor = ink.accent
+    val dotRing = ink.knockout
 
     Column(modifier) {
     Column(
@@ -168,7 +176,7 @@ fun HourlyChart(
                         lineTo(points.first().x, size.height)
                         close()
                     }
-                    val fillBrush = Brush.verticalGradient(listOf(colors.primary.copy(alpha = 0.35f), colors.primary.copy(alpha = 0f)))
+                    val fillBrush = Brush.verticalGradient(listOf(fillColor.copy(alpha = 0.3f), fillColor.copy(alpha = 0f)))
                     val lineBrush = Brush.horizontalGradient(lineColors, startX = points.first().x, endX = points.last().x)
                     val stroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                     val texts = hours.map { measurer.measure(it.temperature.degrees(), labelStyle) }
@@ -247,7 +255,7 @@ fun HourlyChart(
                             // Cada punto aparece cuando la curva llega hasta él.
                             if (p.x > visibleWidth + slot / 2) return@forEachIndexed
                             val big = i == selected
-                            drawCircle(colors.surface, radius = (if (big) 7f else 5f).dp.toPx(), center = p)
+                            drawCircle(dotRing, radius = (if (big) 7f else 5f).dp.toPx(), center = p)
                             drawCircle(lineColors[i], radius = (if (big) 5f else 3.5f).dp.toPx(), center = p)
                             val text = texts[i]
                             drawText(text, topLeft = Offset(p.x - text.size.width / 2f, p.y - text.size.height - labelGap))
@@ -284,25 +292,40 @@ fun HourlyChart(
                     Text(
                         if (probability >= 10) "$probability%" else " ",
                         style = MaterialTheme.typography.labelSmall,
-                        color = colors.tertiary,
+                        // Celeste fijo: el terciario del tema cambiaba con el color dinámico.
+                        color = ink.rain,
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
                         label,
                         style = MaterialTheme.typography.labelMedium,
-                        color = colors.onSurfaceVariant,
+                        color = ink.variant,
                         textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     // Si el sol sale o se pone en esta hora, se marca debajo, como en el Clima de Apple.
                     sunMarks[index]?.let { event ->
-                        Text(
-                            (if (event.sunrise) "↑ " else "↓ ") + shortHour(event.time),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (dark) Color(0xFFFFB74D) else Color(0xFFC25100),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                if (event.sunrise) ArrowUpIcon else ArrowDownIcon,
+                                contentDescription = null,
+                                tint = ink.sun,
+                                modifier = Modifier.size(10.dp),
+                            )
+                            Text(
+                                compactHour(event.time),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = ink.sun,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
                     }
                 }
             }
@@ -312,7 +335,7 @@ fun HourlyChart(
         Text(
             tr("Punteada: ayer a la misma hora", "Dotted: yesterday at the same time"),
             style = MaterialTheme.typography.labelSmall,
-            color = colors.onSurfaceVariant,
+            color = ink.variant,
             modifier = Modifier.padding(start = 16.dp, top = 2.dp),
         )
     }
@@ -344,12 +367,14 @@ private fun HourDetail(hour: Hour, rain: Pair<Int?, Double?>, isNow: Boolean) {
         hour.feelsLike?.let { tr("Sensación", "Feels like") + " ${it.degrees()}" },
         hour.windSpeed?.let { tr("Viento", "Wind") + " ${windText(it)}" },
         rain.first?.takeIf { it > 0 }?.let { tr("Lluvia", "Rain") + " $it%" },
-        rain.second?.takeIf { it > 0 }?.let { "${"%.1f".format(it)} mm" },
+        rain.second?.takeIf { it > 0 }?.let { mmText(it) },
     )
+    // Sobre el vidrio del cielo, un recuadro más claro del mismo vidrio; en una hoja, el del tema.
+    val ink = LocalSurfaceInk.current
     Surface(
-        color = colors.secondaryContainer,
-        contentColor = colors.onSecondaryContainer,
-        shape = RoundedCornerShape(20.dp),
+        color = ink?.highlight ?: colors.secondaryContainer,
+        contentColor = ink?.content ?: colors.onSecondaryContainer,
+        shape = ClimaShapes.inner,
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 12.dp),

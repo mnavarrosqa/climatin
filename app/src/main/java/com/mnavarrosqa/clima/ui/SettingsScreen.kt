@@ -55,6 +55,9 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material3.Button
+import androidx.compose.ui.graphics.vector.addPathNodes
+import com.mnavarrosqa.clima.data.Geo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -114,17 +117,16 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mnavarrosqa.clima.data.LocationProvider
 import com.mnavarrosqa.clima.data.PressureUnit
+import com.mnavarrosqa.clima.data.PrecipitationUnit
+import com.mnavarrosqa.clima.data.DistanceUnit
 import com.mnavarrosqa.clima.data.TemperatureUnit
 import com.mnavarrosqa.clima.data.Updates
-import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WindUnit
 import com.mnavarrosqa.clima.wallpaper.LiveWallpaper
 import com.mnavarrosqa.clima.wallpaper.WallpaperSettingsActivity
@@ -153,6 +155,9 @@ private enum class SettingsPage { APPEARANCE, SCREEN, UNITS, NOTIFICATIONS, LOCA
 /**
  * Ajustes, separados de las ciudades. La página principal muestra las categorías con un resumen
  * de cómo está cada una (como los ajustes del Pixel); cada categoría abre su propia página.
+ *
+ * Es una pestaña de la barra de abajo: la página principal no lleva flecha de volver (el atrás
+ * del sistema lo maneja quien la muestra). [onBack] queda por compatibilidad con quien la llama.
  */
 @Composable
 fun SettingsScreen(
@@ -167,13 +172,13 @@ fun SettingsScreen(
         // los ajustes del sistema. En el teléfono, una pantalla por vez.
         val wide = maxWidth >= SettingsTwoPaneWidth
         // Atrás desde una página vuelve a la lista de categorías, no al pronóstico (con dos paneles
-        // la lista ya está a la vista: atrás sale de ajustes).
+        // la lista ya está a la vista: atrás lo resuelve la pantalla de afuera).
         BackHandler(enabled = page != null && !wide) { page = null }
         if (wide) {
             val shown = page ?: SettingsPage.APPEARANCE
             Row(Modifier.fillMaxSize()) {
                 Box(Modifier.width(380.dp).fillMaxHeight()) {
-                    SettingsHome(viewModel, onBack = onBack, onOpen = { page = it }, selected = shown)
+                    SettingsHome(viewModel, onOpen = { page = it }, selected = shown)
                 }
                 VerticalDivider()
                 Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -195,7 +200,7 @@ fun SettingsScreen(
                 label = "ajustes",
             ) { current ->
                 if (current == null) {
-                    SettingsHome(viewModel, onBack = onBack, onOpen = { page = it })
+                    SettingsHome(viewModel, onOpen = { page = it })
                 } else {
                     SettingsPageContent(current, viewModel, onBack = { page = null }, onLocationPermission, onShowWelcome)
                 }
@@ -232,7 +237,7 @@ private fun SettingsPageContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsScaffold(title: String, onBack: () -> Unit, content: LazyListScope.() -> Unit) {
+private fun SettingsScaffold(title: String, onBack: (() -> Unit)?, content: LazyListScope.() -> Unit) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -240,7 +245,9 @@ private fun SettingsScaffold(title: String, onBack: () -> Unit, content: LazyLis
             LargeTopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
-                    if (!LocalSettingsPane.current) {
+                    // Sin onBack es la página principal, que es una pestaña: una flecha ahí diría
+                    // que es una pantalla secundaria.
+                    if (onBack != null && !LocalSettingsPane.current) {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Volver", "Back"))
                         }
@@ -364,12 +371,82 @@ private val Chevron: @Composable () -> Unit = {
     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null)
 }
 
+// Íconos de categoría que no están entre los básicos de Material (solo hay material-icons-core):
+// los mismos trazos de Material, a mano.
+private fun categoryVector(name: String, path: String): ImageVector =
+    ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(pathData = addPathNodes(path), fill = SolidColor(Color.Black))
+        .build()
+
+private val PaletteIcon: ImageVector by lazy {
+    categoryVector(
+        "Rounded.Palette",
+        "M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8z" +
+            "m-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12z" +
+            "m3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8z" +
+            "m5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8z" +
+            "m3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z",
+    )
+}
+
+private val UnitsIcon: ImageVector by lazy {
+    categoryVector(
+        "Rounded.Straighten",
+        "M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z" +
+            "m0 10H3V8h2v4h2V8h2v4h2V8h2v4h2V8h2v4h2V8h2v8z",
+    )
+}
+
+private val LanguageIcon: ImageVector by lazy {
+    categoryVector(
+        "Rounded.Language",
+        "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2z" +
+            "m6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56z" +
+            "M12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96z" +
+            "M4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26z" +
+            "m.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56z" +
+            "m2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8z" +
+            "M12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96z" +
+            "M14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2z" +
+            "m.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56z" +
+            "M16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z",
+    )
+}
+
+private val WidgetsIcon: ImageVector by lazy {
+    categoryVector(
+        "Rounded.Widgets",
+        "M13 13v8h8v-8h-8zM3 21h8v-8H3v8zM3 3v8h8V3H3zm13.66-1.31L11 7.34 16.66 13l5.66-5.66-5.66-5.65z",
+    )
+}
+
+private val WallpaperIcon: ImageVector by lazy {
+    categoryVector(
+        "Rounded.Image",
+        "M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2z" +
+            "M8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z",
+    )
+}
+
+/**
+ * Las alertas oficiales son del SMN y solo cubren Argentina: su fila se muestra si la ubicación
+ * actual (el último pronóstico guardado) o alguna ciudad guardada está ahí.
+ */
+@Composable
+private fun rememberInArgentina(viewModel: WeatherViewModel): Boolean {
+    val places by viewModel.places.collectAsStateWithLifecycle()
+    val here = remember { viewModel.cached(CURRENT_PLACE_ID) }
+    return remember(places, here) {
+        (here != null && Geo.isInArgentina(here.latitude, here.longitude)) ||
+            places.any { Geo.isInArgentina(it.latitude, it.longitude) }
+    }
+}
+
 // --- Página principal ---
 
 @Composable
 private fun SettingsHome(
     viewModel: WeatherViewModel,
-    onBack: () -> Unit,
     onOpen: (SettingsPage) -> Unit,
     selected: SettingsPage? = null,
 ) {
@@ -380,6 +457,7 @@ private fun SettingsHome(
     val smnAlerts by viewModel.smnAlerts.collectAsStateWithLifecycle()
     val statusTemperature by viewModel.statusTemperature.collectAsStateWithLifecycle()
     val update by viewModel.update.collectAsStateWithLifecycle()
+    val inArgentina = rememberInArgentina(viewModel)
     val installed = remember { Updates.installedVersion(context) }
     var hasLocation by remember { mutableStateOf(LocationProvider.hasPermission(context)) }
     var hasBackground by remember { mutableStateOf(LocationProvider.hasBackgroundPermission(context)) }
@@ -395,7 +473,7 @@ private fun SettingsHome(
 
     val notifications = listOfNotNull(
         tr("Lluvia", "Rain").takeIf { rainAlerts },
-        tr("SMN", "SMN").takeIf { smnAlerts },
+        tr("SMN", "Official alerts").takeIf { smnAlerts && inArgentina },
         tr("Barra de estado", "Status bar").takeIf { statusTemperature },
         tr("Resumen", "Summary").takeIf { NotifyPrefs.get(context).summary },
         tr("Cambios", "Changes").takeIf { NotifyPrefs.settings.changes },
@@ -407,27 +485,49 @@ private fun SettingsHome(
         else -> tr("Aproximada, solo con la app abierta", "Approximate, only while open")
     }
 
-    SettingsScaffold(tr("Ajustes", "Settings"), onBack = onBack) {
-        item { SectionTitle(tr("Pronóstico", "Forecast")) }
+    SettingsScaffold(tr("Ajustes", "Settings"), onBack = null) {
+        item { SectionTitle(tr("General", "General")) }
         item {
             Rows {
                 SettingRow(
                     tr("Apariencia", "Appearance"),
                     when (Appearance.mode) {
                         ThemeMode.SYSTEM -> tr("Tema del sistema", "System theme")
-                        ThemeMode.LIGHT -> tr("Claro", "Light")
-                        ThemeMode.DARK -> tr("Oscuro", "Dark")
-                    } + " · " + (if (Appearance.dynamicColors) tr("colores del fondo de pantalla", "wallpaper colors") else Appearance.accent.label.lowercase()) +
-                        " · " + tr("ícono", "icon") + " " + AppIcon.current(context).label.lowercase(),
-                    icon = {
-                        CategoryIcon(Color(0xFF455A64)) {
-                            Text("◐", color = Color.White, fontSize = 22.sp)
-                        }
-                    },
+                        ThemeMode.LIGHT -> tr("Tema claro", "Light theme")
+                        ThemeMode.DARK -> tr("Tema oscuro", "Dark theme")
+                    } + " · " + (if (Appearance.dynamicColors) tr("colores del fondo", "wallpaper colors") else Appearance.accent.label.lowercase()),
+                    icon = { CategoryIcon(Color(0xFF455A64), PaletteIcon) },
                     onClick = { onOpen(SettingsPage.APPEARANCE) },
                     selected = selected == SettingsPage.APPEARANCE,
                     trailing = Chevron,
                 )
+                SettingRow(
+                    tr("Unidades", "Units"),
+                    "${units.temperature.label} · ${units.wind.label} · ${units.pressure.label} · ${units.precipitation.label} · ${units.distance.label} · " + if (units.use24h) "24 h" else "12 h",
+                    icon = { CategoryIcon(Color(0xFF00A0A0), UnitsIcon) },
+                    onClick = { onOpen(SettingsPage.UNITS) },
+                    selected = selected == SettingsPage.UNITS,
+                    trailing = Chevron,
+                )
+                // El idioma por app es de Android 13 en adelante; antes la app sigue al del teléfono.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    SettingRow(
+                        tr("Idioma", "Language"),
+                        tr("Español · se cambia en los ajustes del sistema", "English · change it in system settings"),
+                        icon = { CategoryIcon(Color(0xFF5C6BC0), LanguageIcon) },
+                        onClick = {
+                            runCatching {
+                                context.startActivity(Intent(Settings.ACTION_APP_LOCALE_SETTINGS, Uri.fromParts("package", context.packageName, null)))
+                            }
+                        },
+                        trailing = Chevron,
+                    )
+                }
+            }
+        }
+        item { SectionTitle(tr("Pronóstico", "Forecast")) }
+        item {
+            Rows {
                 SettingRow(
                     tr("Pantalla del clima", "Weather screen"),
                     tr("${cards.visible.size} de ${cards.order.size} tarjetas · ", "${cards.visible.size} of ${cards.order.size} cards · ") +
@@ -437,21 +537,9 @@ private fun SettingsHome(
                     selected = selected == SettingsPage.SCREEN,
                     trailing = Chevron,
                 )
-                SettingRow(
-                    tr("Unidades", "Units"),
-                    "${units.temperature.label} · ${units.wind.label} · ${units.pressure.label} · " + if (units.use24h) "24 h" else "12 h",
-                    icon = {
-                        CategoryIcon(Color(0xFF00A0A0)) {
-                            Text("°", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Medium)
-                        }
-                    },
-                    onClick = { onOpen(SettingsPage.UNITS) },
-                    selected = selected == SettingsPage.UNITS,
-                    trailing = Chevron,
-                )
             }
         }
-        item { SectionTitle(tr("Avisos y ubicación", "Alerts and location")) }
+        item { SectionTitle(tr("Avisos", "Alerts")) }
         item {
             Rows {
                 SettingRow(
@@ -472,20 +560,9 @@ private fun SettingsHome(
                 )
             }
         }
-        item { SectionTitle(tr("Personalización", "Personalization")) }
+        item { SectionTitle(tr("Pantalla de inicio", "Home screen")) }
         item {
             Rows {
-                SettingRow(
-                    tr("Fondo de pantalla", "Wallpaper"),
-                    if (wallpaperActive) tr("Activo · tocá para cambiar diseño y opciones", "In use · tap to change design and options") else tr("Cielo, paisaje, formas u oscuro", "Sky, landscape, shapes or dark"),
-                    icon = {
-                        CategoryIcon(Color(0xFF7E57C2)) {
-                            Image(painterResource(WeatherCodes.icon(2)), contentDescription = null, modifier = Modifier.size(28.dp))
-                        }
-                    },
-                    onClick = { context.startActivity(Intent(context, WallpaperSettingsActivity::class.java)) },
-                    trailing = Chevron,
-                )
                 SettingRow(
                     tr("Widgets", "Widgets"),
                     when (placedWidgets) {
@@ -493,12 +570,15 @@ private fun SettingsHome(
                         1 -> tr("1 puesto · agregar o personalizar", "1 placed · add or customize")
                         else -> tr("$placedWidgets puestos · agregar o personalizar", "$placedWidgets placed · add or customize")
                     },
-                    icon = {
-                        CategoryIcon(Color(0xFFD9488B)) {
-                            Image(painterResource(WeatherCodes.icon(0)), contentDescription = null, modifier = Modifier.size(28.dp))
-                        }
-                    },
+                    icon = { CategoryIcon(Color(0xFFD9488B), WidgetsIcon) },
                     onClick = { context.startActivity(Intent(context, WidgetGalleryActivity::class.java)) },
+                    trailing = Chevron,
+                )
+                SettingRow(
+                    tr("Fondo de pantalla", "Wallpaper"),
+                    if (wallpaperActive) tr("Activo · tocá para cambiar diseño y opciones", "In use · tap to change design and options") else tr("Cielo, paisaje, formas u oscuro", "Sky, landscape, shapes or dark"),
+                    icon = { CategoryIcon(Color(0xFF7E57C2), WallpaperIcon) },
+                    onClick = { context.startActivity(Intent(context, WallpaperSettingsActivity::class.java)) },
                     trailing = Chevron,
                 )
             }
@@ -507,7 +587,7 @@ private fun SettingsHome(
         item {
             Rows {
                 SettingRow(
-                    tr("Acerca de y actualizaciones", "About and updates"),
+                    tr("Acerca de", "About"),
                     update?.let { tr("Hay una versión nueva: ${it.versionName}", "New version available: ${it.versionName}") }
                         ?: tr("Versión ${installed.first}", "Version ${installed.first}"),
                     icon = { CategoryIcon(Color(0xFF607D8B), Icons.Rounded.Info) },
@@ -764,9 +844,6 @@ private fun LazyListScope.screenPage(viewModel: WeatherViewModel) {
             }
         }
     }
-    item {
-        Hint(tr("En plegables y tablets, el mapa y los detalles van en el panel izquierdo.", "On foldables and tablets, the map and details go in the left pane."))
-    }
 }
 
 // --- Unidades ---
@@ -783,6 +860,12 @@ private fun LazyListScope.unitsPage(viewModel: WeatherViewModel) {
             }
             ChoiceRow(tr("Presión", "Pressure"), PressureUnit.entries, units.pressure, { it.label }) {
                 viewModel.setUnits(units.copy(pressure = it))
+            }
+            ChoiceRow(tr("Lluvia", "Rain"), PrecipitationUnit.entries, units.precipitation, { it.label }) {
+                viewModel.setUnits(units.copy(precipitation = it))
+            }
+            ChoiceRow(tr("Distancia", "Distance"), DistanceUnit.entries, units.distance, { it.label }) {
+                viewModel.setUnits(units.copy(distance = it))
             }
             SettingRow(
                 tr("Formato de 24 horas", "24-hour time"),
@@ -887,6 +970,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
     fun change(transform: (NotifySettings) -> NotifySettings) = NotifyPrefs.update(context, transform)
 
     val places by viewModel.places.collectAsStateWithLifecycle()
+    val inArgentina = rememberInArgentina(viewModel)
 
     // Qué hora se está eligiendo: la del resumen, la de la rutina o el principio o el final del silencio.
     var picking by rememberSaveable { mutableStateOf<String?>(null) }
@@ -918,9 +1002,9 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
     // Los avisos de prueba van en un diálogo: antes eran ocho botones en una tira que había que deslizar.
     var testing by rememberSaveable { mutableStateOf(false) }
     if (testing) {
-        val tests = listOf(
+        val tests = listOfNotNull(
             tr("Lluvia cerca", "Rain nearby") to { RainNotifier.test(context) },
-            tr("Alerta oficial", "Official alert") to { AlertNotifier.test(context) },
+            (tr("Alerta oficial", "Official alert") to { AlertNotifier.test(context) }).takeIf { inArgentina },
             tr("Resumen del día", "Daily summary") to { SummaryNotifier.notify(context, test = true) },
             tr("Cambio brusco", "Big change") to { ChangeNotifier.test(context) },
             tr("Hora dorada", "Golden hour") to { SunNotifier.test(context) },
@@ -968,6 +1052,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     }
                 }
             }
+            groupGap()
         }
         if (System.currentTimeMillis() < notify.mutedUntil) {
             item {
@@ -982,6 +1067,35 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     }
                 }
             }
+            groupGap()
+        }
+
+        // "Salgo ahora" es una acción, no un ajuste: va arriba de todo, como tarjeta con su botón.
+        item {
+            val active = Outing.active(context) && Outing.endsAt > 0
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = RoundedCornerShape(24.dp)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Text(
+                        if (active) {
+                            tr("Siguiendo el clima hasta las ", "Tracking weather until ") +
+                                shortHour(java.time.Instant.ofEpochMilli(Outing.endsAt).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime())
+                        } else {
+                            tr("Salgo ahora", "Heading out")
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        tr("Dos horas de clima en vivo en la barra de estado: temperatura, lluvia y viento de donde estás, cada 15 min. También desde ajustes rápidos o manteniendo apretado el ícono.", "Two hours of live weather in the status bar: temperature, rain and wind where you are, every 15 min. Also from Quick Settings or by long-pressing the icon."),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        enabled = canNotify || active,
+                        onClick = { if (active) Outing.stop(context) else Outing.start(context) },
+                        modifier = Modifier.align(Alignment.End),
+                    ) { Text(if (active) tr("Terminar", "Stop") else tr("Empezar", "Start")) }
+                }
+            }
         }
 
         // El silencio vale para todos los avisos, así que va arriba y no dentro de un grupo.
@@ -990,7 +1104,8 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
             Rows {
                 SettingRow(
                     tr("No avisar de noche", "No alerts at night"),
-                    tr("Las alertas rojas del SMN avisan igual", "Red official alerts still come through"),
+                    // Las alertas rojas son del SMN: fuera de Argentina no hay nada que aclarar.
+                    if (inArgentina) tr("Las alertas rojas del SMN avisan igual", "Red official alerts still come through") else null,
                     checked = notify.quiet,
                     onCheckedChange = { on -> change { it.copy(quiet = on) } },
                 )
@@ -1033,8 +1148,9 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                 }
             }
         }
-        groupGap()
-        item {
+        // Las alertas oficiales son del SMN: sin un lugar en Argentina, la fila no dice nada útil.
+        if (inArgentina) groupGap()
+        if (inArgentina) item {
             Rows {
                 SettingRow(
                     tr("Alertas del SMN", "Official alerts (Argentina)"),
@@ -1215,14 +1331,6 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                         nested = true,
                     )
                 }
-                if (LiveUpdate.supported) {
-                    SettingRow(
-                        tr("Permiso de Live Updates", "Live Updates permission"),
-                        tr("Si no aparece el chip, revisá que esté permitido", "If the chip doesn't show, check that it's allowed"),
-                        onClick = { openAppNotificationSettings(context) },
-                        trailing = Chevron,
-                    )
-                }
             }
         }
         if (LiveUpdate.supported) {
@@ -1234,39 +1342,7 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     ),
                 )
             }
-        } else {
-            groupGap()
         }
-        // "Salgo ahora" también vive en la barra de estado: dos horas de clima en vivo.
-        item {
-            val active = Outing.active(context) && Outing.endsAt > 0
-            Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp)) {
-                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (active) {
-                                tr("Siguiendo el clima hasta las ", "Tracking weather until ") +
-                                    shortHour(java.time.Instant.ofEpochMilli(Outing.endsAt).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime())
-                            } else {
-                                tr("Salgo ahora: dos horas de clima en vivo", "Heading out: two hours of live weather")
-                            },
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            tr("Temperatura, lluvia y viento de donde estás, actualizados cada 15 min. También desde ajustes rápidos o manteniendo apretado el ícono.", "Temperature, rain and wind where you are, updated every 15 min. Also from Quick Settings or by long-pressing the icon."),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    FilledTonalButton(
-                        enabled = canNotify || active,
-                        onClick = { if (active) Outing.stop(context) else Outing.start(context) },
-                    ) { Text(if (active) tr("Terminar", "Stop") else tr("Empezar", "Start")) }
-                }
-            }
-        }
-
         // Probar y los ajustes del sistema van al final, separados de los grupos: no son avisos.
         item { Spacer(Modifier.height(24.dp)) }
         item {
@@ -1282,9 +1358,14 @@ private fun NotificationsPage(viewModel: WeatherViewModel, onBack: () -> Unit) {
                     onClick = if (canNotify) ({ testing = true }) else null,
                     trailing = if (canNotify) Chevron else null,
                 )
+                // Una sola fila para los ajustes del sistema: el permiso de Live Updates está ahí mismo.
                 SettingRow(
-                    tr("Más opciones del sistema", "More system options"),
-                    tr("Sonido, vibración y cómo se muestra cada tipo de aviso", "Sound, vibration and how each kind of alert shows up"),
+                    tr("Ajustes de notificaciones del sistema", "System notification settings"),
+                    if (LiveUpdate.supported) {
+                        tr("Sonido, vibración, cada tipo de aviso y el permiso de Live Updates (si no aparece el chip)", "Sound, vibration, each kind of alert and the Live Updates permission (if the chip doesn't show)")
+                    } else {
+                        tr("Sonido, vibración y cómo se muestra cada tipo de aviso", "Sound, vibration and how each kind of alert shows up")
+                    },
                     onClick = { openAppNotificationSettings(context) },
                     trailing = Chevron,
                 )
@@ -1314,6 +1395,19 @@ private fun LocationPage(onBack: () -> Unit, onLocationPermission: (Boolean) -> 
         onLocationPermission(it)
     }
     val backgroundLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { hasBackground = it }
+    // Antes del permiso "todo el tiempo" va el aviso que pide Play; solo "Continuar" lo pide.
+    var disclosing by rememberSaveable { mutableStateOf(false) }
+    if (disclosing) {
+        BackgroundLocationDisclosure(
+            onDismiss = { disclosing = false },
+            onContinue = {
+                disclosing = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                }
+            },
+        )
+    }
 
     SettingsScaffold(tr("Ubicación", "Location"), onBack = onBack) {
         item {
@@ -1336,19 +1430,15 @@ private fun LocationPage(onBack: () -> Unit, onLocationPermission: (Boolean) -> 
                 SettingRow(
                     tr("Con la app cerrada", "While closed"),
                     if (hasBackground && hasLocation) {
-                        tr("Los widgets y los avisos te siguen aunque no abras la app", "Widgets and alerts follow you even when the app is closed")
+                        tr("Los widgets, los avisos y el fondo de pantalla te siguen aunque no abras la app", "Widgets, alerts and the wallpaper follow you even when the app is closed")
                     } else {
-                        tr("Elegí \"Permitir todo el tiempo\" para que los widgets te sigan", "Choose \"Allow all the time\" so widgets follow you")
+                        tr("Elegí \"Permitir todo el tiempo\" para que los widgets, los avisos y el fondo te sigan", "Choose \"Allow all the time\" so widgets, alerts and the wallpaper follow you")
                     },
                     trailing = if (hasBackground && hasLocation) null else {
                         {
                             FilledTonalButton(
                                 enabled = hasLocation,
-                                onClick = {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                        backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                                    }
-                                },
+                                onClick = { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) disclosing = true },
                             ) { Text(tr("Permitir", "Allow")) }
                         }
                     },
@@ -1381,10 +1471,25 @@ private fun LazyListScope.aboutPage(viewModel: WeatherViewModel, onShowWelcome: 
         val updateProgress by viewModel.updateProgress.collectAsStateWithLifecycle()
         val updateMessage by viewModel.updateMessage.collectAsStateWithLifecycle()
         val installed = remember { Updates.installedVersion(context) }
-        val fromPlay = remember { Updates.installedFromPlay(context) }
+        val fromPlay = remember { AppShare.isPlayBuild(context) }
+        val appIcon = AppIcon.current(context)
         Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = RoundedCornerShape(28.dp)) {
             Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(painterResource(WeatherCodes.icon(2)), contentDescription = null, modifier = Modifier.size(72.dp))
+                // El ícono de la app que está elegido, armado como en la pantalla de inicio.
+                Box(Modifier.size(72.dp).clip(CircleShape)) {
+                    Image(painterResource(appIcon.background), contentDescription = null, modifier = Modifier.fillMaxSize())
+                    Image(
+                        painterResource(appIcon.foreground),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = 1.45f
+                                scaleY = 1.45f
+                            },
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
                 Text("Climatin", style = MaterialTheme.typography.headlineMedium)
                 Text(tr("Versión ${installed.first} (${installed.second})", "Version ${installed.first} (${installed.second})"), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(12.dp))
@@ -1414,34 +1519,64 @@ private fun LazyListScope.aboutPage(viewModel: WeatherViewModel, onShowWelcome: 
     item {
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
+        val fromPlay = remember { AppShare.isPlayBuild(context) }
         Rows {
-            SettingRow(
-                tr("Mandar la app", "Send the app"),
-                tr("El instalador, por Quick Share o un chat. Funciona sin conexión", "The installer, over Quick Share or a chat. Works offline"),
-                onClick = {
-                    scope.launch {
-                        runCatching { AppShare.shareApk(context) }.onFailure {
-                            android.widget.Toast.makeText(context, tr("No pude preparar el instalador", "Couldn't prepare the installer"), android.widget.Toast.LENGTH_SHORT).show()
+            if (fromPlay) {
+                // En Play no se manda el instalador (va sin sus splits y no se actualiza) ni el
+                // link de GitHub (otra firma, no se instala encima): se comparte la tienda.
+                SettingRow(
+                    tr("Compartir Climatin", "Share Climatin"),
+                    tr("El link a Google Play", "The Google Play link"),
+                    onClick = { runCatching { AppShare.sharePlay(context) } },
+                    trailing = Chevron,
+                )
+            } else {
+                SettingRow(
+                    tr("Mandar la app", "Send the app"),
+                    tr("El instalador, por Quick Share o un chat. Funciona sin conexión", "The installer, over Quick Share or a chat. Works offline"),
+                    onClick = {
+                        scope.launch {
+                            runCatching { AppShare.shareApk(context) }.onFailure {
+                                android.widget.Toast.makeText(context, tr("No pude preparar el instalador", "Couldn't prepare the installer"), android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }
-                    }
-                },
-                trailing = Chevron,
-            )
-            SettingRow(
-                tr("Compartir el link", "Share the link"),
-                tr("Para bajar la última versión", "To download the latest version"),
-                onClick = { runCatching { AppShare.shareLink(context) } },
-                trailing = Chevron,
-            )
+                    },
+                    trailing = Chevron,
+                )
+                SettingRow(
+                    tr("Compartir el link", "Share the link"),
+                    tr("Para bajar la última versión", "To download the latest version"),
+                    onClick = { runCatching { AppShare.shareLink(context) } },
+                    trailing = Chevron,
+                )
+            }
         }
     }
     item { SectionTitle(tr("Ayuda", "Help")) }
     item {
+        val context = LocalContext.current
         Rows {
             SettingRow(
                 tr("Ver la bienvenida", "Show the welcome"),
                 tr("Los primeros pasos y los gestos de la app", "First steps and the app's gestures"),
                 onClick = onShowWelcome,
+                trailing = Chevron,
+            )
+            SettingRow(
+                tr("Contacto", "Contact"),
+                AppShare.CONTACT_EMAIL,
+                onClick = {
+                    // Sin app de correo no hay quién abra el mailto: al menos se avisa.
+                    runCatching { AppShare.contact(context) }.onFailure {
+                        android.widget.Toast.makeText(context, tr("No encontré una app de correo", "No email app found"), android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                trailing = Chevron,
+            )
+            SettingRow(
+                tr("Política de privacidad", "Privacy policy"),
+                tr("Qué datos usa Climatin y para qué", "What data Climatin uses and why"),
+                onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AppShare.PRIVACY_URL))) } },
                 trailing = Chevron,
             )
         }

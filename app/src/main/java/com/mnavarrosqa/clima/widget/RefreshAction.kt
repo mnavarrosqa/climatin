@@ -9,6 +9,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.glance.ColorFilter
@@ -17,6 +18,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
+import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.ActionCallback
@@ -101,7 +103,12 @@ fun PlaceLabel(
     colors: WidgetColors,
     fontSize: TextUnit,
     fontWeight: FontWeight = FontWeight.Normal,
+    /** Botones de 40 dp de alto en vez de 32: solo donde el diseño tiene esos 8 dp de sobra. */
+    roomy: Boolean = false,
 ) {
+    // Ancho: 40 dp si el widget es ancho; en los angostos el nombre de la ciudad ya entra justo.
+    val buttonWidth = if (LocalSize.current.width >= WidgetTouch.wideFrom) WidgetTouch.full else WidgetTouch.tight
+    val buttonHeight = if (roomy) WidgetTouch.full else WidgetTouch.tight
     val now = System.currentTimeMillis()
     val refreshing = (currentState(WidgetPrefs.REFRESHING_AT) ?: 0L) > now - 90_000
     val failed = (currentState(WidgetPrefs.REFRESH_FAILED_AT) ?: 0L) > now - 10 * 60_000
@@ -137,10 +144,10 @@ fun PlaceLabel(
         }
         if (!refreshing) {
             if (showRefresh) {
-                SmallButton(R.drawable.ic_refresh, tr("Actualizar", "Refresh"), colors) { actionRunCallback<RefreshAction>() }
+                SmallButton(R.drawable.ic_refresh, tr("Actualizar", "Refresh"), colors, buttonWidth, buttonHeight) { actionRunCallback<RefreshAction>() }
             }
             if (hasOtherCities && showNext) {
-                SmallButton(R.drawable.ic_chevron_right, tr("Siguiente ciudad", "Next city"), colors) { actionRunCallback<NextCityAction>() }
+                SmallButton(R.drawable.ic_chevron_right, tr("Siguiente ciudad", "Next city"), colors, buttonWidth, buttonHeight) { actionRunCallback<NextCityAction>() }
             }
         }
     }
@@ -151,6 +158,8 @@ private fun SmallButton(
     icon: Int,
     description: String,
     colors: WidgetColors,
+    width: Dp,
+    height: Dp,
     action: () -> androidx.glance.action.Action,
 ) {
     Image(
@@ -158,9 +167,10 @@ private fun SmallButton(
         contentDescription = description,
         colorFilter = ColorFilter.tint(colors.textVariant),
         modifier = GlanceModifier
-            // Área de toque más grande que el ícono, para que sea fácil acertarle.
-            .size(32.dp)
-            .padding(8.dp)
+            // Área de toque más grande que el ícono, para que sea fácil acertarle: el relleno
+            // deja el ícono en su tamaño y todo el recuadro responde al toque.
+            .size(width = width, height = height)
+            .padding(horizontal = (width - WidgetTouch.icon) / 2, vertical = (height - WidgetTouch.icon) / 2)
             .clickable(action()),
     )
 }

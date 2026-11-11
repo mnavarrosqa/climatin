@@ -15,6 +15,18 @@ private fun timeFormatter(): DateTimeFormatter =
 
 fun shortHour(dateTime: LocalDateTime): String = dateTime.format(timeFormatter())
 
+/**
+ * Hora para donde hay poco lugar (las columnas del gráfico por hora). En 24 h es igual que
+ * [shortHour]; en 12 h, sin ":00" y siempre con AM o PM ("10 PM", "7:34 PM"): "10:00 p. m." no
+ * entra en una columna.
+ */
+fun compactHour(dateTime: LocalDateTime): String {
+    if (Units.current.use24h) return dateTime.format(hourMinute)
+    val hour = (dateTime.hour + 11) % 12 + 1
+    val minutes = if (dateTime.minute == 0) "" else ":%02d".format(dateTime.minute)
+    return "$hour$minutes ${if (dateTime.hour < 12) "AM" else "PM"}"
+}
+
 fun timeOf(isoDateTime: String): String = shortHour(LocalDateTime.parse(isoDateTime))
 
 fun dayLabel(date: LocalDate, today: LocalDate): String = when (date) {

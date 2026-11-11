@@ -2,7 +2,9 @@ package com.mnavarrosqa.clima.data
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,10 +23,17 @@ import kotlin.math.sinh
 /** Lluvia en una grilla para una hora: [values] en mm, fila por fila. */
 class RainFrame(val epochSeconds: Long, val values: FloatArray)
 
+/** Una imagen del radar: cuándo se midió y la ruta de sus teselas en el servidor. */
+class RadarImage(val epochSeconds: Long, val path: String)
+
+/** Las imágenes del radar de las últimas horas, de la más vieja a la más nueva. */
+class RadarList(val host: String, val frames: List<RadarImage>)
+
 /**
- * Mapa de lluvia: la precipitación por hora de Open-Meteo (sin clave) en una grilla de puntos sobre
- * el mapa, de unas horas atrás a unas horas adelante. No es un radar: es lo que calcula el modelo
- * meteorológico, pero cubre todo el mundo y no necesita registro. El fondo es el mapa gris de Esri.
+ * Mapa de lluvia. Dos fuentes: el radar de RainViewer (lo que se midió en las últimas dos horas,
+ * donde hay cobertura) y la precipitación por hora de Open-Meteo en una grilla de puntos (lo que
+ * calcula el modelo: cubre todo el mundo y llega al futuro). Ninguna pide clave. El fondo es el
+ * mapa gris de Esri.
  */
 object RainMap {
     const val MIN_ZOOM = 4
@@ -163,6 +172,91 @@ object RainMap {
             (kotlin.math.floor(y0 + 1).toInt() - kotlin.math.floor(y0).toInt() + 1)
         if (frame != null && tiles.size >= expected) previews[key] = System.currentTimeMillis() to preview
         return preview
+    }
+
+    // ---- Radar (RainViewer) ----
+
+    /** Las teselas gratuitas de RainViewer llegan hasta este zoom; más cerca se estira esta. */
+    const val RADAR_MAX_ZOOM = 7
+    private const val RADAR_MAPS_URL = "https://api.rainviewer.com/public/weather-maps.json"
+    /** RainViewer publica una imagen cada 10 minutos: antes de esto la lista no cambió. */
+    private const val RADAR_LIST_SECONDS = 5 * 60L
+
+    @Serializable
+    private data class RadarMaps(val host: String, val radar: RadarPast)
+
+    @Serializable
+    private data class RadarPast(val past: List<RadarPath> = emptyList())
+
+    @Serializable
+    private data class RadarPath(val time: Long, val path: String)
+
+    @Volatile private var radarListCache: Pair<Long, RadarList>? = null
+
+    /** Si RainViewer contesta 429, no se le pide nada más hasta esta hora (ms). */
+    @Volatile private var radarPausedUntil = 0L
+
+    /**
+     * Teselas del radar ya decodificadas, acotadas por memoria (unos 32 MB: cada una de 256 px
+     * ocupa 256 KB). Viven con el proceso: al volver a la pestaña del mapa no se bajan de nuevo.
+     */
+    private val radarTiles = object : LruCache<String, ImageBitmap>(32 * 1024) {
+        override fun sizeOf(key: String, value: ImageBitmap): Int = (value.width * value.height * 4 / 1024).coerceAtLeast(1)
+    }
+
+    /** La misma para todas las teselas sin nada (sin lluvia o sin cobertura): no ocupan memoria. */
+    private val blankTile: ImageBitmap by lazy { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).asImageBitmap() }
+
+    /** true si la tesela del radar vino toda transparente. */
+    fun isBlank(tile: ImageBitmap): Boolean = tile === blankTile
+
+    /** La lista de imágenes del radar, o null si no se pudo bajar (entonces se usa solo el modelo). */
+    suspend fun radarList(): RadarList? = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis() / 1000
+        radarListCache?.takeIf { now - it.first < RADAR_LIST_SECONDS }?.second ?: runCatching {
+            val maps = json.decodeFromString(RadarMaps.serializer(), read(RADAR_MAPS_URL).decodeToString())
+            val frames = maps.radar.past
+                .filter { it.path.isNotBlank() }
+                .sortedBy { it.time }
+                .map { RadarImage(it.time, it.path) }
+            if (maps.host.isBlank() || frames.isEmpty()) null else RadarList(maps.host, frames).also { radarListCache = now to it }
+        }.getOrNull()
+    }
+
+    /** Tesela del radar: color 2 ("universal"), suavizada y con la nieve aparte. */
+    fun radarTileUrl(host: String, path: String, z: Int, x: Int, y: Int): String = "$host$path/256/$z/$x/$y/2/1_1.png"
+
+    /** La tesela si ya está en memoria. */
+    fun radarCached(url: String): ImageBitmap? = radarTiles.get(url)
+
+    /** Baja y decodifica una tesela del radar. null si falló: no se guarda y se puede volver a pedir. */
+    suspend fun radarTile(url: String): ImageBitmap? = withContext(Dispatchers.IO) {
+        radarTiles.get(url)?.let { return@withContext it }
+        if (System.currentTimeMillis() < radarPausedUntil) return@withContext null
+        runCatching<ImageBitmap?> {
+            val bytes = read(url)
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@runCatching null
+            val pixels = IntArray(bitmap.width * bitmap.height)
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            val tile = if (pixels.any { it ushr 24 != 0 }) {
+                bitmap.asImageBitmap()
+            } else {
+                bitmap.recycle()
+                blankTile
+            }
+            radarTiles.put(url, tile)
+            tile
+        }.onFailure {
+            if (it is TooManyRequests) radarPausedUntil = System.currentTimeMillis() + 60_000L
+        }.getOrNull()
+    }
+
+    /** Si el radar marca algo en ese píxel de la tesela ([fx] y [fy] de 0 a 1 dentro de ella). */
+    fun radarWet(tile: ImageBitmap, fx: Double, fy: Double): Boolean {
+        if (isBlank(tile)) return false
+        val x = (fx * tile.width).toInt().coerceIn(0, tile.width - 1)
+        val y = (fy * tile.height).toInt().coerceIn(0, tile.height - 1)
+        return runCatching { tile.asAndroidBitmap().getPixel(x, y) ushr 24 != 0 }.getOrDefault(false)
     }
 
     /**

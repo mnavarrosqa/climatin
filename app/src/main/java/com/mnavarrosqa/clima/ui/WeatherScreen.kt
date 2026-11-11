@@ -30,8 +30,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -46,10 +44,18 @@ import androidx.activity.BackEventCompat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import kotlinx.coroutines.launch
 import android.os.Build
 import android.view.HapticFeedbackConstants
@@ -146,8 +152,10 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.ButtonDefaults
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -173,7 +181,7 @@ internal val OnSkyVariant = Color.White.copy(alpha = 0.9f)
 /** Sombra suave para que el texto blanco se lea sobre un cielo claro, como en el Clima de Apple. */
 private val SkyShadow = Shadow(Color.Black.copy(alpha = 0.4f), Offset(0f, 2f), 16f)
 
-private fun TextStyle.onSky() = copy(shadow = SkyShadow)
+internal fun TextStyle.onSky() = copy(shadow = SkyShadow)
 
 /** Destino de un acceso directo desde un widget: una ciudad y, opcionalmente, un día (yyyy-MM-dd) o el mapa de lluvia. */
 data class DeepLinkTarget(val placeId: String, val day: String?, val radar: Boolean = false, val alert: String? = null)
@@ -198,6 +206,8 @@ fun WeatherRoute(
     }
     // Ciudad tocada en la lista: el pronóstico se abre en esa página.
     var cityTarget by remember { mutableStateOf<DeepLinkTarget?>(null) }
+    // Al llegar a Ciudades desde "Elegir una ciudad": el buscador toma el foco.
+    var focusCitySearch by remember { mutableStateOf(false) }
     // "lat,lon" del radar abierto, o null.
     var radarAt by rememberSaveable { mutableStateOf<String?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -224,9 +234,15 @@ fun WeatherRoute(
             showSettings = false
             compareIds = null
             // Un widget puede pedir abrir directo el mapa de lluvia de su ciudad.
-            val place = if (deepLink.radar) viewModel.cached(deepLink.placeId) ?: viewModel.cached(CURRENT_PLACE_ID) else null
+            val own = if (deepLink.radar) viewModel.cached(deepLink.placeId) else null
+            val place = own ?: if (deepLink.radar) viewModel.cached(CURRENT_PLACE_ID) else null
             radarAt = place?.let { "${it.latitude},${it.longitude}" }
-            if (place != null) onDeepLinkHandled()
+            if (place != null) {
+                // El pronóstico también queda en esa ciudad: al salir del mapa se veía la anterior.
+                // El pager no está en pantalla ahora; salta cuando vuelve (igual que al tocar una ciudad).
+                cityTarget = DeepLinkTarget(if (own != null) deepLink.placeId else CURRENT_PLACE_ID, null)
+                onDeepLinkHandled()
+            }
         }
     }
     // Si la app se cerró por un error, se ofrece compartirlo (queda solo en el teléfono hasta que se comparte).
@@ -314,6 +330,9 @@ fun WeatherRoute(
     val pagerState = rememberPagerState { pages.size }
 
     val radar = radarAt?.split(',')?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 2 }
+    // El último mapa abierto: mientras su pantalla se va, sigue teniendo qué dibujar.
+    var shownRadar by remember { mutableStateOf(radar) }
+    if (radar != null) shownRadar = radar
     val screen = when {
         showWelcome -> "bienvenida"
         radar != null -> "radar"
@@ -336,115 +355,201 @@ fun WeatherRoute(
             }
         }
     }
-    // Barra flotante abajo en las pantallas principales (también el mapa); comparar y la
-    // bienvenida ocupan toda la pantalla.
-    val showBar = screen == "clima" || screen == "ciudades" || screen == "ajustes" || screen == "radar"
+    // Barra flotante en las pantallas principales (también el mapa y el pedido de ubicación: sin
+    // ella, desde ahí no se llegaba a Ajustes); comparar y la bienvenida ocupan toda la pantalla.
+    val showBar = screen != "bienvenida" && screen != "comparar"
     val tabId = pages.getOrElse(pagerState.currentPage) { CURRENT_PLACE_ID }
     val tabSnapshot by remember(tabId) { viewModel.snapshots(tabId) }
         .collectAsStateWithLifecycle(viewModel.cached(tabId))
-    Box(Modifier.fillMaxSize()) {
-    CompositionLocalProvider(LocalBottomBarSpace provides if (showBar) BottomBarSpace else 0.dp) {
-    AnimatedContent(
-        targetState = screen,
-        modifier = Modifier.graphicsLayer {
-            // Se lee al dibujar: el gesto no recompone las pantallas.
-            val shownBack = backShown.value
-            val scale = 1f - 0.1f * shownBack
-            scaleX = scale
-            scaleY = scale
-            // Desde el borde izquierdo se corre a la derecha y al revés, como si la empujara el dedo.
-            val direction = if (backEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f
-            translationX = direction * shownBack * size.width * 0.05f
-            shape = RoundedCornerShape((32 * shownBack).dp)
-            clip = shownBack > 0f
-        },
-        transitionSpec = {
-            (fadeIn(tween(320, delayMillis = 60)) + scaleIn(tween(380, easing = EaseOutCubic), initialScale = 0.94f))
-                .togetherWith(fadeOut(tween(180)) + scaleOut(tween(220), targetScale = 1.03f))
-        },
-        label = "pantalla",
-    ) { target ->
-        when (target) {
-            "bienvenida" -> WelcomeScreen(
-                viewModel = viewModel,
-                onAllowLocation = { LocationAsk.request(context, launcher) },
-                onFinish = {
-                    Welcome.markSeen(context)
-                    showWelcome = false
-                    // Si salteó la ubicación y no tiene ciudades, pedirla otra vez enseguida era
-                    // insistir: se abre la búsqueda de ciudades.
-                    if (!hasPermission && places.isEmpty() && currentSnapshot == null) showCities = true
-                },
-                onPickCity = {
-                    Welcome.markSeen(context)
-                    showWelcome = false
-                    showCities = true
-                },
-            )
-            "radar" -> radar?.let {
-                RadarScreen(it[0], it[1], onBack = { radarAt = null }, onAddPlace = viewModel::addPlace)
+    // El mapa se abre en la ciudad que se mira; si todavía no tiene pronóstico, en donde estás.
+    val mapSnapshot = tabSnapshot ?: currentSnapshot
+    // Cada pestaña guarda lo suyo (desplazamiento, página de Ajustes abierta, búsqueda) mientras
+    // se mira otra: AnimatedContent solo, las rearmaba de cero en cada cambio.
+    val tabStates = rememberSaveableStateHolder()
+    // El mapa guarda su estado por lugar: abrirlo en otra ciudad no hereda el zoom ni el centro.
+    val mapKey = shownRadar?.let { "mapa:${it[0]},${it[1]}" }
+    var lastMapKey by remember { mutableStateOf(mapKey) }
+    LaunchedEffect(mapKey) {
+        val old = lastMapKey
+        if (old != null && old != mapKey) tabStates.removeState(old)
+        lastMapKey = mapKey
+    }
+    // La entrada escalonada de las tarjetas corre una vez por apertura de la app, la primera vez
+    // que se ve el pronóstico; no en cada vuelta de otra pestaña. No es estado: se anota y listo.
+    val forecastShownAt = remember { LongArray(1) }
+    val selectTab: (NavTab) -> Unit = { tab ->
+        when (tab) {
+            NavTab.CLIMA -> {
+                radarAt = null
+                showCities = false
+                showSettings = false
             }
-            "comparar" -> CompareScreen(
-                viewModel = viewModel,
-                initialIds = compareIds.orEmpty().split('|').filter { it.isNotEmpty() },
-                onBack = { compareIds = null },
-            )
-            "ciudades" -> CitiesScreen(
-                viewModel = viewModel,
-                onBack = { showCities = false },
-                onOpenPlace = { id ->
-                    cityTarget = DeepLinkTarget(id, null)
-                    showCities = false
-                },
-                onLocationPermission = { granted ->
-                    hasPermission = granted
-                    if (granted) viewModel.refresh()
-                },
-            )
-            "ajustes" -> SettingsScreen(
-                viewModel = viewModel,
-                onBack = { showSettings = false },
-                onShowWelcome = { showWelcome = true },
-                onLocationPermission = { granted ->
-                    hasPermission = granted
-                    if (granted) viewModel.refresh()
-                },
-            )
-            "permiso" -> PermissionScreen(
-                onAllow = { LocationAsk.request(context, launcher) },
-                onPickCity = { showCities = true },
-            )
-            // Al cambiar las unidades se rearma el pronóstico para que todos los textos se reformateen.
-            else -> key(units) {
-                WeatherPager(
-                    pages,
-                    pagerState,
-                    viewModel,
-                    onOpenCities = { showCities = true },
-                    onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
-                    // Arranca con la ciudad que se mira y las que le siguen.
-                    onOpenCompare = { firstId ->
-                        compareIds = (listOf(firstId) + pages.filter { it != firstId }).take(3).joinToString("|")
-                    },
-                    deepLink = cityTarget ?: deepLink,
-                    onDeepLinkHandled = {
-                        cityTarget = null
-                        onDeepLinkHandled()
-                    },
-                )
+            // Ya en el mapa, no se vuelve a abrir (perdería el lugar y el zoom).
+            NavTab.MAPA -> if (radarAt == null) mapSnapshot?.let { radarAt = "${it.latitude},${it.longitude}" }
+            NavTab.CIUDADES -> {
+                radarAt = null
+                showSettings = false
+                showCities = true
+            }
+            NavTab.AJUSTES -> {
+                radarAt = null
+                showCities = false
+                showSettings = true
             }
         }
     }
+    val openCitySearch = {
+        focusCitySearch = true
+        // La bienvenida también se abre desde Ajustes: si quedaba abierto, tapaba a Ciudades.
+        showSettings = false
+        showCities = true
     }
-        AnimatedVisibility(
-            visible = showBar,
-            enter = slideInVertically(Motion.gentle()) { it } + fadeIn(),
-            exit = slideOutVertically(Motion.gentle()) { it } + fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Pantalla ancha: la barra va de costado y no le saca alto al contenido.
+        val rail = maxWidth >= NavRailMinWidth
+        val railSpace by animateDpAsState(if (rail && showBar) NavRailSpace else 0.dp, Motion.gentle(), label = "riel")
+        if (rail && showBar) {
+            // Detrás del riel sigue lo que hay al lado: el cielo (con su mismo velo) o el fondo del tema.
+            if (overSky) {
+                val kind = if (screen == "clima") tabSnapshot?.current?.code?.let(WeatherCodes::kind) else null
+                val isDay = if (screen == "clima") tabSnapshot?.current?.isDay else null
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(skyColors(kind ?: WeatherKind.PARTLY, isDay ?: true)))
+                        .background(
+                            if (screen == "clima") {
+                                Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.3f), 0.5f to Color.Transparent)
+                            } else {
+                                Brush.verticalGradient(listOf(PermissionScrim, PermissionScrim))
+                            },
+                        ),
+                )
+            } else {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+            }
+        }
+        CompositionLocalProvider(
+            LocalBottomBarSpace provides if (showBar && !rail) BottomBarSpace else 0.dp,
+            LocalNavRailSpace provides if (showBar && rail) NavRailSpace else 0.dp,
         ) {
+            AnimatedContent(
+                targetState = screen,
+                modifier = Modifier
+                    // El riel va por dentro del recorte y de la barra del sistema apaisada; el
+                    // contenido arranca después, así ninguna pantalla tiene que saber del riel.
+                    .then(
+                        if (rail && showBar) {
+                            Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start))
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(start = railSpace)
+                    .graphicsLayer {
+                        // Se lee al dibujar: el gesto no recompone las pantallas.
+                        val shownBack = backShown.value
+                        val scale = 1f - 0.1f * shownBack
+                        scaleX = scale
+                        scaleY = scale
+                        // Desde el borde izquierdo se corre a la derecha y al revés, como si la empujara el dedo.
+                        val direction = if (backEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f
+                        translationX = direction * shownBack * size.width * 0.05f
+                        shape = RoundedCornerShape((32 * shownBack).dp)
+                        clip = shownBack > 0f
+                    },
+                transitionSpec = {
+                    // Entre pestañas, un fundido corto; lo que se abre encima entra agrandándose.
+                    if (initialState in DrillIns || targetState in DrillIns) Motion.drillIn() else Motion.tabSwitch()
+                },
+                label = "pantalla",
+            ) { target ->
+                when (target) {
+                    "bienvenida" -> WelcomeScreen(
+                        viewModel = viewModel,
+                        onAllowLocation = { LocationAsk.request(context, launcher) },
+                        onFinish = {
+                            Welcome.markSeen(context)
+                            showWelcome = false
+                            // Si salteó la ubicación y no tiene ciudades, pedirla otra vez enseguida era
+                            // insistir: se abre la búsqueda de ciudades.
+                            if (!hasPermission && places.isEmpty() && currentSnapshot == null) openCitySearch()
+                        },
+                        onPickCity = {
+                            Welcome.markSeen(context)
+                            showWelcome = false
+                            openCitySearch()
+                        },
+                    )
+                    "radar" -> shownRadar?.let {
+                        tabStates.SaveableStateProvider("mapa:${it[0]},${it[1]}") {
+                            RadarScreen(it[0], it[1], onBack = { radarAt = null }, onAddPlace = viewModel::addPlace)
+                        }
+                    }
+                    "comparar" -> CompareScreen(
+                        viewModel = viewModel,
+                        initialIds = compareIds.orEmpty().split('|').filter { it.isNotEmpty() },
+                        onBack = { compareIds = null },
+                    )
+                    "ciudades" -> tabStates.SaveableStateProvider("ciudades") {
+                        CitiesScreen(
+                            viewModel = viewModel,
+                            onOpenPlace = { id ->
+                                cityTarget = DeepLinkTarget(id, null)
+                                showCities = false
+                            },
+                            onLocationPermission = { granted ->
+                                hasPermission = granted
+                                if (granted) viewModel.refresh()
+                            },
+                            // Hace falta una segunda ciudad (o "Mi ubicación" y una guardada).
+                            canCompare = pages.size > 1,
+                            // Arranca con la ciudad que se mira en el pronóstico y las que le siguen.
+                            onCompare = {
+                                compareIds = (listOf(tabId) + pages.filter { it != tabId }).take(5).joinToString("|")
+                            },
+                            focusSearch = focusCitySearch,
+                            onSearchFocused = { focusCitySearch = false },
+                        )
+                    }
+                    "ajustes" -> tabStates.SaveableStateProvider("ajustes") {
+                        SettingsScreen(
+                            viewModel = viewModel,
+                            onBack = { showSettings = false },
+                            onShowWelcome = { showWelcome = true },
+                            onLocationPermission = { granted ->
+                                hasPermission = granted
+                                if (granted) viewModel.refresh()
+                            },
+                        )
+                    }
+                    "permiso" -> PermissionScreen(
+                        onAllow = { LocationAsk.request(context, launcher) },
+                        onPickCity = openCitySearch,
+                    )
+                    else -> tabStates.SaveableStateProvider("clima") {
+                        if (forecastShownAt[0] == 0L) forecastShownAt[0] = SystemClock.uptimeMillis()
+                        // Al cambiar las unidades se rearma el pronóstico para que todos los textos se reformateen.
+                        key(units) {
+                            WeatherPager(
+                                pages,
+                                pagerState,
+                                viewModel,
+                                onOpenCities = { showCities = true },
+                                onOpenRadar = { lat, lon -> radarAt = "$lat,$lon" },
+                                shownAt = forecastShownAt[0],
+                                deepLink = cityTarget ?: deepLink,
+                                onDeepLinkHandled = {
+                                    cityTarget = null
+                                    onDeepLinkHandled()
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        val bar: @Composable (Boolean) -> Unit = { vertical ->
             FloatingNavBar(
                 selected = when (screen) {
                     "ciudades" -> NavTab.CIUDADES
@@ -452,29 +557,9 @@ fun WeatherRoute(
                     "radar" -> NavTab.MAPA
                     else -> NavTab.CLIMA
                 },
-                overSky = screen == "clima",
-                mapEnabled = tabSnapshot != null,
-                onSelect = { tab ->
-                    when (tab) {
-                        NavTab.CLIMA -> {
-                            radarAt = null
-                            showCities = false
-                            showSettings = false
-                        }
-                        // Ya en el mapa, no se vuelve a abrir (perdería el lugar y el zoom).
-                        NavTab.MAPA -> if (radarAt == null) tabSnapshot?.let { radarAt = "${it.latitude},${it.longitude}" }
-                        NavTab.CIUDADES -> {
-                            radarAt = null
-                            showSettings = false
-                            showCities = true
-                        }
-                        NavTab.AJUSTES -> {
-                            radarAt = null
-                            showCities = false
-                            showSettings = true
-                        }
-                    }
-                },
+                overSky = screen == "clima" || screen == "permiso",
+                mapEnabled = mapSnapshot != null || radarAt != null,
+                onSelect = selectTab,
                 icon = { tab, tint ->
                     when (tab) {
                         // El clima de ahora de la ciudad que se mira, como ícono.
@@ -488,19 +573,52 @@ fun WeatherRoute(
                         NavTab.AJUSTES -> Icon(Icons.Rounded.Settings, contentDescription = null, tint = tint)
                     }
                 },
+                vertical = vertical,
             )
+        }
+        if (rail) {
+            AnimatedVisibility(
+                visible = showBar,
+                enter = slideInHorizontally(Motion.gentle()) { -it } + fadeIn(),
+                exit = slideOutHorizontally(Motion.gentle()) { -it } + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
+                    .padding(start = 12.dp),
+            ) { bar(true) }
+        } else {
+            AnimatedVisibility(
+                visible = showBar,
+                enter = slideInVertically(Motion.gentle()) { it } + fadeIn(),
+                exit = slideOutVertically(Motion.gentle()) { it } + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) { bar(false) }
         }
     }
 }
+
+/** Pantallas que se abren encima de las pestañas: entran y salen con escala, no con el fundido corto. */
+private val DrillIns = setOf("bienvenida", "comparar")
+
+/** Velo del pedido de ubicación (el mismo de la bienvenida): el cielo de día es muy claro para texto blanco. */
+private val PermissionScrim = Color.Black.copy(alpha = 0.25f)
 
 @Composable
 private fun PermissionScreen(onAllow: () -> Unit, onPickCity: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         AnimatedSky(WeatherKind.PARTLY, isDay = true, modifier = Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize().background(PermissionScrim))
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp),
+                // Con letra grande o apaisado no entra: se desplaza en vez de cortarse.
+                .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(start = 32.dp, end = 32.dp, top = 32.dp, bottom = 32.dp + LocalBottomBarSpace.current),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -512,16 +630,17 @@ private fun PermissionScreen(onAllow: () -> Unit, onPickCity: () -> Unit) {
             Spacer(Modifier.height(24.dp))
             Text(
                 tr("El clima donde estés", "The weather wherever you are"),
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineMedium.onSky(),
                 color = OnSky,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(12.dp))
             Text(
                 tr("Necesito tu ubicación aproximada para mostrarte el pronóstico y mantener los widgets al día.", "I need your approximate location to show the forecast and keep the widgets up to date."),
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyLarge.onSky(),
                 color = OnSkyVariant,
                 textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 480.dp),
             )
             Spacer(Modifier.height(32.dp))
             Button(onClick = onAllow) { Text(tr("Permitir ubicación", "Allow location")) }
@@ -539,7 +658,7 @@ private fun WeatherPager(
     viewModel: WeatherViewModel,
     onOpenCities: () -> Unit,
     onOpenRadar: (Double, Double) -> Unit,
-    onOpenCompare: (String) -> Unit,
+    shownAt: Long,
     deepLink: DeepLinkTarget?,
     onDeepLinkHandled: () -> Unit,
 ) {
@@ -647,6 +766,9 @@ private fun WeatherPager(
                         onCollapsedChange = { collapsed[placeId] = it },
                         onScrollingChange = { scrolling[placeId] = it },
                         openAlert = openAlert,
+                        shownAt = shownAt,
+                        // Una sola ciudad: arriba no hay puntos y el encabezado puede subir.
+                        compactTop = pages.size == 1,
                     )
                 }
             }
@@ -685,117 +807,95 @@ private fun WeatherPager(
             skySnapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
             skySnapshot?.current?.isDay ?: true,
         )[0]
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 // Al bajar, la barra toma el color de arriba del cielo para que el texto se lea.
                 .background(barColor.copy(alpha = 0.92f * barAlpha))
                 .statusBarsPadding()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .heightIn(min = 48.dp),
         ) {
-            // Ciudades y Ajustes están en la barra de abajo: de este lado queda el lugar, para que
-            // los puntos sigan centrados frente al "⋮".
-            Spacer(Modifier.size(48.dp))
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                CompactHeader(
-                    skySnapshot,
-                    Modifier
-                        .graphicsLayer {
-                            alpha = barAlpha
-                            translationY = (1f - barAlpha) * 12.dp.toPx()
-                        }
-                        // Escondida, TalkBack no la lee: el encabezado grande ya dice lo mismo.
-                        .then(if (isCollapsed) Modifier else Modifier.clearAndSetSemantics { }),
-                )
+            CompactHeader(
+                skySnapshot,
+                Modifier
+                    .align(Alignment.Center)
+                    // El lugar del botón de compartir, de los dos lados: queda centrada de verdad.
+                    .padding(horizontal = 48.dp)
+                    .graphicsLayer {
+                        alpha = barAlpha
+                        translationY = (1f - barAlpha) * 12.dp.toPx()
+                    }
+                    // Escondida, TalkBack no la lee: el encabezado grande ya dice lo mismo.
+                    .then(if (isCollapsed) Modifier else Modifier.clearAndSetSemantics { }),
+            )
+            if (pages.size > 1) {
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .align(Alignment.Center)
                         .graphicsLayer { alpha = 1f - barAlpha }
                         .semantics {
-                            if (pages.size > 1) {
-                                contentDescription = tr(
-                                    "Ciudad ${pagerState.currentPage + 1} de ${pages.size}",
-                                    "City ${pagerState.currentPage + 1} of ${pages.size}",
-                                )
-                            }
-                        },
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    if (pages.size > 1) {
-                        pages.indices.forEach { index ->
-                            val selected = index == pagerState.currentPage
-                            val width by animateDpAsState(if (selected) 20.dp else 6.dp, Motion.snappy(), label = "punto")
-                            val dotAlpha by animateFloatAsState(if (selected) 1f else 0.45f, label = "punto alfa")
-                            Box(
-                                Modifier
-                                    .padding(horizontal = 3.dp)
-                                    .size(width = width, height = 6.dp)
-                                    .clip(CircleShape)
-                                    .background(OnSky.copy(alpha = dotAlpha)),
+                            contentDescription = tr(
+                                "Ciudad ${pagerState.currentPage + 1} de ${pages.size}",
+                                "City ${pagerState.currentPage + 1} of ${pages.size}",
                             )
-                        }
+                        },
+                ) {
+                    pages.indices.forEach { index ->
+                        val selected = index == pagerState.currentPage
+                        val width by animateDpAsState(if (selected) 20.dp else 6.dp, Motion.snappy(), label = "punto")
+                        val dotAlpha by animateFloatAsState(if (selected) 1f else 0.45f, label = "punto alfa")
+                        Box(
+                            Modifier
+                                .padding(horizontal = 3.dp)
+                                .size(width = width, height = 6.dp)
+                                .clip(CircleShape)
+                                .background(OnSky.copy(alpha = dotAlpha)),
+                        )
                     }
                 }
             }
-            ForecastMenu(
-                snapshot = skySnapshot,
-                canCompare = pages.size > 1,
-                onCompare = { onOpenCompare(skyId) },
-            )
+            ShareButton(skySnapshot, Modifier.align(Alignment.CenterEnd))
         }
     }
 }
 
-/** El "⋮" del pronóstico: compartir la ciudad que se mira como imagen y comparar ciudades. */
+/** Compartir como imagen el pronóstico de la ciudad que se mira. */
 @Composable
-private fun ForecastMenu(snapshot: WeatherSnapshot?, canCompare: Boolean, onCompare: () -> Unit) {
+private fun ShareButton(snapshot: WeatherSnapshot?, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var open by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { open = true }) {
-            Icon(Icons.Rounded.MoreVert, contentDescription = tr("Más opciones", "More options"), tint = OnSky)
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(
-                text = { Text(tr("Compartir pronóstico", "Share forecast")) },
-                leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
-                // Sin pronóstico no hay qué dibujar; mientras se arma la imagen, un toque basta.
-                enabled = snapshot != null && !sharing,
-                onClick = {
-                    open = false
-                    val shown = snapshot ?: return@DropdownMenuItem
-                    sharing = true
-                    scope.launch {
-                        try {
-                            ShareImage.share(context, shown)
-                        } catch (cancel: kotlinx.coroutines.CancellationException) {
-                            throw cancel
-                        } catch (_: Exception) {
-                            android.widget.Toast.makeText(
-                                context,
-                                tr("No pude armar la imagen", "Couldn't create the image"),
-                                android.widget.Toast.LENGTH_SHORT,
-                            ).show()
-                        } finally {
-                            sharing = false
-                        }
-                    }
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(tr("Comparar ciudades", "Compare cities")) },
-                leadingIcon = { Icon(CompareIcon, contentDescription = null) },
-                // Hace falta una segunda ciudad (o "Mi ubicación" y una guardada).
-                enabled = canCompare,
-                onClick = {
-                    open = false
-                    onCompare()
-                },
-            )
-        }
+    // Sin pronóstico no hay qué dibujar; mientras se arma la imagen, un toque basta.
+    val enabled = snapshot != null && !sharing
+    IconButton(
+        onClick = {
+            val shown = snapshot ?: return@IconButton
+            sharing = true
+            scope.launch {
+                try {
+                    ShareImage.share(context, shown)
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    android.widget.Toast.makeText(
+                        context,
+                        tr("No pude armar la imagen", "Couldn't create the image"),
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                } finally {
+                    sharing = false
+                }
+            }
+        },
+        enabled = enabled,
+        modifier = modifier,
+    ) {
+        Icon(
+            Icons.Rounded.Share,
+            contentDescription = tr("Compartir pronóstico", "Share forecast"),
+            tint = OnSky.copy(alpha = if (enabled) 1f else 0.5f),
+        )
     }
 }
 
@@ -838,13 +938,14 @@ private fun WeatherPage(
     onScrollingChange: (Boolean) -> Unit = {},
     openAlert: String? = null,
     banner: (@Composable () -> Unit)? = null,
+    shownAt: Long = 0L,
+    compactTop: Boolean = false,
 ) {
     val cards = viewModel.cards.collectAsStateWithLifecycle().value.visible
     val snapshot by remember(placeId) { viewModel.snapshots(placeId) }
         .collectAsStateWithLifecycle(viewModel.cached(placeId))
     val current = snapshot
     var selectedDay by remember { mutableStateOf<Day?>(null) }
-    val shownAt = remember { SystemClock.uptimeMillis() }
     if (current != null) {
         selectedDay?.let { day -> DaySheet(current, day, onDismiss = { selectedDay = null }) }
     }
@@ -871,6 +972,7 @@ private fun WeatherPage(
         loadingStatus = loadingStatus,
         onPickCity = onPickCity,
         onScrollingChange = onScrollingChange,
+        compactTop = compactTop,
     )
 }
 
@@ -902,6 +1004,7 @@ fun ForecastContent(
     loadingStatus: String? = null,
     onPickCity: () -> Unit = {},
     onScrollingChange: (Boolean) -> Unit = {},
+    compactTop: Boolean = false,
 ) {
     // La lista del resumen (la única en pantallas angostas) decide si el encabezado se achica.
     val summaryState = rememberLazyListState()
@@ -950,16 +1053,44 @@ fun ForecastContent(
     LaunchedEffect(isCollapsed) { onCollapsedChange(isCollapsed) }
     val insets = WindowInsets.systemBars.asPaddingValues()
     val compact = Appearance.compactLayout
+    // Lugar de la fila de arriba (puntos de ciudades y compartir).
+    val topBarSpace = 56.dp
+    // Con una sola ciudad ([compactTop]) no hay puntos y, en una columna, el encabezado sube. No
+    // llega a los 16 dp: el ícono grande del clima quedaba debajo del botón de compartir. Con un
+    // aviso arriba tampoco: su "Reintentar" caería bajo ese botón.
+    val singleTopSpace = if (compactTop && heroIndex == 0) 32.dp else topBarSpace
     val padding = PaddingValues(
         start = 16.dp,
         end = 16.dp,
-        top = insets.calculateTopPadding() + 56.dp,
+        top = insets.calculateTopPadding() + singleTopSpace,
         bottom = insets.calculateBottomPadding() + 24.dp + LocalBottomBarSpace.current,
     )
     val spacing = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)
     // La frase va como encabezado de "Próximas horas", como el resumen del Clima de Apple; si esa
     // tarjeta está oculta, va sola arriba.
     val headlineInHours = ForecastCard.HOURS in cards
+    // Cuán claro es el cielo de este lugar ahora: de eso dependen el velo y el vidrio de las tarjetas.
+    val skyBrightness = remember(snapshot, minute) {
+        val kind = snapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
+        SkySurface.brightness(SkyTime.colors(kind, snapshot?.current?.isDay ?: true, snapshot))
+    }
+    // El mapa tiene su pestaña: acá la tarjeta va solo si hay lluvia cerca o en la región. La
+    // vista previa se pide acá (y no dentro de la tarjeta) para no dejar un ítem vacío en la lista;
+    // mientras no llega, no hay tarjeta. Se vuelve a mirar cada 15 minutos, lo que dura su caché.
+    val darkMap = LocalDarkTheme.current
+    val radarLatitude = snapshot?.latitude
+    val radarLongitude = snapshot?.longitude
+    val wantsRadar = ForecastCard.RADAR in cards
+    val radarPreview by produceState<RainMap.Preview?>(null, radarLatitude, radarLongitude, darkMap, wantsRadar, minute / 900_000) {
+        value = if (wantsRadar && radarLatitude != null && radarLongitude != null) {
+            runCatching { RainMap.preview(radarLatitude, radarLongitude, darkMap) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull()
+        } else {
+            null
+        }
+    }
+    val radarShown = radarPreview?.takeIf { it.nearby || it.inArea }
 
     // Cada bloque es una función que agrega ítems a una lista; así se reparten entre uno o dos paneles.
     val summary: LazyListScope.() -> Unit = {
@@ -1052,8 +1183,10 @@ fun ForecastContent(
                             val alertSpans = remember(snapshot) { alertSpans(snapshot) }
                             HourlyChart(hours, sunEvents = sunEvents, yesterday = yesterday, alerts = alertSpans)
                         }
-                        ForecastCard.DAYS -> DailyCard(snapshot, onDay = onDay)
-                        ForecastCard.RADAR -> RadarCard(snapshot.latitude, snapshot.longitude, onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })
+                        ForecastCard.DAYS -> DailyCard(snapshot, onDay = onDay, shownAt = shownAt)
+                        ForecastCard.RADAR -> radarShown?.let { preview ->
+                            RadarCard(preview, onClick = { onOpenRadar(snapshot.latitude, snapshot.longitude) })
+                        }
                         ForecastCard.DETAILS -> DetailsGrid(snapshot, part = part, minute = minute / 60_000)
                     }
                 }
@@ -1063,43 +1196,63 @@ fun ForecastContent(
     val footer: LazyListScope.() -> Unit = {
         if (snapshot != null) {
             item(key = "pie", contentType = "pie") {
-                Text(
-                    tr("Actualizado", "Updated") + " $ageLabel (${updatedAt(snapshot.fetchedAt)}) · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
-                    style = MaterialTheme.typography.labelMedium.onSky(),
-                    color = OnSkyVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                )
+                // En su propio vidrio: suelto sobre el horizonte claro de un día despejado no se leía.
+                Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
+                    SkyGlass(shape = ClimaShapes.inner) {
+                        Text(
+                            tr("Actualizado", "Updated") + " $ageLabel (${updatedAt(snapshot.fetchedAt)}) · " + tr("Datos de Open-Meteo", "Data by Open-Meteo"),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = SkySurface.contentVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        )
+                    }
+                }
             }
         }
     }
     // Las tarjetas elegidas, en su orden, que van en una columna: [pick] dice si va y con qué parte.
     fun LazyListScope.cardsWhere(pick: (ForecastCard) -> DetailsPart?) {
-        cards.forEachIndexed { i, which -> pick(which)?.let { part -> card(which, 2 + i, part) } }
+        cards.forEachIndexed { i, which ->
+            // Sin lluvia a la vista (o sin vista previa todavía) la tarjeta del mapa no va.
+            if (which == ForecastCard.RADAR && radarShown == null) return@forEachIndexed
+            pick(which)?.let { part -> card(which, 2 + i, part) }
+        }
     }
 
+    CompositionLocalProvider(LocalSkyBrightness provides skyBrightness) {
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            // Velo oscuro arriba: el cielo de día es muy claro y la temperatura blanca se perdía.
-            .background(
-                Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.3f),
-                    0.5f to Color.Transparent,
-                ),
-            ),
+            // Velo oscuro: fuerte arriba, donde la temperatura va directo sobre el cielo, y en toda
+            // la lista según cuán claro es el cielo, para que el blanco de las tarjetas se lea.
+            .background(SkySurface.veil(skyBrightness)),
     ) {
         val paneSpacing = if (compact) 8.dp else 12.dp
         // Cada panel con su relleno: entre paneles va la mitad, así el hueco es parejo.
         fun panePadding(first: Boolean, last: Boolean) = PaddingValues(
             start = if (first) 16.dp else paneSpacing / 2,
             end = if (last) 16.dp else paneSpacing / 2,
-            top = padding.calculateTopPadding(),
+            // En paneles la fila de arriba siempre tiene su lugar: el botón de compartir cae
+            // sobre la columna derecha, que arranca con una tarjeta.
+            top = insets.calculateTopPadding() + topBarSpace,
             bottom = padding.calculateBottomPadding(),
         )
         when {
+            // Sin pronóstico todavía (cargando o con error) en pantalla ancha: una columna
+            // centrada. Repartido en paneles, el esqueleto o el aviso ocupaban solo el de la
+            // izquierda y el resto quedaba vacío.
+            snapshot == null && maxWidth >= TwoPaneWidth -> LazyColumn(
+                state = summaryState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = TwoPaneWidth),
+                contentPadding = padding,
+                verticalArrangement = spacing,
+            ) {
+                summary()
+            }
             // Tablet apaisada: el ahora, lo que viene y los detalles, en tres columnas.
             maxWidth >= ThreePaneWidth -> Row(Modifier.fillMaxSize()) {
                 LazyColumn(
@@ -1174,6 +1327,7 @@ fun ForecastContent(
                 footer()
             }
         }
+    }
     }
 }
 
@@ -1267,24 +1421,31 @@ private fun ErrorBanner(notice: StatusNotice, onRetry: () -> Unit) {
     val isError = notice.isError
     val message = notice.message
     val age = notice.age
-    Surface(
-        color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
-        shape = RoundedCornerShape(20.dp),
+    // El mismo vidrio que las tarjetas; el error se nota en el color del ícono, no en un fondo opaco.
+    SkyGlass(
         modifier = Modifier
             .fillMaxWidth()
             .semantics { liveRegion = LiveRegionMode.Polite },
+        strong = isError,
     ) {
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (isError) Icons.Rounded.Warning else Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(20.dp))
+            Icon(
+                if (isError) Icons.Rounded.Warning else Icons.Rounded.Info,
+                contentDescription = null,
+                tint = if (isError) SkySurface.severe else SkySurface.contentVariant,
+                modifier = Modifier.size(20.dp),
+            )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                age?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+                age?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = if (message == null) SkySurface.content else SkySurface.contentVariant) }
             }
             // Sin red no tiene sentido: se reintenta solo cuando vuelve.
             if (notice.canRetry) {
-                TextButton(onClick = onRetry) { Text(tr("Reintentar", "Retry")) }
+                // El color primario del tema no se lee sobre el vidrio oscuro.
+                TextButton(onClick = onRetry, colors = ButtonDefaults.textButtonColors(contentColor = SkySurface.content)) {
+                    Text(tr("Reintentar", "Retry"))
+                }
             } else {
                 Spacer(Modifier.height(40.dp))
             }
@@ -1422,7 +1583,8 @@ private fun Hero(snapshot: WeatherSnapshot, isCurrentLocation: Boolean) {
                     Text(
                         extras.joinToString(" · "),
                         style = MaterialTheme.typography.bodyMedium.onSky(),
-                        color = OnSkyVariant,
+                        // Letra más chica que el renglón de arriba: va en blanco pleno.
+                        color = OnSky,
                     )
                 }
             }
@@ -1491,25 +1653,27 @@ private fun AlertCard(alert: WeatherAlert, startExpanded: Boolean = false) {
     LaunchedEffect(startExpanded) { if (startExpanded) expanded = true }
     val severe = alert.isSevere
     val chevron by animateFloatAsState(if (expanded) 180f else 0f, label = "flecha alerta")
-    Surface(
-        color = if (severe) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = if (severe) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onTertiaryContainer,
-        shape = RoundedCornerShape(20.dp),
+    // El nivel va como acento (ícono y título) sobre el mismo vidrio, un poco más oscuro para que
+    // se destaque; antes era un fondo opaco de otro material.
+    val accent = if (severe) SkySurface.severe else SkySurface.warning
+    SkyGlass(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(ClimaShapes.card)
             .pressable { expanded = !expanded }
             .semantics { stateDescription = if (expanded) tr("Abierta", "Expanded") else tr("Cerrada, tocá para ver el detalle", "Collapsed, tap for details") }
             .animateContentSize(Motion.gentle()),
+        strong = true,
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Warning, contentDescription = null, modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.Warning, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         alert.event.calmCase(),
                         style = MaterialTheme.typography.titleSmall,
+                        color = accent,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1525,6 +1689,7 @@ private fun AlertCard(alert: WeatherAlert, startExpanded: Boolean = false) {
                 Icon(
                     Icons.Rounded.KeyboardArrowDown,
                     contentDescription = null,
+                    tint = SkySurface.contentVariant,
                     modifier = Modifier.size(22.dp).graphicsLayer { rotationZ = chevron },
                 )
             }
@@ -1537,6 +1702,7 @@ private fun AlertCard(alert: WeatherAlert, startExpanded: Boolean = false) {
                 Text(
                     tr("Fuente: Servicio Meteorológico Nacional", "Source: Argentina's National Weather Service"),
                     style = MaterialTheme.typography.labelSmall,
+                    color = SkySurface.contentVariant,
                 )
             }
         }
@@ -1553,71 +1719,51 @@ private fun String.calmCase(): String {
     return lowercase().replaceFirstChar { it.uppercase() }
 }
 
+/** El mapa de lluvia en chico. Solo se muestra con lluvia cerca o en la región (lo decide quien la llama). */
 @Composable
-private fun RadarCard(latitude: Double, longitude: Double, onClick: () -> Unit) {
-    val dark = LocalDarkTheme.current
-    // Vista previa: el mapa alrededor del lugar con la lluvia de esta hora (se guarda 15 minutos).
-    val preview by produceState<RainMap.Preview?>(null, latitude, longitude, dark) {
-        value = runCatching { RainMap.preview(latitude, longitude, dark) }
-            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
-            .getOrNull()
-    }
+private fun RadarCard(preview: RainMap.Preview, onClick: () -> Unit) {
     val markerColor = MaterialTheme.colorScheme.primary
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(28.dp),
+    SkyGlass(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
+            .clip(ClimaShapes.card)
             .pressable(onClick),
     ) {
         Row(
             Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val shown = preview
-            if (shown == null) {
-                Image(
-                    painter = painterResource(WeatherCodes.icon(61)),
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                )
-            } else {
-                Canvas(
-                    Modifier
-                        .size(72.dp)
-                        .clip(RoundedCornerShape(18.dp)),
-                ) {
-                    val side = size.width
-                    shown.tiles.forEach { (xy, image) ->
-                        drawImage(
-                            image,
-                            dstOffset = IntOffset(((xy[0] - shown.x0) * side).roundToInt(), ((xy[1] - shown.y0) * side).roundToInt()),
-                            dstSize = IntSize(side.roundToInt() + 1, side.roundToInt() + 1),
-                        )
-                    }
-                    shown.rain?.let {
-                        drawImage(it, dstSize = IntSize(side.roundToInt(), side.roundToInt()), filterQuality = FilterQuality.High)
-                    }
-                    val center = Offset(side / 2, size.height / 2)
-                    drawCircle(Color.White, 5.dp.toPx(), center)
-                    drawCircle(markerColor, 3.5.dp.toPx(), center)
+            Canvas(
+                Modifier
+                    .size(72.dp)
+                    .clip(ClimaShapes.inner),
+            ) {
+                val side = size.width
+                preview.tiles.forEach { (xy, image) ->
+                    drawImage(
+                        image,
+                        dstOffset = IntOffset(((xy[0] - preview.x0) * side).roundToInt(), ((xy[1] - preview.y0) * side).roundToInt()),
+                        dstSize = IntSize(side.roundToInt() + 1, side.roundToInt() + 1),
+                    )
                 }
+                preview.rain?.let {
+                    drawImage(it, dstSize = IntSize(side.roundToInt(), side.roundToInt()), filterQuality = FilterQuality.High)
+                }
+                val center = Offset(side / 2, size.height / 2)
+                drawCircle(Color.White, 5.dp.toPx(), center)
+                drawCircle(markerColor, 3.5.dp.toPx(), center)
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(tr("Mapa de lluvia", "Rain map"), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    when {
-                        shown != null && !shown.rainKnown -> tr("Dónde llueve ahora y en las próximas horas", "Where it rains now and in the next hours")
-                        shown?.nearby == true -> tr("Llueve cerca ahora. Tocá para ver cómo se mueve", "It's raining nearby. Tap to see where it's going")
-                        shown?.inArea == true -> tr("Hay lluvia en la región, no acá. Tocá para ver hacia dónde va", "Rain in the region, not here. Tap to see where it's going")
-                        shown != null -> tr("Sin lluvia en la región. Tocá para ver las próximas horas", "No rain in the region. Tap for the next hours")
-                        else -> tr("Dónde llueve ahora y en las próximas horas", "Where it rains now and in the next hours")
+                    if (preview.nearby) {
+                        tr("Llueve cerca ahora. Tocá para ver cómo se mueve", "It's raining nearby. Tap to see where it's going")
+                    } else {
+                        tr("Hay lluvia en la región, no acá. Tocá para ver hacia dónde va", "Rain in the region, not here. Tap to see where it's going")
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = SkySurface.contentVariant,
                 )
             }
         }
@@ -1630,12 +1776,7 @@ private fun RadarCard(latitude: Double, longitude: Double, onClick: () -> Unit) 
  */
 @Composable
 fun GlassCard(title: String?, summary: String? = null, content: @Composable () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(28.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    SkyGlass(Modifier.fillMaxWidth()) {
         val compact = Appearance.compactLayout
         Column(Modifier.padding(vertical = if (compact) 12.dp else 16.dp)) {
             if (summary != null) {
@@ -1645,7 +1786,7 @@ fun GlassCard(title: String?, summary: String? = null, content: @Composable () -
                         .padding(horizontal = 20.dp, vertical = if (compact) 8.dp else 12.dp)
                         .fillMaxWidth()
                         .height(1.dp)
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)),
+                        .background(surfaceInk().divider),
                 )
             } else if (title != null) {
                 CardLabel(title, Modifier.padding(horizontal = 20.dp))
@@ -1656,19 +1797,11 @@ fun GlassCard(title: String?, summary: String? = null, content: @Composable () -
     }
 }
 
-/** Título de tarjeta en versalitas chicas y espaciadas, como en el Clima de Apple. */
-@Composable
-fun CardLabel(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text.uppercase(),
-        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier,
-    )
-}
+/** Anchos de las columnas de una fila de día, medidos del texto: con letra grande no se cortan. */
+private class DayColumns(val label: Dp, val mark: Dp, val temperature: Dp)
 
 @Composable
-private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
+private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit, shownAt: Long = 0L) {
     // Compacto: una semana en vez de dos.
     val compact = Appearance.compactLayout
     val days = snapshot.upcomingDays(if (compact) 7 else 14)
@@ -1676,22 +1809,45 @@ private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
     val weekMin = days.minOf { it.min }
     val weekMax = days.maxOf { it.max }
     val today = snapshot.nowAtPlace().toLocalDate()
+    val labels = days.map { dayLabel(it.localDate, today) }
+    // Cada columna toma el ancho de su texto más largo (con un mínimo): todas las filas quedan
+    // alineadas y, con la letra agrandada, "Mañana" o "−12°" no se cortan.
+    val temperatures = days.flatMap { listOf(it.min.degrees(), it.max.degrees()) }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelStyle = MaterialTheme.typography.bodyLarge
+    val temperatureStyle = MaterialTheme.typography.bodyMedium
+    val markStyle = MaterialTheme.typography.labelMedium
+    val columns = remember(labels, temperatures, labelStyle, temperatureStyle, markStyle, density) {
+        fun widest(texts: List<String>, style: TextStyle): Dp =
+            with(density) { texts.maxOf { measurer.measure(it, style, softWrap = false, maxLines = 1).size.width }.toDp() }
+        DayColumns(
+            label = (widest(labels, labelStyle) + 8.dp).coerceAtLeast(72.dp),
+            mark = (widest(listOf("100%"), markStyle) + 8.dp).coerceAtLeast(40.dp),
+            temperature = (widest(temperatures, temperatureStyle) + 4.dp).coerceAtLeast(36.dp),
+        )
+    }
+    val todayBackground = surfaceInk().highlight
     GlassCard(tr("Próximos ${days.size} días", "Next ${days.size} days")) {
-        Column(Modifier.padding(horizontal = 8.dp)) {
-            days.forEach { day ->
+        // Compacto junta las filas; la fila en sí no baja de 48 dp, que es lo que se toca.
+        Column(Modifier.padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 2.dp)) {
+            days.forEachIndexed { index, day ->
                 val isToday = day.localDate == today
                 DayRow(
                     day,
-                    dayLabel(day.localDate, today),
+                    labels[index],
                     weekMin,
                     weekMax,
+                    columns,
                     now = snapshot.current.temperature.takeIf { isToday },
+                    shownAt = shownAt,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(ClimaShapes.inner)
                         // Hoy se destaca con un fondo suave, como en el clima del Pixel.
-                        .background(if (isToday) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent)
+                        .background(if (isToday) todayBackground else Color.Transparent)
                         .pressable { onDay(day) }
-                        .padding(horizontal = 12.dp, vertical = if (compact) 3.dp else 6.dp),
+                        .heightIn(min = 48.dp)
+                        .padding(horizontal = 12.dp, vertical = if (compact) 2.dp else 6.dp),
                 )
             }
         }
@@ -1699,15 +1855,28 @@ private fun DailyCard(snapshot: WeatherSnapshot, onDay: (Day) -> Unit) {
 }
 
 @Composable
-private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, now: Double? = null, modifier: Modifier = Modifier) {
+private fun DayRow(
+    day: Day,
+    label: String,
+    weekMin: Double,
+    weekMax: Double,
+    columns: DayColumns,
+    now: Double? = null,
+    shownAt: Long = 0L,
+    modifier: Modifier = Modifier,
+) {
+    val ink = surfaceInk()
     val probability = day.precipitationProbability ?: 0
+    // Sin lluvia, el lugar avisa de viento fuerte o sol muy fuerte.
+    val windy = (day.windGustsMax ?: 0.0) >= 50 || (day.windMax ?: 0.0) >= 35
+    val strongSun = (day.uvIndex ?: 0.0) >= 8
     val spoken = buildString {
         append("$label: ${WeatherCodes.description(day.code)}, ")
         append(tr("máxima", "high") + " ${day.max.degrees()}, " + tr("mínima", "low") + " ${day.min.degrees()}")
         if (now != null) append(", " + tr("ahora", "now") + " ${now.degrees()}")
         if (probability >= 10) append(", " + tr("lluvia", "rain") + " $probability%")
-        if ((day.windGustsMax ?: 0.0) >= 50 || (day.windMax ?: 0.0) >= 35) append(", " + tr("con viento", "windy"))
-        if ((day.uvIndex ?: 0.0) >= 8) append(", " + tr("sol fuerte", "strong sun"))
+        if (windy) append(", " + tr("con viento", "windy"))
+        if (strongSun) append(", " + tr("sol fuerte", "strong sun"))
     }
     Row(
         modifier.clearAndSetSemantics {
@@ -1716,33 +1885,27 @@ private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, no
         },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(72.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.width(columns.label))
         Image(
             painter = painterResource(WeatherCodes.icon(day.code)),
             contentDescription = WeatherCodes.description(day.code),
             modifier = Modifier.size(28.dp),
         )
-        // Sin lluvia, el lugar avisa de viento fuerte o sol muy fuerte.
-        val windy = (day.windGustsMax ?: 0.0) >= 50 || (day.windMax ?: 0.0) >= 35
-        val strongSun = (day.uvIndex ?: 0.0) >= 8
-        Text(
+        Box(Modifier.width(columns.mark), contentAlignment = Alignment.Center) {
             when {
-                probability >= 10 -> "$probability%"
-                windy -> "💨"
-                strongSun -> "☀️"
-                else -> ""
-            },
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.tertiary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.width(40.dp),
-        )
+                // Celeste fijo: el terciario del tema cambiaba con el color dinámico.
+                probability >= 10 -> Text("$probability%", style = MaterialTheme.typography.labelMedium, color = ink.rain, maxLines = 1)
+                windy -> Icon(WindIcon, contentDescription = null, tint = ink.variant, modifier = Modifier.size(18.dp))
+                strongSun -> Icon(SunIcon, contentDescription = null, tint = ink.sun, modifier = Modifier.size(18.dp))
+            }
+        }
         Text(
             day.min.degrees(),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = ink.variant,
             textAlign = TextAlign.End,
-            modifier = Modifier.width(36.dp),
+            maxLines = 1,
+            modifier = Modifier.width(columns.temperature),
         )
         TemperatureRange(
             min = day.min,
@@ -1750,6 +1913,7 @@ private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, no
             weekMin = weekMin,
             weekMax = weekMax,
             now = now,
+            shownAt = shownAt,
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 10.dp),
@@ -1757,7 +1921,8 @@ private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, no
         Text(
             day.max.degrees(),
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.width(36.dp),
+            maxLines = 1,
+            modifier = Modifier.width(columns.temperature),
         )
     }
 }
@@ -1767,19 +1932,22 @@ private fun DayRow(day: Day, label: String, weekMin: Double, weekMax: Double, no
  * En la fila de hoy, un punto marca la temperatura de ahora.
  */
 @Composable
-private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax: Double, now: Double?, modifier: Modifier) {
+private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax: Double, now: Double?, shownAt: Long, modifier: Modifier) {
     val span = (weekMax - weekMin).coerceAtLeast(1.0)
     val start = ((min - weekMin) / span).toFloat().coerceIn(0f, 1f)
     val end = ((max - weekMin) / span).toFloat().coerceIn(start, 1f)
-    val colors = MaterialTheme.colorScheme
-    var grown by remember { mutableStateOf(false) }
+    val ink = surfaceInk()
+    // Las barras crecen solo al abrir la app (el primer segundo y medio desde [shownAt], igual que
+    // la entrada de las tarjetas): al volver de otra pestaña o al desplazar ya están quietas.
+    val animate = remember { SystemClock.uptimeMillis() - shownAt < 1_500 }
+    var grown by remember { mutableStateOf(!animate) }
     LaunchedEffect(Unit) { grown = true }
     val grow by animateFloatAsState(if (grown) 1f else 0f, tween(700, delayMillis = 250, easing = EaseOutCubic), label = "rango")
-    val dark = LocalDarkTheme.current
-    val rangeColors = remember(min, max, dark) { TempColors.between(min, max).map { TempColors.forTheme(it, dark) } }
+    val onDark = ink.onDark
+    val rangeColors = remember(min, max, onDark) { TempColors.between(min, max).map { TempColors.forTheme(it, onDark) } }
     val nowAt = now?.let { ((it - weekMin) / span).toFloat().coerceIn(0f, 1f) }
-    val dotColor = colors.onSurface
-    val ringColor = colors.surfaceContainer
+    val dotColor = ink.content
+    val ringColor = ink.knockout
     Row(
         modifier
             .height(12.dp)
@@ -1793,7 +1961,7 @@ private fun TemperatureRange(min: Double, max: Double, weekMin: Double, weekMax:
             }
             .padding(vertical = 3.dp)
             .clip(CircleShape)
-            .background(colors.surfaceContainerHigh),
+            .background(ink.track),
     ) {
         if (start > 0f) Spacer(Modifier.weight(start))
         Box(

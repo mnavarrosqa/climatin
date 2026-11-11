@@ -3,6 +3,9 @@ package com.mnavarrosqa.clima.ui
 import com.mnavarrosqa.clima.data.tr
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import com.mnavarrosqa.clima.data.mmText
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -76,12 +79,7 @@ fun DaySheet(snapshot: WeatherSnapshot, day: Day, onDismiss: () -> Unit) {
             val hours = snapshot.hoursOf(day.localDate)
             if (hours.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    tr("Por hora", "Hourly"),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                )
+                ClimaSectionTitle(tr("Por hora", "Hourly"), Modifier.padding(horizontal = 24.dp))
                 Spacer(Modifier.height(8.dp))
                 HourlyChart(hours, Modifier.padding(horizontal = 8.dp), alerts = remember(snapshot) { alertSpans(snapshot) })
             }
@@ -89,7 +87,7 @@ fun DaySheet(snapshot: WeatherSnapshot, day: Day, onDismiss: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             val facts = buildList {
                 add(tr("Probabilidad de lluvia", "Chance of rain") to "${day.precipitationProbability ?: 0}%")
-                day.precipitationSum?.let { add(tr("Lluvia total", "Total rain") to String.format(Locale.US, "%.1f mm", it)) }
+                day.precipitationSum?.let { add(tr("Lluvia total", "Total rain") to mmText(it)) }
                 day.windMax?.let { add(tr("Viento máximo", "Max wind") to windText(it)) }
                 day.windGustsMax?.let { add(tr("Ráfagas", "Gusts") to windText(it)) }
                 day.uvIndex?.let { add(tr("Índice UV máximo", "Max UV index") to "${it.roundToInt()} · ${WeatherCodes.uvLabel(it)}") }
@@ -97,27 +95,16 @@ fun DaySheet(snapshot: WeatherSnapshot, day: Day, onDismiss: () -> Unit) {
                 add(tr("Atardecer", "Sunset") to timeOf(day.sunset))
                 add(tr("Luna", "Moon") to Moon.phaseName(day.localDate))
             }
+            // Los mismos mosaicos que los detalles de hoy (sobre la superficie del tema, no sobre el cielo).
             Column(
                 Modifier.padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 facts.chunked(2).forEach { pair ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Los dos de la fila con el mismo alto, aunque un valor ocupe dos renglones.
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         pair.forEach { (label, value) ->
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = RoundedCornerShape(20.dp),
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                                    Text(
-                                        label,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Text(value, style = MaterialTheme.typography.titleMedium)
-                                }
-                            }
+                            FactTile(label, value, Modifier.weight(1f).fillMaxHeight())
                         }
                         if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }

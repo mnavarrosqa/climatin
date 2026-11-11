@@ -44,6 +44,7 @@ import com.mnavarrosqa.clima.data.Lang
 import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherRepository
 import com.mnavarrosqa.clima.data.WeatherSnapshot
+import com.mnavarrosqa.clima.data.mmText
 import com.mnavarrosqa.clima.data.degrees
 import com.mnavarrosqa.clima.data.rainSoonText
 import com.mnavarrosqa.clima.data.shortHour
@@ -94,12 +95,13 @@ class ProximaHoraWidget : SimpleWeatherWidget() {
         val chartHeight = (size.height - 32.dp - 40.dp * scale).coerceAtLeast(0.dp)
         // Bajo, el gráfico no se lee: queda solo el texto.
         val showChart = !dry && chartHeight >= 44.dp
-        WidgetSurface(colors, modifier = GlanceModifier.padding(16.dp)) {
+        // El gráfico se calculó con 16 dp arriba y abajo: con 12 quedan 8 dp de aire para el ⟳.
+        WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = WidgetPadding.horizontal, vertical = WidgetPadding.vertical)) {
             Column(modifier = GlanceModifier.fillMaxSize()) {
                 Text(
                     title,
                     maxLines = 1,
-                    style = TextStyle(color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Medium),
+                    style = TextStyle(color = colors.text, fontSize = WidgetType.title, fontWeight = FontWeight.Medium),
                 )
                 PlaceLabel(snapshot, colors, fontSize = WidgetType.caption)
                 if (showChart) {
@@ -188,16 +190,20 @@ private fun CiudadesContent(all: List<WeatherSnapshot>) {
     val scale = fontScale()
     val rowHeight = 52.dp * scale
     val gap = if (sky) 6.dp else 2.dp
-    val vertical = if (sky) 0.dp else 12.dp
-    val horizontal = if (sky) 0.dp else 16.dp
+    val vertical = if (sky) 0.dp else WidgetPadding.vertical
+    val horizontal = if (sky) 0.dp else WidgetPadding.horizontal
     val count = ((size.height - vertical * 2 + gap) / (rowHeight + gap)).toInt().coerceIn(1, minOf(all.size, 6))
     val rowWidth = size.width - horizontal * 2
     WidgetSurface(colors, modifier = GlanceModifier.padding(horizontal = horizontal, vertical = vertical)) {
         Column(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.Top) {
             all.take(count).forEachIndexed { index, snapshot ->
-                if (index > 0) Spacer(GlanceModifier.height(gap))
                 val rowColors = if (sky) skyWidgetColors(snapshot, rowWidth.value, rowHeight.value) else colors
-                CityRow(snapshot, rowColors, rowHeight, wide = size.width >= 220.dp)
+                // La separación va dentro de la fila: Glance corta una Column a los 10 hijos, y
+                // 6 filas más 5 separadores eran 11 (se perdía la última ciudad).
+                Column(modifier = GlanceModifier.fillMaxWidth()) {
+                    if (index > 0) Spacer(GlanceModifier.height(gap))
+                    CityRow(snapshot, rowColors, rowHeight, wide = size.width >= 220.dp)
+                }
             }
         }
     }
@@ -244,7 +250,7 @@ private fun CityRow(snapshot: WeatherSnapshot, colors: WidgetColors, height: and
             Text(
                 current.temperature.degrees(),
                 maxLines = 1,
-                style = TextStyle(color = colors.text, fontSize = 24.sp, textAlign = TextAlign.End),
+                style = TextStyle(color = colors.text, fontSize = WidgetType.tempRow, textAlign = TextAlign.End),
             )
             if (today != null && wide && widgetShows(WidgetPart.RANGE)) {
                 Text(
@@ -305,7 +311,7 @@ class IndicadorWidget : SimpleWeatherWidget() {
         val chosen = Metric.from(currentState(WidgetPrefs.METRIC))
         val metric = if (chosen == Metric.ROTATE) Metric.rotating(snapshot.airQuality?.europeanAqi != null) else chosen
         val current = snapshot.current
-        val diameter = (minOf(size.width, size.height) - 20.dp).coerceAtLeast(48.dp)
+        val diameter = (minOf(size.width, size.height) - WidgetPadding.gauge * 2).coerceAtLeast(48.dp)
         val px = (diameter.value * context.resources.displayMetrics.density).roundToInt()
 
         val uv = current.uvIndex ?: snapshot.today()?.uvIndex ?: 0.0
@@ -344,7 +350,7 @@ class IndicadorWidget : SimpleWeatherWidget() {
                 val chance = today?.precipitationProbability ?: 0
                 Triple(
                     "$chance%",
-                    today?.precipitationSum?.takeIf { it >= 0.1 }?.let { String.format(java.util.Locale.US, "%.1f mm", it) } ?: tr("Probabilidad", "Chance"),
+                    today?.precipitationSum?.takeIf { it >= 0.1 }?.let { mmText(it) } ?: tr("Probabilidad", "Chance"),
                     ChartBitmap.renderGauge(context, chance / 100f, 0xFF4A90E2.toInt(), px, colors.transparent),
                 )
             }
@@ -376,7 +382,7 @@ class IndicadorWidget : SimpleWeatherWidget() {
         val small = diameter < 90.dp
         // El valor se mide con el diámetro (dp) pero va en sp: con letra grande se saldría del medidor.
         val scale = fontScale()
-        WidgetSurface(colors, modifier = GlanceModifier.padding(10.dp)) {
+        WidgetSurface(colors, modifier = GlanceModifier.padding(WidgetPadding.gauge)) {
             Box(contentAlignment = Alignment.Center) {
                 Image(
                     provider = ImageProvider(bitmap),

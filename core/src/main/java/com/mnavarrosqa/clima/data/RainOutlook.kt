@@ -38,6 +38,8 @@ private data class RainSlot(val start: LocalDateTime, val minutes: Long, val mmP
  * empieza o para dentro de [withinMinutes]. En Open-Meteo la lluvia de cada hora (y de cada cuarto
  * de hora) es la del tramo *anterior* a esa hora: el tramo de las 15:00 es de 14:00 a 15:00. Una hora sin dato de milímetros pero con 60% o más
  * de probabilidad cuenta como lluvia débil.
+ *
+ * Con [WeatherSnapshot.rainByRadar] no hay respuesta (null): se sabe que llueve, no hasta cuándo.
  */
 fun WeatherSnapshot.rainOutlook(withinMinutes: Int = 120): RainOutlook? {
     val now = nowAtPlace()
@@ -60,6 +62,9 @@ fun WeatherSnapshot.rainOutlook(withinMinutes: Int = 120): RainOutlook? {
         it == WeatherKind.RAIN || it == WeatherKind.DRIZZLE || it == WeatherKind.STORM
     }
     if (rainingNow) {
+        // Llueve según el radar y el modelo no la vio: su "seco" de los próximos minutos no dice
+        // cuándo para. Sin esto se anunciaba "Para de llover en unos minutos" en plena tormenta.
+        if (rainByRadar) return null
         // Solo con el detalle de 15 minutos: la lluvia por hora es demasiado gruesa para "para en 20 min".
         val dry = slots.firstOrNull { it.minutes == 15L && it.start.isAfter(now.minusMinutes(1)) && !wet(it) } ?: return null
         val inMinutes = minutesUntil(dry.start)

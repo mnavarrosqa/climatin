@@ -22,7 +22,16 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -73,8 +82,8 @@ object Welcome {
 
 /**
  * Bienvenida de la primera vez, en cuatro pasos sobre el cielo animado: qué es Climatin, la
- * ubicación, los avisos y los gestos y widgets. Cada permiso se puede saltear; se vuelve a ver
- * desde Ajustes → Acerca de.
+ * ubicación, los avisos y las cuatro pestañas de la barra. Cada permiso se puede saltear; se
+ * vuelve a ver desde Ajustes → Acerca de.
  */
 @Composable
 fun WelcomeScreen(
@@ -177,22 +186,66 @@ fun WelcomeScreen(
                     )
                     else -> Step(
                         visual = { WeatherIconBadge(0, isDay = false) },
-                        title = tr("Un par de trucos", "A few tips"),
+                        title = tr("Todo en cuatro pestañas", "Everything in four tabs"),
                         text = tr(
-                            "Deslizá de costado para pasar de ciudad. En Ciudades, deslizá una a la izquierda para quitarla o a la derecha para ponerle un apodo, y mantenela apretada para moverla. Tocá cualquier detalle para saber qué significa.",
-                            "Swipe sideways to switch cities. In Cities, swipe left to remove one or right to give it a nickname, and press and hold to move it. Tap any detail to learn what it means.",
+                            "La barra te lleva de una a otra.",
+                            "The bar takes you from one to the other.",
                         ),
                         action = {
-                            FilledTonalButton(onClick = { context.startActivity(Intent(context, WidgetGalleryActivity::class.java)) }) {
-                                Text(tr("Ver los widgets", "See the widgets"))
+                            Column(
+                                Modifier.widthIn(max = 480.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                            ) {
+                                TabTip(
+                                    icon = {
+                                        Image(painterResource(WeatherCodes.icon(2)), contentDescription = null, modifier = Modifier.size(24.dp))
+                                    },
+                                    name = NavTab.CLIMA.label,
+                                    text = tr(
+                                        "Deslizá de costado para pasar de ciudad y tocá cualquier detalle para saber qué significa.",
+                                        "Swipe sideways to switch cities and tap any detail to learn what it means.",
+                                    ),
+                                )
+                                TabTip(
+                                    icon = { Icon(Icons.Rounded.Place, contentDescription = null, tint = OnSky) },
+                                    name = NavTab.MAPA.label,
+                                    text = tr(
+                                        "La lluvia sobre el mapa, hora por hora.",
+                                        "Rain on the map, hour by hour.",
+                                    ),
+                                )
+                                TabTip(
+                                    icon = { Icon(Icons.AutoMirrored.Rounded.List, contentDescription = null, tint = OnSky) },
+                                    name = NavTab.CIUDADES.label,
+                                    text = tr(
+                                        "Buscá y guardá ciudades. Deslizá una para quitarla o ponerle un apodo, y mantenela apretada para moverla.",
+                                        "Search and save cities. Swipe one to remove or nickname it, and press and hold to move it.",
+                                    ),
+                                )
+                                TabTip(
+                                    icon = { Icon(Icons.Rounded.Settings, contentDescription = null, tint = OnSky) },
+                                    name = NavTab.AJUSTES.label,
+                                    text = tr(
+                                        "Unidades, avisos, apariencia y widgets.",
+                                        "Units, alerts, appearance and widgets.",
+                                    ),
+                                )
+                                // Secundario: en este paso la acción principal es "Empezar".
+                                TextButton(onClick = { context.startActivity(Intent(context, WidgetGalleryActivity::class.java)) }) {
+                                    Text(tr("Ver los widgets", "See the widgets"), color = OnSky)
+                                }
                             }
                         },
                     )
                 }
             }
             // Puntos del paso actual y el botón para seguir.
+            // En pantallas anchas no se estira: los puntos y el botón quedaban en bordes opuestos.
             Row(
                 Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .widthIn(max = 560.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 16.dp)
                     .semantics { contentDescription = tr("Paso ${pager.currentPage + 1} de 4", "Step ${pager.currentPage + 1} of 4") },
@@ -225,7 +278,9 @@ private fun Step(visual: @Composable () -> Unit, title: String, text: String, ac
     Column(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = 32.dp),
+            // Apaisado o con letra grande no entra: se desplaza en vez de cortarse.
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 32.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -254,7 +309,24 @@ private fun Step(visual: @Composable () -> Unit, title: String, text: String, ac
 
 @Composable
 private fun Done(label: String) {
-    Text("✓ $label", style = MaterialTheme.typography.titleMedium, color = OnSky)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Check, contentDescription = null, tint = OnSky, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium, color = OnSky)
+    }
+}
+
+/** Una pestaña de la barra en el último paso: su ícono, su nombre y para qué sirve. */
+@Composable
+private fun TabTip(icon: @Composable () -> Unit, name: String, text: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { icon() }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.titleSmall, color = OnSky)
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = OnSkyVariant)
+        }
+    }
 }
 
 /** El ícono de la app, grande. */

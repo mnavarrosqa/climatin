@@ -3,6 +3,7 @@ package com.mnavarrosqa.clima.data
 import com.mnavarrosqa.clima.data.tr
 import android.content.Context
 import android.content.SharedPreferences
+import com.mnavarrosqa.clima.widget.updateWeatherWidgets
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +45,7 @@ class WeatherRepository private constructor(private val context: Context) {
     private val placesSerializer = ListSerializer(Place.serializer())
 
     init {
+        chooseFirstUnits()
         Units.current = readUnits()
     }
 
@@ -318,10 +320,37 @@ class WeatherRepository private constructor(private val context: Context) {
      * ese punto. Sincronizado con [writeSnapshot]: una actualización en el medio no se pisa.
      */
     @Synchronized
-    private fun fillName(placeId: String, latitude: Double, longitude: Double, name: String) {
-        val snapshot = cached(placeId) ?: return
-        if (snapshot.place != null || snapshot.latitude != latitude || snapshot.longitude != longitude) return
+    private fun fillName(placeId: String, latitude: Double, longitude: Double, name: String): Boolean {
+        val snapshot = cached(placeId) ?: return false
+        if (snapshot.place != null || snapshot.latitude != latitude || snapshot.longitude != longitude) return false
         writeSnapshot(placeId, snapshot.copy(place = name))
+        return true
+    }
+
+    /** Lluvia leve en "ahora": el radar dice que llueve, no cuánto. */
+    private fun WeatherSnapshot.rainingByRadar(): WeatherSnapshot = copy(
+        rainByRadar = true,
+        current = current.copy(code = 61, precipitation = maxOf(current.precipitation, 0.2)),
+    )
+
+    /**
+     * Pone la lluvia que el radar vio tarde en el pronóstico que se guardó sin ella, si sigue
+     * siendo el de esa descarga ([fetchedAt]). Sincronizado con [writeSnapshot], como [fillName].
+     */
+    @Synchronized
+    private fun fillRadarRain(placeId: String, fetchedAt: Long): Boolean {
+        val snapshot = cached(placeId) ?: return false
+        if (snapshot.fetchedAt != fetchedAt || snapshot.rainByRadar) return false
+        writeSnapshot(placeId, snapshot.rainingByRadar())
+        return true
+    }
+
+    /**
+     * Los widgets se dibujaron con lo que había al terminar la actualización: si después llega el
+     * nombre o la lluvia del radar, se redibujan (si no, "Mi ubicación" quedaba hasta la próxima).
+     */
+    private suspend fun redrawWidgets() {
+        runCatching { updateWeatherWidgets(context, force = true) }
     }
 
     suspend fun refreshPlace(place: Place): Result<WeatherSnapshot> = runCatchingCancellable {
@@ -348,22 +377,26 @@ class WeatherRepository private constructor(private val context: Context) {
                         !Geo.isInArgentina(t.latitude, t.longitude) -> emptyList()
                         // El SMN manda una alerta por zona: si el lugar cae en el borde de dos, llegaba
                         // la misma dos veces (mismo aviso, mismo texto) y se mostraban repetidas.
-                        cap != null -> cap.filter { it.covers(t.latitude, t.longitude) }.map { it.alert }
-                            .distinctBy { listOf(it.event.trim().lowercase(), it.severity, it.headline?.trim(), it.description?.trim()) }
+                        // Queda siempre la misma de las dos (la que vence más tarde), no la primera
+                        // que mande el SMN: si cambiaba el id, "terminaba" una y sonaba la otra.
+                        cap != null -> cap.filter { it.covers(t.latitude, t.longitude) }.map { it.alert }.withoutRepeats()
                         else -> cached(t.id)?.alerts.orEmpty().filterNot { it.isExpired() }
                     }
                 }
             }
             Triple(forecasts.await(), airs.await(), alerts.await())
         }
-        // El radar, solo donde el modelo no da lluvia ahora: si la ve, manda lo que mide.
-        val radarRain = coroutineScope {
-            forecasts.mapIndexed { i, forecast ->
-                async {
-                    val code = forecast.current.weatherCode
-                    if (WeatherCodes.kind(code).isWet) false else RadarNow.raining(targets[i].latitude, targets[i].longitude)
-                }
-            }.map { it.await() }
+        // El radar, solo donde el modelo no da lluvia ahora: si la ve, manda lo que mide. Corre
+        // fuera de esta corrida y se lo espera poco (entre todos los lugares, no por cada uno): con
+        // RainViewer lento o caído, el pronóstico ya bajado no se queda esperando. Lo que llegue
+        // tarde se agrega después, como el nombre.
+        val radarJobs = forecasts.mapIndexed { i, forecast ->
+            if (WeatherCodes.kind(forecast.current.weatherCode).isWet) null
+            else background.async { RadarNow.raining(targets[i].latitude, targets[i].longitude) }
+        }
+        val radarDeadline = System.currentTimeMillis() + RADAR_GRACE_MS
+        val radarRain = radarJobs.map { job ->
+            job?.let { withTimeoutOrNull((radarDeadline - System.currentTimeMillis()).coerceAtLeast(1)) { it.await() } }
         }
         // Un rato más para el nombre, que casi siempre llega antes. Si no, se guarda sin nombre
         // ("Mi ubicación") y se completa cuando llegue. Cortar la espera no cancela la búsqueda.
@@ -378,13 +411,7 @@ class WeatherRepository private constructor(private val context: Context) {
                 longitude = t.longitude,
                 airQuality = airs.getOrNull(i),
                 fetchedAt = now,
-            ).copy(alerts = alerts[i]).let { base ->
-                if (!radarRain[i]) base else base.copy(
-                    rainByRadar = true,
-                    // Lluvia leve: el radar dice que llueve, no cuánto.
-                    current = base.current.copy(code = 61, precipitation = maxOf(base.current.precipitation, 0.2)),
-                )
-            }
+            ).copy(alerts = alerts[i]).let { base -> if (radarRain[i] == true) base.rainingByRadar() else base }
             // Mientras bajaba, la ciudad pudo cambiar de apodo o quitarse: se guarda con el nombre
             // de ahora, y si ya no está, no se guarda (quedaría un pronóstico huérfano).
             val shown = if (t.id == CURRENT_PLACE_ID) snapshot else {
@@ -395,7 +422,14 @@ class WeatherRepository private constructor(private val context: Context) {
             val late = nameJobs[i]
             // Aunque haya terminado justo después de la espera: así no se pierde.
             if (late != null && names[i] == null) {
-                background.launch { late.await()?.let { fillName(t.id, t.latitude, t.longitude, it) } }
+                background.launch {
+                    val name = late.await() ?: return@launch
+                    if (fillName(t.id, t.latitude, t.longitude, name)) redrawWidgets()
+                }
+            }
+            val lateRadar = radarJobs[i]
+            if (lateRadar != null && radarRain[i] == null) {
+                background.launch { if (lateRadar.await() && fillRadarRain(t.id, now)) redrawWidgets() }
             }
             shown
         }
@@ -532,21 +566,48 @@ class WeatherRepository private constructor(private val context: Context) {
         wind = enumOr(prefs.getString(KEY_UNIT_WIND, null), WindUnit.KMH),
         pressure = enumOr(prefs.getString(KEY_UNIT_PRESSURE, null), PressureUnit.HPA),
         use24h = prefs.getBoolean(KEY_USE_24H, true),
+        precipitation = enumOr(prefs.getString(KEY_UNIT_PRECIPITATION, null), PrecipitationUnit.MM),
+        distance = enumOr(prefs.getString(KEY_UNIT_DISTANCE, null), DistanceUnit.KM),
     )
+
+    private fun saveUnits(value: UnitSettings) {
+        prefs.edit()
+            .putString(KEY_UNIT_TEMP, value.temperature.name)
+            .putString(KEY_UNIT_WIND, value.wind.name)
+            .putString(KEY_UNIT_PRESSURE, value.pressure.name)
+            .putBoolean(KEY_USE_24H, value.use24h)
+            .putString(KEY_UNIT_PRECIPITATION, value.precipitation.name)
+            .putString(KEY_UNIT_DISTANCE, value.distance.name)
+            .apply()
+    }
+
+    /**
+     * La primera vez que se abre la app, las unidades salen del teléfono: °F, mph, pulgadas y
+     * millas donde se usan, y el reloj de 12 o 24 horas del sistema. Se hace una sola vez, y nunca
+     * en una instalación que ya venía de antes: quien usaba la app con °C y 24 h (lo que había
+     * sin elegir nada) sigue igual después de actualizar.
+     */
+    private fun chooseFirstUnits() {
+        if (prefs.getBoolean(KEY_UNITS_CHOSEN, false)) return
+        // Corre en el init, antes de que existan las demás propiedades: la carpeta se arma acá.
+        val existing = prefs.all.isNotEmpty() || File(context.filesDir, "pronosticos").exists()
+        if (!existing) {
+            val use24h = runCatching { android.text.format.DateFormat.is24HourFormat(context) }.getOrDefault(true)
+            saveUnits(defaultUnitsFor(java.util.Locale.getDefault().country, use24h))
+        }
+        prefs.edit().putBoolean(KEY_UNITS_CHOSEN, true).apply()
+    }
 
     var units: UnitSettings
         get() = Units.current
         set(value) {
             Units.current = value
-            prefs.edit()
-                .putString(KEY_UNIT_TEMP, value.temperature.name)
-                .putString(KEY_UNIT_WIND, value.wind.name)
-                .putString(KEY_UNIT_PRESSURE, value.pressure.name)
-                .putBoolean(KEY_USE_24H, value.use24h)
-                .apply()
+            saveUnits(value)
         }
 
-    val unitsFlow: Flow<UnitSettings> = prefsFlow(KEY_USE_24H, KEY_UNIT_TEMP, KEY_UNIT_WIND, KEY_UNIT_PRESSURE) { readUnits() }
+    val unitsFlow: Flow<UnitSettings> = prefsFlow(
+        KEY_USE_24H, KEY_UNIT_TEMP, KEY_UNIT_WIND, KEY_UNIT_PRESSURE, KEY_UNIT_PRECIPITATION, KEY_UNIT_DISTANCE,
+    ) { readUnits() }
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =
         enumValues<E>().firstOrNull { it.name == name } ?: default
@@ -571,6 +632,10 @@ class WeatherRepository private constructor(private val context: Context) {
         private const val KEY_UNIT_WIND = "unit_wind"
         private const val KEY_UNIT_PRESSURE = "unit_pressure"
         private const val KEY_USE_24H = "use_24h"
+        private const val KEY_UNIT_PRECIPITATION = "unit_precipitation"
+        private const val KEY_UNIT_DISTANCE = "unit_distance"
+        /** Ya se resolvió con qué unidades arranca esta instalación (ver [chooseFirstUnits]). */
+        private const val KEY_UNITS_CHOSEN = "unidades_elegidas"
         private const val KEY_CITIES_AT = "ciudades_actualizadas"
 
         /** Primera vez: una ubicación conocida de hasta esto alcanza para arrancar. */
@@ -578,6 +643,9 @@ class WeatherRepository private constructor(private val context: Context) {
 
         /** Cuánto más se espera el nombre del lugar después de que llegó el pronóstico. */
         private const val NAME_GRACE_MS = 1_500L
+
+        /** Cuánto se espera al radar, entre todos los lugares, después de que llegó el pronóstico. */
+        private const val RADAR_GRACE_MS = 2_500L
 
         private fun snapshotKey(placeId: String) = "snapshot:$placeId"
 

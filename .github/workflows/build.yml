@@ -63,6 +63,22 @@ jobs:
           path: |
             app/build/outputs/bundle/playRelease/app-play-release.aab
             wear/build/outputs/bundle/release/wear-release.aab
+      # Las notas de la versión para Play (whatsnew-<idioma>, máximo 500 caracteres). Paso aparte:
+      # así están también cuando la versión ya se publicó y solo se reintenta subir a Play.
+      - name: Notas para Play
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        run: |
+          NAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          CODE=$(grep -oP 'versionCode = \K\d+' app/build.gradle.kts | head -1)
+          NOTES="fastlane/metadata/android/es-419/changelogs/$CODE.txt"
+          [ -f "$NOTES" ] || echo "Climatin $NAME" > "$NOTES"
+          mkdir -p play-notas
+          # Por caracteres y no por bytes: cortar una "ó" por la mitad deja un texto inválido.
+          python3 - "$NOTES" play-notas/whatsnew-es-419 <<'PY'
+          import sys
+          text = open(sys.argv[1], encoding="utf-8", errors="replace").read().strip()
+          open(sys.argv[2], "w", encoding="utf-8").write(text[:500])
+          PY
       # Publica la versión en el repo público de versiones (una sola vez por versionName).
       # La app la encuentra ahí y avisa que hay una nueva. Necesita el secreto RELEASES_TOKEN.
       - name: Publicar versión
@@ -97,18 +113,20 @@ jobs:
           cp wear/build/outputs/apk/release/wear-release.apk "climatin-wear-$CODE.apk"
           NOTES="fastlane/metadata/android/es-419/changelogs/$CODE.txt"
           [ -f "$NOTES" ] || echo "Climatin $NAME" > "$NOTES"
-          # Las mismas notas para Play (whatsnew-<idioma>, máximo 500 caracteres).
-          mkdir -p play-notas && head -c 500 "$NOTES" > play-notas/whatsnew-es-419
           gh release create "$TAG" "climatin-$CODE.apk" "climatin-wear-$CODE.apk" \
             --repo mnavarrosqa/climatin-releases --title "Climatin $NAME" --notes-file "$NOTES" 2>&1 | tee publicar.log
           status="${PIPESTATUS[0]}"
           # Versión nueva de verdad: la misma se sube a Play (paso siguiente).
           [ "$status" = "0" ] && echo "nueva=true" >> "$GITHUB_OUTPUT"
           exit "$status"
-      # Sube el paquete de Play a la prueba interna, solo con una versión nueva (Play rechaza un
-      # versionCode repetido). Necesita el secreto PLAY_SERVICE_ACCOUNT_JSON (ver PUBLICAR.md).
+      # Sube el paquete de Play a la prueba interna cuando la versión es nueva. Si esa subida
+      # falló, se reintenta lanzando el workflow a mano (Run workflow): ahí se sube siempre, aunque
+      # la versión ya esté publicada en GitHub. Play rechaza un versionCode repetido, así que
+      # reintentar una que ya subió falla sin romper nada (ver el paso siguiente).
+      # Necesita el secreto PLAY_SERVICE_ACCOUNT_JSON (ver PUBLICAR.md).
       - name: Subir a Play (prueba interna)
-        if: steps.publicar.outputs.nueva == 'true' && env.PLAY_JSON != '' && env.KEYSTORE_BASE64 != ''
+        id: play
+        if: (steps.publicar.outputs.nueva == 'true' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.PLAY_JSON != '' && env.KEYSTORE_BASE64 != ''
         continue-on-error: true
         uses: r0adkll/upload-google-play@v1
         with:
@@ -118,6 +136,11 @@ jobs:
           tracks: internal
           status: completed
           whatsNewDirectory: play-notas
+      - name: Resumen de Play
+        if: always() && steps.play.outcome == 'failure'
+        run: |
+          CODE=$(grep -oP 'versionCode = \K\d+' app/build.gradle.kts | head -1)
+          echo "::warning::No se pudo subir el versionCode $CODE a Play. Si el error del paso anterior dice que ese código ya se usó (\"Version code $CODE has already been used\"), ya estaba subido y no hay nada que hacer. Si es otro error, corregilo y lanzá este workflow a mano (Run workflow) para reintentar."
       # Al final del log, para encontrarlo fácil: por qué fallaron las capturas, si fallaron.
       - name: Resumen de capturas
         if: always() && steps.capturas.outcome == 'failure'

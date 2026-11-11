@@ -72,6 +72,9 @@ object RainNotifier {
             it == WeatherKind.RAIN || it == WeatherKind.DRIZZLE || it == WeatherKind.STORM
         }
         val now = System.currentTimeMillis()
+        // Lluvia que solo ve el radar: el modelo no sabe cuándo para, así que [rainOutlook] no
+        // contesta y acá nunca sale "Para de llover" (como mucho queda "Está lloviendo").
+        val canSayItStops = !snapshot.rainByRadar
         when {
             outlook == null -> when {
                 // Llueve y no se sabe hasta cuándo: queda "Está lloviendo".
@@ -82,6 +85,7 @@ object RainNotifier {
                     NotifyPrefs.setUntil(context, "lluvia", LocalDateTime.now())
                 }
             }
+            outlook is RainOutlook.Stops && !canSayItStops -> Unit
             live -> show(context, outlook, snapshot.place, update = true)
             !Notify.allowed(context) -> Unit
             outlook is RainOutlook.Starts -> if (now >= NotifyPrefs.until(context, "lluvia")) {

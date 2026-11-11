@@ -40,6 +40,8 @@ object Insights {
 
     /** Si ahora llueve, a qué hora se espera que pare (dentro de 6 horas). */
     private fun rainStops(snapshot: WeatherSnapshot, now: LocalDateTime): String? {
+        // La lluvia que solo ve el radar no está en las horas del modelo: no se sabe cuándo para.
+        if (snapshot.rainByRadar) return null
         if (!isWet(snapshot.current.code) && snapshot.current.precipitation < 0.1) return null
         val dry = snapshot.upcomingHours(7).drop(1).firstOrNull {
             !isWet(it.code) && (it.precipitationProbability ?: 0) < 30
