@@ -82,6 +82,7 @@ import com.mnavarrosqa.clima.ui.theme.Accent
 import com.mnavarrosqa.clima.ui.theme.HeroLine
 import com.mnavarrosqa.clima.ui.theme.HeroSize
 import com.mnavarrosqa.clima.ui.theme.SkyMotion
+import com.mnavarrosqa.clima.ui.theme.SkyBackdrop
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -822,6 +823,17 @@ private fun LazyListScope.screenPage(viewModel: WeatherViewModel) {
     }
     item {
         Hint(tr("Reducido mueve el cielo, la lluvia y la nieve más despacio; quieto lo deja fijo y gasta menos batería.", "Reduced moves the sky, rain and snow more slowly; still keeps it fixed and saves battery."))
+    }
+    item {
+        val context = LocalContext.current
+        Rows {
+            ChoiceRow(tr("Fondo", "Background"), SkyBackdrop.entries, Appearance.backdrop, { it.label }) {
+                Appearance.setBackdrop(context, it)
+            }
+        }
+    }
+    item {
+        Hint(tr("Una foto libre de Wikimedia Commons del lugar, con el crédito del autor. Si no hay foto, queda el cielo.", "A freely licensed photo of the place from Wikimedia Commons, credited to its author. If there's no photo, the sky stays."))
     }
     item { SectionTitle(tr("Tarjetas", "Cards")) }
     item { Hint(tr("Elegí qué tarjetas ves en el pronóstico y en qué orden.", "Choose which cards you see in the forecast and in what order.")) }

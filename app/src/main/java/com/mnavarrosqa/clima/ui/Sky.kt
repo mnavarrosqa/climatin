@@ -73,6 +73,11 @@ fun AnimatedSky(
      * tapado por las tarjetas: va a unos 20 cuadros por segundo y deja el procesador al scroll.
      */
     calm: Boolean = false,
+    /**
+     * Solo lluvia, nieve y relámpagos, sin el degradado ni las nubes: para dibujar encima de la
+     * foto del lugar. Lo demás del cielo taparía la foto.
+     */
+    particlesOnly: Boolean = false,
 ) {
     // Los colores de la hora cambian despacio: se revisan una vez por minuto.
     val minute by produceState(0L, snapshot) {
@@ -137,6 +142,9 @@ fun AnimatedSky(
                     k,
                     day,
                     SkyGradient(top.toArgb(), middle.toArgb(), bottom.toArgb()),
+                    background = !particlesOnly,
+                    celestial = !particlesOnly,
+                    cloudAlpha = if (particlesOnly) 0f else 1f,
                 )
             }
         }

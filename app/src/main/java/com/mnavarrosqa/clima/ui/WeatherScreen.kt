@@ -8,6 +8,10 @@ import androidx.core.view.WindowCompat
 import com.mnavarrosqa.clima.ui.theme.LocalDarkTheme
 import com.mnavarrosqa.clima.ui.theme.Appearance
 import com.mnavarrosqa.clima.ui.theme.HeroLine
+import com.mnavarrosqa.clima.ui.theme.SkyBackdrop
+import com.mnavarrosqa.clima.data.PlacePhoto
+import com.mnavarrosqa.clima.data.PlacePhotos
+import androidx.compose.animation.Crossfade
 import com.mnavarrosqa.clima.data.shortHour
 import com.mnavarrosqa.clima.data.windText
 import android.content.Intent
@@ -765,18 +769,62 @@ private fun WeatherPager(
     val calmSky by remember(skyId) {
         derivedStateOf { scrolling[skyId] == true || collapsed[skyId] == true }
     }
+    // Foto del lugar (Ajustes → Pantalla del clima → Fondo). Solo la de la ciudad que se mira y una
+    // sola en memoria: con varias ciudades, una foto decodificada por página ocupaba demasiado.
+    val photoOn = Appearance.backdrop == SkyBackdrop.PHOTO
+    val context = LocalContext.current
+    var shownPhoto by remember { mutableStateOf<ShownPhoto?>(null) }
+    val photoLatitude = skySnapshot?.latitude
+    val photoLongitude = skySnapshot?.longitude
+    val photoPlace = skySnapshot?.place
+    // Por celda de unos 5 km, como la caché: "donde estoy" no vuelve a buscar por moverse unos metros.
+    val photoCell = if (photoLatitude != null && photoLongitude != null) {
+        (photoLatitude * 20).roundToInt() to (photoLongitude * 20).roundToInt()
+    } else {
+        null
+    }
+    LaunchedEffect(photoOn, skyId, photoCell) {
+        if (!photoOn) {
+            shownPhoto = null
+            return@LaunchedEffect
+        }
+        if (photoLatitude == null || photoLongitude == null) return@LaunchedEffect
+        val photo = PlacePhotos.photoFor(context, photoLatitude, photoLongitude, photoPlace)
+        // Desenfocada no hace falta a tamaño completo: alcanza con media pantalla.
+        val metrics = view.resources.displayMetrics
+        val divisor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 2 else 1
+        val bitmap = photo?.let { PlacePhotos.bitmap(it, metrics.widthPixels / divisor, metrics.heightPixels / divisor) }
+        shownPhoto = if (photo != null && bitmap != null) ShownPhoto(skyId, photo, bitmap) else null
+    }
+    // Mientras baja, o si no hay foto libre cerca, queda el cielo animado.
+    val backdrop = shownPhoto?.takeIf { photoOn && it.placeId == skyId }
+    val skyKind = skySnapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
+    val skyIsDay = skySnapshot?.current?.isDay ?: true
 
     Box(Modifier.fillMaxSize()) {
-        AnimatedSky(
-            kind = skySnapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
-            isDay = skySnapshot?.current?.isDay ?: true,
-            modifier = Modifier.fillMaxSize(),
-            southern = (skySnapshot?.latitude ?: 0.0) < 0,
-            // El ícono grande del pronóstico ya es el sol (o la luna): sin esto se veían dos.
-            sunMoon = false,
-            snapshot = skySnapshot,
-            calm = calmSky,
-        )
+        // Fundido al llegar la foto, al cambiar de ciudad y al volver al cielo.
+        Crossfade(targetState = backdrop, animationSpec = tween(700), modifier = Modifier.fillMaxSize(), label = "fondo") { shown ->
+            if (shown == null) {
+                AnimatedSky(
+                    kind = skyKind,
+                    isDay = skyIsDay,
+                    modifier = Modifier.fillMaxSize(),
+                    southern = (skySnapshot?.latitude ?: 0.0) < 0,
+                    // El ícono grande del pronóstico ya es el sol (o la luna): sin esto se veían dos.
+                    sunMoon = false,
+                    snapshot = skySnapshot,
+                    calm = calmSky,
+                )
+            } else {
+                PhotoBackdrop(shown.bitmap, Modifier.fillMaxSize()) {
+                    // La lluvia y la nieve siguen sobre la foto, debajo del velo. La niebla no:
+                    // su bruma blanca le quitaba contraste a las tarjetas.
+                    if (skyKind in PhotoParticles) {
+                        AnimatedSky(skyKind, skyIsDay, Modifier.fillMaxSize(), calm = calmSky, particlesOnly = true)
+                    }
+                }
+            }
+        }
         val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
             isRefreshing = refreshing,
@@ -834,6 +882,7 @@ private fun WeatherPager(
                         shownAt = shownAt,
                         // Una sola ciudad: arriba no hay puntos y el encabezado puede subir.
                         compactTop = pages.size == 1,
+                        photo = backdrop?.takeIf { it.placeId == placeId }?.photo,
                     )
                 }
             }
@@ -868,10 +917,8 @@ private fun WeatherPager(
         }
         val isCollapsed = collapsed[skyId] == true
         val barAlpha by animateFloatAsState(if (isCollapsed) 1f else 0f, Motion.gentle(), label = "barra")
-        val barColor = skyColors(
-            skySnapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
-            skySnapshot?.current?.isDay ?: true,
-        )[0]
+        // Sobre la foto no hay un color de cielo que tomar: el del vidrio.
+        val barColor = if (backdrop != null) SkySurface.Tint else skyColors(skyKind, skyIsDay)[0]
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -924,6 +971,9 @@ private fun WeatherPager(
         }
     }
 }
+
+/** Climas cuyas gotas, copos o relámpagos se dibujan encima de la foto del lugar. */
+private val PhotoParticles = setOf(WeatherKind.DRIZZLE, WeatherKind.RAIN, WeatherKind.STORM, WeatherKind.SNOW)
 
 /** Compartir como imagen el pronóstico de la ciudad que se mira. */
 @Composable
@@ -1007,6 +1057,7 @@ private fun WeatherPage(
     compactTop: Boolean = false,
     onHideBarChange: (Boolean) -> Unit = {},
     scrollToTop: Int = 0,
+    photo: PlacePhoto? = null,
 ) {
     val cards = viewModel.cards.collectAsStateWithLifecycle().value.visible
     val snapshot by remember(placeId) { viewModel.snapshots(placeId) }
@@ -1042,6 +1093,7 @@ private fun WeatherPage(
         compactTop = compactTop,
         onHideBarChange = onHideBarChange,
         scrollToTop = scrollToTop,
+        photo = photo,
     )
 }
 
@@ -1078,6 +1130,8 @@ fun ForecastContent(
     onHideBarChange: (Boolean) -> Unit = {},
     /** Al cambiar (volver a tocar Clima), las listas suben al principio. */
     scrollToTop: Int = 0,
+    /** La foto del lugar que se ve de fondo, si hay: el vidrio va al máximo y abajo va su crédito. */
+    photo: PlacePhoto? = null,
 ) {
     // La lista del resumen (la única en pantallas angostas) decide si el encabezado se achica.
     val summaryState = rememberLazyListState()
@@ -1183,9 +1237,14 @@ fun ForecastContent(
     // tarjeta está oculta, va sola arriba.
     val headlineInHours = ForecastCard.HOURS in cards
     // Cuán claro es el cielo de este lugar ahora: de eso dependen el velo y el vidrio de las tarjetas.
-    val skyBrightness = remember(snapshot, minute) {
-        val kind = snapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
-        SkySurface.brightness(SkyTime.colors(kind, snapshot?.current?.isDay ?: true, snapshot))
+    val skyBrightness = remember(snapshot, minute, photo) {
+        if (photo != null) {
+            // Sobre una foto no se sabe cuán clara es: el vidrio más opaco, para que las tarjetas manden.
+            1f
+        } else {
+            val kind = snapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
+            SkySurface.brightness(SkyTime.colors(kind, snapshot?.current?.isDay ?: true, snapshot))
+        }
     }
     // El mapa tiene su pestaña: acá la tarjeta va solo si hay lluvia cerca o en la región. La
     // vista previa se pide acá (y no dentro de la tarjeta) para no dejar un ítem vacío en la lista;
@@ -1321,6 +1380,9 @@ fun ForecastContent(
                         )
                     }
                 }
+            }
+            photo?.let { shown ->
+                item(key = "foto", contentType = "foto") { PhotoCredit(shown) }
             }
         }
     }

@@ -90,6 +90,15 @@ enum class SkyMotion(private val es: String, private val en: String) {
     val label: String get() = tr(es, en)
 }
 
+/** Qué va detrás del pronóstico. */
+enum class SkyBackdrop(private val es: String, private val en: String) {
+    SKY("Cielo animado", "Animated sky"),
+    PHOTO("Foto del lugar", "Photo of the place"),
+    ;
+
+    val label: String get() = tr(es, en)
+}
+
 /** Tamaño del número grande de la temperatura. */
 enum class HeroSize(private val es: String, private val en: String, val scale: Float) {
     SMALL("Chica", "Small", 0.75f),
@@ -126,6 +135,7 @@ object Appearance {
     private const val HERO_SIZE = "temperatura_tamano"
     private const val HERO_LINES = "temperatura_datos"
     private const val SKY = "cielo_movimiento"
+    private const val BACKDROP = "fondo_pronostico"
 
     var mode by mutableStateOf(ThemeMode.SYSTEM)
         private set
@@ -151,6 +161,9 @@ object Appearance {
         private set
     var skyMotion by mutableStateOf(SkyMotion.FULL)
         private set
+    /** Cielo animado o foto del lugar. Apagada de entrada: la foto baja datos de Wikimedia. */
+    var backdrop by mutableStateOf(SkyBackdrop.SKY)
+        private set
     private var loaded = false
 
     /** Material You solo existe desde Android 12: antes, "del fondo" queda en azul. */
@@ -169,6 +182,7 @@ object Appearance {
             ?.mapNotNull { name -> HeroLine.entries.firstOrNull { it.name == name } }?.toSet()
             ?: setOf(HeroLine.HIGH_LOW, HeroLine.FEELS_LIKE)
         skyMotion = enumOf(prefs.getString(SKY, null), SkyMotion.FULL)
+        backdrop = enumOf(prefs.getString(BACKDROP, null), SkyBackdrop.SKY)
     }
 
     fun setMode(context: Context, value: ThemeMode) {
@@ -199,6 +213,11 @@ object Appearance {
     fun setSkyMotion(context: Context, value: SkyMotion) {
         skyMotion = value
         prefs(context).edit().putString(SKY, value.name).apply()
+    }
+
+    fun setBackdrop(context: Context, value: SkyBackdrop) {
+        backdrop = value
+        prefs(context).edit().putString(BACKDROP, value.name).apply()
     }
 
     private fun prefs(context: Context) = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
