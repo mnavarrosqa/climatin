@@ -15,7 +15,7 @@ Las coordenadas (redondeadas a unos 10 metros) se envían a:
 
 Para saber si está lloviendo ahora se pide a [RainViewer](https://www.rainviewer.com/) la imagen de radar de la región (un cuadrado de unos 300 km de lado, no tu ubicación exacta).
 
-Si elegís **Foto del lugar** como fondo del pronóstico (Ajustes → Pantalla del clima → Fondo), las coordenadas redondeadas a unos 5 km y el nombre de la ciudad se envían a Wikipedia y Wikimedia Commons (de la [Fundación Wikimedia](https://foundation.wikimedia.org/wiki/Policy:Privacy_policy)) para buscar una foto libre del lugar y bajarla. No se envía nada más, y la foto queda guardada en el teléfono. Con el cielo animado (lo predeterminado) no se hace este pedido.
+Si elegís **Foto de la capital** como fondo del pronóstico (Ajustes → Pantalla del clima → Fondo), las coordenadas redondeadas a unos 5 km se envían a [OpenStreetMap](https://osmfoundation.org/wiki/Privacy_Policy) (Nominatim) para saber en qué provincia o país estás, y a Wikidata y Wikimedia Commons (de la [Fundación Wikimedia](https://foundation.wikimedia.org/wiki/Policy:Privacy_policy)) solo se les pide la foto libre de la capital de esa provincia o país. No se envía nada más, y la foto queda guardada en el teléfono. Con el cielo animado (lo predeterminado) no se hace este pedido.
 
 Para el mapa de lluvia se piden mapas de Esri (ArcGIS) y la lluvia de Open-Meteo para la zona que estás mirando. Las alertas se descargan completas del [Servicio Meteorológico Nacional](https://www.smn.gob.ar/) y se filtran en el teléfono, sin enviar tu ubicación.
 

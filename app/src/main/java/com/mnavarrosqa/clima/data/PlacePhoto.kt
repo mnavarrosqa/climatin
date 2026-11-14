@@ -36,9 +36,10 @@ data class PlacePhoto(
 )
 
 /**
- * Busca, baja y guarda la foto del fondo del pronóstico. Wikipedia elige la imagen principal de
- * los artículos cercanos (suele ser la postal del lugar) y Commons dice la licencia y el autor:
- * solo pasan las libres, porque el crédito tiene que poder mostrarse tal cual.
+ * Busca, baja y guarda la foto del fondo del pronóstico: siempre de la capital de la provincia (o
+ * estado) donde cae el lugar y, si no se encuentra, de la capital del país. OpenStreetMap dice en
+ * qué provincia cae el punto, Wikidata cuál es su capital y la foto que la representa, y Commons
+ * la licencia y el autor: solo pasan las libres, porque el crédito tiene que poder mostrarse tal cual.
  */
 object PlacePhotos {
     // Wikimedia pide un User-Agent que identifique la app y cómo contactar: a los genéricos les
@@ -55,10 +56,7 @@ object PlacePhotos {
     /** Sin red o con Wikimedia limitando pedidos: se reintenta antes que un "no hay", pero no en cada vuelta. */
     private const val FAILED_MS = 60L * 60_000
     private const val MAX_PHOTOS = 20
-    private const val MIN_WIDTH = 800
     private const val MAX_CANDIDATES = 8
-    /** Hasta dónde un artículo con el nombre del lugar se toma como ese lugar (ciudades grandes, el centro lejos). */
-    private const val NAMED_KM = 25.0
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -111,19 +109,14 @@ object PlacePhotos {
         val column = (longitude / GRID).roundToInt()
         val key = "f_${row}_$column".replace('-', 'm')
         val meta = File(dir, "$key.json")
-        val image = File(dir, "$key.jpg")
         val now = System.currentTimeMillis()
-        readMeta(meta, image, now)?.let { return it.photo }
+        readMeta(dir, meta, now)?.let { return it.photo }
 
         // Se envía el centro de la celda, no la ubicación: es lo mismo que se guarda.
         val lat = row * GRID
         val lon = column * GRID
         val found = try {
-            val name = placeName?.substringBefore(',')?.trim()?.takeIf { it.isNotEmpty() }
-            // Primero el artículo del lugar, en español o en inglés: en Madrid, el de la Wikipedia
-            // en español tiene la bandera de imagen principal y el inglés una foto.
-            val named = name?.let { byName("es", it, lat, lon) ?: byName("en", it, lat, lon) }
-            named?.let { resolve(listOf(it)) } ?: nearby("es", lat, lon, name) ?: nearby("en", lat, lon, name)
+            capitalPhoto(lat, lon)
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (_: Exception) {
@@ -134,26 +127,31 @@ object PlacePhotos {
             writeEmpty(meta, now, EMPTY_MS)
             return null
         }
-        val part = File(dir, "$key.part")
-        try {
-            download(found.url, part)
-            // Que de verdad sea una imagen antes de reemplazar la anterior.
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(part.path, bounds)
-            if (bounds.outWidth <= 0) error("no es una imagen")
-            image.delete()
-            if (!part.renameTo(image)) error("no se pudo guardar")
-        } catch (cancel: CancellationException) {
-            part.delete()
-            throw cancel
-        } catch (_: Exception) {
-            part.delete()
-            writeEmpty(meta, now, FAILED_MS)
-            return null
+        // Una foto por capital, no por celda: todas las celdas de la provincia comparten el archivo.
+        val image = File(dir, "${found.capital}.jpg")
+        if (!image.exists() || now - image.lastModified() > KEEP_MS) {
+            val part = File(dir, "${found.capital}.part")
+            try {
+                download(found.url, part)
+                // Que de verdad sea una imagen antes de reemplazar la anterior.
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(part.path, bounds)
+                if (bounds.outWidth <= 0) error("no es una imagen")
+                image.delete()
+                if (!part.renameTo(image)) error("no se pudo guardar")
+            } catch (cancel: CancellationException) {
+                part.delete()
+                throw cancel
+            } catch (_: Exception) {
+                part.delete()
+                writeEmpty(meta, now, FAILED_MS)
+                return null
+            }
         }
         val photo = PlacePhoto(image, found.title, found.artist, found.license, found.descriptionUrl)
         val saved = buildJsonObject {
             put("hasta", now + KEEP_MS)
+            put("imagen", image.name)
             put("titulo", photo.title)
             put("autor", photo.artist)
             put("licencia", photo.license)
@@ -164,15 +162,90 @@ object PlacePhotos {
         return photo
     }
 
+    /**
+     * La foto de la capital de la provincia donde cae el punto; si no hay (o no es libre), la de
+     * la capital del país. Null si ninguna sirve. Una falla de red sube como excepción.
+     */
+    private fun capitalPhoto(lat: Double, lon: Double): Found? {
+        val coord = String.format(Locale.US, "lat=%.2f&lon=%.2f", lat, lon)
+        // zoom 5 = provincia o estado; en países sin provincias (o en el mar) no viene: se usa el país.
+        val region = reverse(coord, zoom = 5)
+        val regionId = if (region != null && region.string("addresstype") in setOf("state", "province", "region")) {
+            region.obj("extratags")?.string("wikidata")
+        } else {
+            null
+        }
+        val regionEntity = regionId?.let { entities(listOf(it))[it] }
+        val countryId = regionEntity?.let { firstId(it, "P17") }
+            ?: reverse(coord, zoom = 3)?.obj("extratags")?.string("wikidata")
+            ?: return null
+        val capitals = listOfNotNull(
+            regionEntity?.let { firstId(it, "P36") },
+            entities(listOf(countryId))[countryId]?.let { firstId(it, "P36") },
+        ).distinct()
+        if (capitals.isEmpty()) return null
+        val byId = entities(capitals)
+        for (capital in capitals) {
+            val entity = byId[capital] ?: continue
+            // P18: la imagen que Wikidata eligió para la ciudad (suele ser su postal más conocida).
+            val files = claimValues(entity, "P18").filter(::looksLikePhoto)
+            if (files.isEmpty()) continue
+            val name = label(entity) ?: capital
+            resolve(files.map { Candidate(name, it, true, 0) })?.let { return it.copy(capital = capital) }
+        }
+        return null
+    }
+
+    /** Nominatim (OpenStreetMap) al revés: qué hay en estas coordenadas al nivel [zoom]. */
+    private fun reverse(coord: String, zoom: Int): JsonObject? = try {
+        getJson(
+            "https://nominatim.openstreetmap.org/reverse?format=jsonv2&$coord&zoom=$zoom" +
+                "&extratags=1&accept-language=${Locale.getDefault().language}",
+        ).takeIf { !it.containsKey("error") }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    }
+
+    /** Entidades de Wikidata por id, con sus propiedades y el nombre en español e inglés. */
+    private fun entities(ids: List<String>): Map<String, JsonObject> {
+        if (ids.isEmpty()) return emptyMap()
+        val all = getJson(
+            "https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&ids=${enc(ids.joinToString("|"))}" +
+                "&props=${enc("claims|labels")}&languages=${enc("es|en")}",
+        ).obj("entities") ?: return emptyMap()
+        return all.mapNotNull { (id, value) -> (value as? JsonObject)?.let { id to it } }.toMap()
+    }
+
+    private fun claimValues(entity: JsonObject, property: String): List<String> =
+        (entity.obj("claims")?.get(property) as? JsonArray).orEmpty().mapNotNull { claim ->
+            val value = (claim as? JsonObject)?.obj("mainsnak")?.obj("datavalue")?.get("value")
+            when (value) {
+                is JsonPrimitive -> value.content
+                is JsonObject -> value.string("id")
+                else -> null
+            }
+        }
+
+    private fun firstId(entity: JsonObject, property: String): String? =
+        claimValues(entity, property).firstOrNull { it.startsWith("Q") }
+
+    private fun label(entity: JsonObject): String? {
+        val labels = entity.obj("labels") ?: return null
+        val language = if (Locale.getDefault().language == "es") "es" else "en"
+        return labels.obj(language)?.string("value") ?: labels.obj("es")?.string("value") ?: labels.obj("en")?.string("value")
+    }
+
     /** Lo guardado para esta celda, si sigue vigente: una foto o un "no hay" (photo null). */
     private class Cached(val photo: PlacePhoto?)
 
-    private fun readMeta(meta: File, image: File, now: Long): Cached? {
+    private fun readMeta(dir: File, meta: File, now: Long): Cached? {
         if (!meta.exists()) return null
         val obj = runCatching { json.parseToJsonElement(meta.readText()) as? JsonObject }.getOrNull() ?: return null
         val until = obj.string("hasta")?.toLongOrNull() ?: return null
         if (now > until) return null
         if (obj.string("titulo") == null) return Cached(null)
+        // Las guardadas por la versión anterior (foto del lugar, sin "imagen") se vuelven a buscar.
+        val image = obj.string("imagen")?.let { File(dir, it) } ?: return null
         if (!image.exists()) return null
         return Cached(
             PlacePhoto(
@@ -189,49 +262,21 @@ object PlacePhotos {
         runCatching { meta.writeText(buildJsonObject { put("hasta", now + keep) }.toString()) }
     }
 
-    /** Deja las [MAX_PHOTOS] fotos más nuevas y borra lo vencido: es caché, no una galería. */
+    /** Borra lo vencido y deja las [MAX_PHOTOS] fotos más nuevas: es caché, no una galería. */
     private fun trim(dir: File) {
         val now = System.currentTimeMillis()
-        var photos = 0
-        dir.listFiles { file -> file.name.endsWith(".json") }.orEmpty()
+        val metas = dir.listFiles { file -> file.name.endsWith(".json") }.orEmpty()
+        metas.filter { now - it.lastModified() > KEEP_MS }.forEach { it.delete() }
+        dir.listFiles { file -> file.name.endsWith(".jpg") || file.name.endsWith(".part") }.orEmpty()
             .sortedByDescending { it.lastModified() }
-            .forEach { meta ->
-                val image = File(dir, meta.name.removeSuffix(".json") + ".jpg")
-                val hasPhoto = image.exists()
-                if (hasPhoto) photos++
-                if (now - meta.lastModified() > KEEP_MS || (hasPhoto && photos > MAX_PHOTOS)) {
-                    meta.delete()
-                    image.delete()
-                }
+            .forEachIndexed { index, file ->
+                if (index >= MAX_PHOTOS || now - file.lastModified() > KEEP_MS || file.name.endsWith(".part")) file.delete()
             }
     }
 
-    private class Found(val title: String, val url: String, val artist: String, val license: String, val descriptionUrl: String)
+    private data class Found(val title: String, val url: String, val artist: String, val license: String, val descriptionUrl: String, val capital: String = "")
 
     private class Candidate(val title: String, val file: String, val matchesPlace: Boolean, val index: Int)
-
-    /**
-     * Artículos de [wiki] a menos de 10 km con imagen principal: uno que se llame como el lugar
-     * (por si no tiene coordenadas propias), si no el más cercano con una foto que sirva.
-     */
-    private fun nearby(wiki: String, lat: Double, lon: Double, name: String?): Found? {
-        val coord = String.format(Locale.US, "%.2f|%.2f", lat, lon)
-        val pages = getJson(
-            "https://$wiki.wikipedia.org/w/api.php?action=query&format=json&generator=geosearch" +
-                "&ggscoord=${enc(coord)}&ggsradius=10000&ggslimit=50&prop=pageimages" +
-                "&piprop=${enc("thumbnail|name")}&pithumbsize=1280",
-        ).obj("query")?.obj("pages") ?: return null
-        val wanted = name?.let(::plain)
-        val candidates = pages.values.mapNotNull { element ->
-            val page = element as? JsonObject ?: return@mapNotNull null
-            val candidate = candidateOf(page) ?: return@mapNotNull null
-            if (wanted != null && plain(candidate.title) == wanted) Candidate(candidate.title, candidate.file, true, candidate.index) else candidate
-        }
-            .sortedWith(compareBy<Candidate> { !it.matchesPlace }.thenBy { it.index })
-            .distinctBy { it.file }
-            .take(MAX_CANDIDATES)
-        return resolve(candidates)
-    }
 
     /** La primera de [candidates] (en orden) que está en Commons con licencia libre y autor. */
     private fun resolve(candidates: List<Candidate>): Found? {
@@ -265,47 +310,6 @@ object PlacePhotos {
             return Found(candidate.title, url, artist, license, page)
         }
         return null
-    }
-
-    /** Un artículo con una imagen principal que sirve de fondo, o null. */
-    private fun candidateOf(page: JsonObject): Candidate? {
-        val title = page.string("title") ?: return null
-        val file = page.string("pageimage") ?: return null
-        val width = page.obj("thumbnail")?.string("width")?.toIntOrNull() ?: return null
-        if (!looksLikePhoto(file) || width < MIN_WIDTH) return null
-        return Candidate(title, file, false, page.string("index")?.toIntOrNull() ?: Int.MAX_VALUE)
-    }
-
-    /**
-     * El artículo llamado [name] si está a menos de [NAMED_KM] del punto: "Córdoba" en la
-     * Wikipedia en español es una desambiguación sin coordenadas y en otras es la de España: ninguna
-     * tiene que salir para la de Argentina. Una falla
-     * acá no corta la búsqueda: quedan los cercanos.
-     */
-    private fun byName(wiki: String, name: String, lat: Double, lon: Double): Candidate? = try {
-        val pages = getJson(
-            "https://$wiki.wikipedia.org/w/api.php?action=query&format=json&redirects=1&titles=${enc(name)}" +
-                "&prop=${enc("pageimages|coordinates")}&piprop=${enc("thumbnail|name")}&pithumbsize=1280",
-        ).obj("query")?.obj("pages")
-        pages?.values.orEmpty().firstNotNullOfOrNull { element ->
-            val page = element as? JsonObject ?: return@firstNotNullOfOrNull null
-            val point = (page["coordinates"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return@firstNotNullOfOrNull null
-            val pageLat = point.string("lat")?.toDoubleOrNull() ?: return@firstNotNullOfOrNull null
-            val pageLon = point.string("lon")?.toDoubleOrNull() ?: return@firstNotNullOfOrNull null
-            if (km(lat, lon, pageLat, pageLon) > NAMED_KM) return@firstNotNullOfOrNull null
-            candidateOf(page)?.let { Candidate(it.title, it.file, true, -1) }
-        }
-    } catch (cancel: CancellationException) {
-        throw cancel
-    } catch (_: Exception) {
-        null
-    }
-
-    /** Distancia aproximada (equirrectangular): alcanza para decir "cerca" o "en otro país". */
-    private fun km(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val x = Math.toRadians(lon2 - lon1) * kotlin.math.cos(Math.toRadians((lat1 + lat2) / 2))
-        val y = Math.toRadians(lat2 - lat1)
-        return kotlin.math.sqrt(x * x + y * y) * 6371.0
     }
 
     private fun looksLikePhoto(file: String): Boolean {

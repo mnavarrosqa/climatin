@@ -1,0 +1,1 @@
+• El fondo con foto ahora muestra la capital de tu provincia (o del país), con su nombre y el crédito del autor

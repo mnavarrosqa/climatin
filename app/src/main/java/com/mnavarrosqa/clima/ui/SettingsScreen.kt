@@ -833,7 +833,7 @@ private fun LazyListScope.screenPage(viewModel: WeatherViewModel) {
         }
     }
     item {
-        Hint(tr("Una foto libre de Wikimedia Commons del lugar, con el crédito del autor. Si no hay foto, queda el cielo.", "A freely licensed photo of the place from Wikimedia Commons, credited to its author. If there's no photo, the sky stays."))
+        Hint(tr("Una foto libre de Wikimedia Commons de la capital de tu provincia (o del país), con el crédito del autor. Si no hay foto, queda el cielo.", "A freely licensed Wikimedia Commons photo of your province's (or country's) capital, credited to its author. If there's no photo, the sky stays."))
     }
     item { SectionTitle(tr("Tarjetas", "Cards")) }
     item { Hint(tr("Elegí qué tarjetas ves en el pronóstico y en qué orden.", "Choose which cards you see in the forecast and in what order.")) }

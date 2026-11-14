@@ -92,7 +92,8 @@ fun PhotoCredit(photo: PlacePhoto, modifier: Modifier = Modifier) {
                 },
         ) {
             Text(
-                tr("Foto: ", "Photo: ") + parts.joinToString(" · "),
+                // La foto es de la capital, no del lugar exacto: se dice cuál es.
+                listOfNotNull(photo.title.takeIf { it.isNotBlank() }, tr("Foto: ", "Photo: ") + parts.joinToString(" · ")).joinToString(" · "),
                 style = MaterialTheme.typography.labelMedium,
                 color = SkySurface.contentVariant,
                 textAlign = TextAlign.Center,

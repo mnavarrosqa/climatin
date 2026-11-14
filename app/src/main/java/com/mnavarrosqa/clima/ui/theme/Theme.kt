@@ -93,7 +93,7 @@ enum class SkyMotion(private val es: String, private val en: String) {
 /** Qué va detrás del pronóstico. */
 enum class SkyBackdrop(private val es: String, private val en: String) {
     SKY("Cielo animado", "Animated sky"),
-    PHOTO("Foto del lugar", "Photo of the place"),
+    PHOTO("Foto de la capital", "Capital city photo"),
     ;
 
     val label: String get() = tr(es, en)
