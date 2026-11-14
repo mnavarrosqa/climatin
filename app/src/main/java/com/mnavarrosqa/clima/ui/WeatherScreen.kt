@@ -1239,8 +1239,9 @@ fun ForecastContent(
     // Cuán claro es el cielo de este lugar ahora: de eso dependen el velo y el vidrio de las tarjetas.
     val skyBrightness = remember(snapshot, minute, photo) {
         if (photo != null) {
-            // Sobre una foto no se sabe cuán clara es: el vidrio más opaco, para que las tarjetas manden.
-            1f
+            // Sobre una foto no se sabe cuán clara es: más que el cielo más claro, así el vidrio es
+            // más opaco que nunca y las tarjetas mandan aunque la foto se vea más.
+            SkySurface.PHOTO_BRIGHTNESS
         } else {
             val kind = snapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
             SkySurface.brightness(SkyTime.colors(kind, snapshot?.current?.isDay ?: true, snapshot))

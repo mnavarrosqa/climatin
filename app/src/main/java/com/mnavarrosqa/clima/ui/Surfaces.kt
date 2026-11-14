@@ -87,8 +87,11 @@ object SkySurface {
     val sun = Color(0xFFFFCB6B)
 
     /** Color de la tarjeta según cuán claro es el cielo ([brightness] de 0 a 1). */
+    /** Brillo que se usa sobre una foto: pasa de 1 para que el vidrio sea algo más opaco que de día. */
+    const val PHOTO_BRIGHTNESS = 1.4f
+
     fun card(brightness: Float, strong: Boolean = false): Color {
-        val alpha = CARD_ALPHA_MIN + (CARD_ALPHA_MAX - CARD_ALPHA_MIN) * brightness.coerceIn(0f, 1f)
+        val alpha = CARD_ALPHA_MIN + (CARD_ALPHA_MAX - CARD_ALPHA_MIN) * brightness.coerceIn(0f, PHOTO_BRIGHTNESS)
         return Tint.copy(alpha = (alpha + if (strong) STRONG_EXTRA else 0f).coerceAtMost(0.7f))
     }
 

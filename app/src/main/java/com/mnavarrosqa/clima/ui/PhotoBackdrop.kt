@@ -36,15 +36,16 @@ class ShownPhoto(val placeId: String, val photo: PlacePhoto, val bitmap: ImageBi
 private val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
 /**
- * Velo de la foto. Las tarjetas mandan: arriba, detrás de la temperatura grande, es más fuerte, y
- * nunca baja de 0.45. Encima va además el velo propio del pronóstico.
+ * Velo de la foto. Encima va además el velo propio del pronóstico y las tarjetas sobre foto usan un
+ * vidrio más opaco (ver [SkySurface.card]): con 0.5 o más de velo, más el desenfoque, la foto
+ * quedaba negra y no se reconocía la ciudad. Arriba, detrás de la temperatura grande, es más fuerte.
  */
 private val PhotoVeil: Brush = run {
     val extra = if (canBlur) 0f else 0.12f
     Brush.verticalGradient(
-        0f to Color.Black.copy(alpha = 0.62f + extra),
-        0.35f to Color.Black.copy(alpha = 0.48f + extra),
-        1f to Color.Black.copy(alpha = 0.52f + extra),
+        0f to Color.Black.copy(alpha = 0.40f + extra),
+        0.35f to Color.Black.copy(alpha = 0.22f + extra),
+        1f to Color.Black.copy(alpha = 0.30f + extra),
     )
 }
 
@@ -61,7 +62,7 @@ fun PhotoBackdrop(bitmap: ImageBitmap, modifier: Modifier = Modifier, particles:
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxSize()
-                .blur(20.dp),
+                .blur(10.dp),
         )
         particles()
         Box(Modifier.fillMaxSize().background(PhotoVeil))
