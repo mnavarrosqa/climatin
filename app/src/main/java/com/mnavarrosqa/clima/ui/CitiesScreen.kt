@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.animateDpAsState
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Box
@@ -57,7 +58,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.MediumTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -228,13 +229,17 @@ fun CitiesScreen(
         )
     }
 
+    var gesturesHintSeen by remember {
+        mutableStateOf(context.getSharedPreferences("clima", Context.MODE_PRIVATE).getBoolean(GESTURES_HINT, false))
+    }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         // Arriba de la barra flotante: debajo, "Deshacer" no se veía ni se podía tocar.
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = LocalBottomBarSpace.current)) },
         topBar = {
-            LargeTopAppBar(
+            // Mediana: la grande dejaba un hueco vacío arriba y empujaba las ciudades hacia abajo.
+            MediumTopAppBar(
                 title = { Text(tr("Ciudades", "Cities")) },
                 // Sin flecha de volver: es una pestaña de la barra, no una pantalla abierta encima.
                 actions = {
@@ -501,18 +506,49 @@ fun CitiesScreen(
                     }
                 }
             } else {
-                // Los gestos solo tienen sentido con alguna ciudad a la vista.
-                item {
-                    Hint(
-                        tr(
-                            "Deslizá a la izquierda para quitar y a la derecha para ponerle un apodo. Mantené apretada para moverla.",
-                            "Swipe left to remove and right to nickname. Press and hold to move it.",
-                        ),
-                    )
+                // Los gestos solo tienen sentido con alguna ciudad a la vista. Una vez leída, se
+                // puede cerrar: el "⋮" de cada ciudad hace lo mismo.
+                if (!gesturesHintSeen) {
+                    item(key = "pista") {
+                        GesturesHint(
+                            onDismiss = {
+                                gesturesHintSeen = true
+                                context.getSharedPreferences("clima", Context.MODE_PRIVATE).edit().putBoolean(GESTURES_HINT, true).apply()
+                            },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
                 }
             }
             }
         }
+    }
+}
+
+private const val GESTURES_HINT = "pista_ciudades_vista"
+
+/** Cómo quitar, poner apodo y mover, con un botón para no mostrarlo más. */
+@Composable
+private fun GesturesHint(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+            .clip(ClimaShapes.inner)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            tr(
+                "Deslizá a la izquierda para quitar y a la derecha para ponerle un apodo. Mantené apretada para moverla.",
+                "Swipe left to remove and right to nickname. Press and hold to move it.",
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onDismiss) { Text(tr("Entendido", "Got it")) }
     }
 }
 

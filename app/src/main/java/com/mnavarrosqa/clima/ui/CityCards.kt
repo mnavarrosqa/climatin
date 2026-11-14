@@ -44,6 +44,9 @@ import com.mnavarrosqa.clima.data.WeatherCodes
 import com.mnavarrosqa.clima.data.WeatherKind
 import com.mnavarrosqa.clima.data.WeatherSnapshot
 import com.mnavarrosqa.clima.data.degrees
+import com.mnavarrosqa.clima.data.rainSoonText
+import com.mnavarrosqa.clima.data.isWet
+import androidx.compose.runtime.remember
 import com.mnavarrosqa.clima.ui.theme.Flex
 
 /**
@@ -70,6 +73,7 @@ fun CityCard(
     val shadow = TextStyle().onSky()
     val shape = ClimaShapes.tile
     val today = snapshot?.today()
+    val note = remember(snapshot) { snapshot?.let(::cityNote) }
     val minMax = today?.let { tr("Máx", "High") + " ${it.max.degrees()}  " + tr("Mín", "Low") + " ${it.min.degrees()}" }
     // TalkBack la lee de una vez: "Córdoba, 14:30, 23°, despejado, máx 25°, mín 12°".
     val spoken = listOfNotNull(
@@ -78,7 +82,12 @@ fun CityCard(
         snapshot?.current?.temperature?.degrees(),
         snapshot?.current?.code?.let(WeatherCodes::description),
         today?.let { tr("máx", "high") + " ${it.max.degrees()}, " + tr("mín", "low") + " ${it.min.degrees()}" },
+        note?.text,
     ).joinToString(", ")
+    val kind = snapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
+    val isDay = snapshot?.current?.isDay ?: true
+    // Cuán claro es el cielo de la tarjeta: en un nublado de día las nubes blancas se comían el texto.
+    val brightness = remember(kind, isDay, snapshot) { SkySurface.brightness(SkyTime.colors(kind, isDay, snapshot)) }
     Box(
         modifier
             .fillMaxWidth()
@@ -89,24 +98,25 @@ fun CityCard(
             .semantics { contentDescription = spoken },
     ) {
         StillSky(
-            kind = snapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY,
-            isDay = snapshot?.current?.isDay ?: true,
+            kind = kind,
+            isDay = isDay,
             modifier = Modifier.matchParentSize(),
             southern = (snapshot?.latitude ?: 0.0) < 0,
             snapshot = snapshot,
             sunMoon = false,
             starFraction = 0.35f,
         )
-        // Un velo suave arriba y abajo para que el nombre y el estado se lean sobre cualquier cielo.
-        // Más liviano que el del pronóstico (SkySurface.veil): acá no hay tarjetas de vidrio encima.
+        // Un velo arriba y abajo para que el nombre y el estado se lean sobre cualquier cielo: casi
+        // nada de noche y más cuanto más claro el cielo. Más liviano que el del pronóstico
+        // (SkySurface.veil): acá no hay tarjetas de vidrio encima.
         Box(
             Modifier
                 .matchParentSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.16f),
-                        0.45f to Color.Black.copy(alpha = 0.04f),
-                        1f to Color.Black.copy(alpha = 0.26f),
+                        0f to Color.Black.copy(alpha = 0.16f + 0.16f * brightness),
+                        0.45f to Color.Black.copy(alpha = 0.04f + 0.10f * brightness),
+                        1f to Color.Black.copy(alpha = 0.26f + 0.12f * brightness),
                     ),
                 ),
         )
@@ -147,6 +157,10 @@ fun CityCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                    if (note != null) {
+                        Spacer(Modifier.height(6.dp))
+                        NotePill(note)
                     }
                 }
                 snapshot?.let {
@@ -203,6 +217,49 @@ fun CityCard(
             }
         }
     }
+}
+
+/** Lo que conviene saber de una ciudad sin abrirla: una alerta, lluvia que llega o lluvia probable hoy. */
+class CityNote(val text: String, val level: Level) {
+    enum class Level { ALERT, SEVERE, RAIN }
+}
+
+/** La nota más importante de la ciudad, o null si no hay nada que avisar. */
+fun cityNote(snapshot: WeatherSnapshot): CityNote? {
+    snapshot.alerts.firstOrNull { !it.isExpired() }?.let { alert ->
+        return CityNote(tr("Alerta: ", "Alert: ") + alert.event, if (alert.isSevere) CityNote.Level.SEVERE else CityNote.Level.ALERT)
+    }
+    snapshot.minutesUntilRain()?.let { return CityNote(rainSoonText(it), CityNote.Level.RAIN) }
+    // Si ya llueve, el estado de abajo lo dice; si no, la probabilidad de hoy cuando vale la pena.
+    if (!WeatherCodes.kind(snapshot.current.code).isWet) {
+        snapshot.today()?.precipitationProbability?.takeIf { it >= 40 }?.let {
+            return CityNote(tr("Lluvia hoy $it%", "Rain today $it%"), CityNote.Level.RAIN)
+        }
+    }
+    return null
+}
+
+/** La nota como una píldora chica: naranja o roja para las alertas, oscura con celeste para la lluvia. */
+@Composable
+private fun NotePill(note: CityNote) {
+    val background = when (note.level) {
+        CityNote.Level.SEVERE -> Color(0xE6C62828)
+        CityNote.Level.ALERT -> Color(0xE6E65100)
+        CityNote.Level.RAIN -> Color.Black.copy(alpha = 0.30f)
+    }
+    val content = if (note.level == CityNote.Level.RAIN) SkySurface.rain else Color.White
+    Text(
+        note.text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = content,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .clip(ClimaShapes.pill)
+            .background(background)
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+    )
 }
 
 /**

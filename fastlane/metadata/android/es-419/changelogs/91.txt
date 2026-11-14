@@ -1,0 +1,1 @@
+Ciudades: cada tarjeta avisa si hay una alerta, si llega lluvia o la probabilidad de lluvia de hoy; textos más legibles sobre cielos claros o nublados; título más compacto y la ayuda de los gestos se puede cerrar.
