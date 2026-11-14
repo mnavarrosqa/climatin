@@ -1,0 +1,1 @@
+Foto de fondo: se descartan los collages y las panorámicas muy anchas. Si la imagen principal de la capital es un collage, se usa la primera foto libre de su artículo de Wikipedia.

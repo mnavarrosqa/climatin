@@ -56,7 +56,7 @@ object PlacePhotos {
     /** Sin red o con Wikimedia limitando pedidos: se reintenta antes que un "no hay", pero no en cada vuelta. */
     private const val FAILED_MS = 60L * 60_000
     private const val MAX_PHOTOS = 20
-    private const val MAX_CANDIDATES = 8
+    private const val MAX_CANDIDATES = 20
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -64,6 +64,8 @@ object PlacePhotos {
     private val notPhotos = listOf(
         "mapa", "map", "escudo", "coat", "bandera", "flag", "logo", "locator", "location",
         "ubicacion", "plano", "diagram", "seal", "sello",
+        // Collages y montajes (la imagen de muchas ciudades en Wikidata): bordes duros y textos encima.
+        "collage", "montage", "montaje", "mosaico", "composicion", "compilation",
     )
 
     /** Una ciudad a la vez: al abrir la app, varias páginas piden su foto juntas. */
@@ -107,7 +109,8 @@ object PlacePhotos {
         val dir = File(context.cacheDir, DIR).apply { mkdirs() }
         val row = (latitude / GRID).roundToInt()
         val column = (longitude / GRID).roundToInt()
-        val key = "f_${row}_$column".replace('-', 'm')
+        // "c2": las guardadas antes podían ser collages; se vuelven a buscar con el filtro nuevo.
+        val key = "c2_${row}_$column".replace('-', 'm')
         val meta = File(dir, "$key.json")
         val now = System.currentTimeMillis()
         readMeta(dir, meta, now)?.let { return it.photo }
@@ -128,9 +131,9 @@ object PlacePhotos {
             return null
         }
         // Una foto por capital, no por celda: todas las celdas de la provincia comparten el archivo.
-        val image = File(dir, "${found.capital}.jpg")
+        val image = File(dir, "${found.capital}-2.jpg")
         if (!image.exists() || now - image.lastModified() > KEEP_MS) {
-            val part = File(dir, "${found.capital}.part")
+            val part = File(dir, "${found.capital}-2.part")
             try {
                 download(found.url, part)
                 // Que de verdad sea una imagen antes de reemplazar la anterior.
@@ -187,13 +190,44 @@ object PlacePhotos {
         val byId = entities(capitals)
         for (capital in capitals) {
             val entity = byId[capital] ?: continue
-            // P18: la imagen que Wikidata eligió para la ciudad (suele ser su postal más conocida).
-            val files = claimValues(entity, "P18").filter(::looksLikePhoto)
+            // P18: la imagen que Wikidata eligió para la ciudad. En muchas ciudades es un collage
+            // (se descarta); entonces van las fotos del artículo de Wikipedia, en su orden.
+            val files = (claimValues(entity, "P18") + articleImages(entity))
+                .filter(::looksLikePhoto)
+                .distinctBy(::plain)
+                .take(MAX_CANDIDATES)
             if (files.isEmpty()) continue
             val name = label(entity) ?: capital
             resolve(files.map { Candidate(name, it, true, 0) })?.let { return it.copy(capital = capital) }
         }
         return null
+    }
+
+    /**
+     * Las imágenes del artículo de la ciudad en Wikipedia (español, si no inglés), en el orden en
+     * que aparecen. Si falla, ninguna: la P18 ya se probó.
+     */
+    private fun articleImages(entity: JsonObject): List<String> {
+        val links = entity.obj("sitelinks") ?: return emptyList()
+        for (site in listOf("eswiki", "enwiki")) {
+            val title = links.obj(site)?.string("title") ?: continue
+            val host = if (site == "eswiki") "es.wikipedia.org" else "en.wikipedia.org"
+            val items = try {
+                getJson("https://$host/api/rest_v1/page/media-list/${enc(title.replace(' ', '_')).replace("+", "%20")}")["items"] as? JsonArray
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            val files = items.mapNotNull { item ->
+                val obj = item as? JsonObject ?: return@mapNotNull null
+                if (obj.string("type") != "image") return@mapNotNull null
+                // "File:Nombre.jpg" o "Archivo:Nombre.jpg": queda el nombre.
+                obj.string("title")?.substringAfter(':')?.replace('_', ' ')
+            }
+            if (files.isNotEmpty()) return files
+        }
+        return emptyList()
     }
 
     /** Nominatim (OpenStreetMap) al revés: qué hay en estas coordenadas al nivel [zoom]. */
@@ -211,7 +245,7 @@ object PlacePhotos {
         if (ids.isEmpty()) return emptyMap()
         val all = getJson(
             "https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&ids=${enc(ids.joinToString("|"))}" +
-                "&props=${enc("claims|labels")}&languages=${enc("es|en")}",
+                "&props=${enc("claims|labels|sitelinks")}&languages=${enc("es|en")}&sitefilter=${enc("eswiki|enwiki")}",
         ).obj("entities") ?: return emptyMap()
         return all.mapNotNull { (id, value) -> (value as? JsonObject)?.let { id to it } }.toMap()
     }
@@ -287,8 +321,8 @@ object PlacePhotos {
         val titles = candidates.joinToString("|") { "File:" + it.file }
         val infoPages = getJson(
             "https://commons.wikimedia.org/w/api.php?action=query&format=json&titles=${enc(titles)}" +
-                "&prop=imageinfo&iiprop=${enc("extmetadata|url")}" +
-                "&iiextmetadatafilter=${enc("Artist|LicenseShortName|UsageTerms")}&iiurlwidth=1280",
+                "&prop=imageinfo&iiprop=${enc("extmetadata|url|size")}" +
+                "&iiextmetadatafilter=${enc("Artist|LicenseShortName|UsageTerms|Categories")}&iiurlwidth=1280",
         ).obj("query")?.obj("pages") ?: return null
         val infoByFile = infoPages.values.mapNotNull { element ->
             val page = element as? JsonObject ?: return@mapNotNull null
@@ -301,6 +335,13 @@ object PlacePhotos {
             val info = infoByFile[plain(candidate.file)] ?: continue
             val url = info.string("thumburl") ?: continue
             val metadata = info.obj("extmetadata")
+            // Las panorámicas muy anchas, recortadas a lo alto de la pantalla, muestran una franja sin sentido.
+            val width = info.string("width")?.toDoubleOrNull() ?: 0.0
+            val height = info.string("height")?.toDoubleOrNull() ?: 0.0
+            if (height <= 0.0 || width / height > 2.2) continue
+            // Un collage con nombre que no lo dice igual suele estar en una categoría de collages.
+            val categories = metadata?.obj("Categories")?.string("value").orEmpty().lowercase(Locale.ROOT)
+            if (listOf("collage", "montage", "montaje").any { it in categories }) continue
             val license = metadata?.obj("LicenseShortName")?.string("value")?.let(::stripHtml).orEmpty()
             if (!isFree(license)) continue
             val artist = metadata?.obj("Artist")?.string("value")?.let(::stripHtml).orEmpty().take(80)
