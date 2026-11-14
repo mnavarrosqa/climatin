@@ -154,7 +154,9 @@ fun FloatingNavBar(
         shape = RoundedCornerShape(if (vertical) 32.dp else BarHeight / 2),
         color = container,
         border = BorderStroke(1.dp, border),
-        shadowElevation = 8.dp,
+        // Sobre el cielo el vidrio es translúcido y la sombra se veía a través, como una franja
+        // oscura en el medio del riel: ahí alcanza con el borde.
+        shadowElevation = if (overSky) 0.dp else 8.dp,
     ) {
         if (vertical) {
             RailTabs(selected, position, mapEnabled, selectedContent, otherContent, indicator, select, icon)

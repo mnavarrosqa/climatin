@@ -103,6 +103,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -429,11 +430,30 @@ fun WeatherRoute(
         showSettings = false
         showCities = true
     }
+    // La foto de fondo del pronóstico, si hay: con riel se dibuja acá, a pantalla completa, para
+    // que siga detrás del riel (si no, la franja del riel mostraba el cielo celeste al lado de la foto).
+    var railPhoto by remember { mutableStateOf<RailPhoto?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Pantalla ancha: la barra va de costado y no le saca alto al contenido.
         val rail = maxWidth >= NavRailMinWidth
         val railSpace by animateDpAsState(if (rail && showBar) NavRailSpace else 0.dp, Motion.gentle(), label = "riel")
-        if (rail && showBar) {
+        val photoBehindRail = railPhoto?.takeIf { rail && showBar && screen == "clima" }
+        if (photoBehindRail != null) {
+            PhotoBackdrop(photoBehindRail.shown.bitmap, Modifier.fillMaxSize()) {
+                if (photoBehindRail.kind in PhotoParticles) {
+                    AnimatedSky(photoBehindRail.kind, photoBehindRail.isDay, Modifier.fillMaxSize(), calm = photoBehindRail.calm, particlesOnly = true)
+                }
+            }
+            // El mismo velo que pone el pronóstico sobre su parte, solo en la franja del riel: el
+            // pronóstico ya pone el suyo y dos juntos lo oscurecían de más.
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .background(SkySurface.veil(SkySurface.PHOTO_BRIGHTNESS))
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start))
+                    .width(railSpace),
+            )
+        } else if (rail && showBar) {
             // Detrás del riel sigue lo que hay al lado: el cielo (con su mismo velo) o el fondo del tema.
             if (overSky) {
                 val onForecast = screen == "clima"
@@ -569,6 +589,8 @@ fun WeatherRoute(
                                 shownAt = forecastShownAt[0],
                                 onBarHiddenChange = { forecastHidesBar.value = it },
                                 scrollToTop = scrollToTop.intValue,
+                                photoBehind = rail && showBar,
+                                onPhotoChange = { railPhoto = it },
                                 deepLink = cityTarget ?: deepLink,
                                 onDeepLinkHandled = {
                                     cityTarget = null
@@ -720,6 +742,9 @@ private fun WeatherPager(
     onDeepLinkHandled: () -> Unit,
     onBarHiddenChange: (Boolean) -> Unit = {},
     scrollToTop: Int = 0,
+    /** Con riel, la foto la dibuja la raíz a pantalla completa: acá no se dibuja. */
+    photoBehind: Boolean = false,
+    onPhotoChange: (RailPhoto?) -> Unit = {},
 ) {
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val errors by viewModel.errors.collectAsStateWithLifecycle()
@@ -800,11 +825,17 @@ private fun WeatherPager(
     val backdrop = shownPhoto?.takeIf { photoOn && it.placeId == skyId }
     val skyKind = skySnapshot?.current?.code?.let(WeatherCodes::kind) ?: WeatherKind.PARTLY
     val skyIsDay = skySnapshot?.current?.isDay ?: true
+    val railPhoto = backdrop?.let { RailPhoto(it, skyKind, skyIsDay, calmSky) }
+    LaunchedEffect(railPhoto) { onPhotoChange(railPhoto) }
+    // Al salir del pronóstico la raíz deja de dibujarla.
+    DisposableEffect(Unit) { onDispose { onPhotoChange(null) } }
 
     Box(Modifier.fillMaxSize()) {
         // Fundido al llegar la foto, al cambiar de ciudad y al volver al cielo.
-        Crossfade(targetState = backdrop, animationSpec = tween(700), modifier = Modifier.fillMaxSize(), label = "fondo") { shown ->
-            if (shown == null) {
+        Crossfade(targetState = backdrop?.takeIf { !photoBehind }, animationSpec = tween(700), modifier = Modifier.fillMaxSize(), label = "fondo") { shown ->
+            if (shown == null && backdrop != null) {
+                // La foto está detrás, dibujada por la raíz: acá nada.
+            } else if (shown == null) {
                 AnimatedSky(
                     kind = skyKind,
                     isDay = skyIsDay,
@@ -971,6 +1002,9 @@ private fun WeatherPager(
         }
     }
 }
+
+/** La foto de fondo con lo necesario para dibujarla detrás del riel. */
+data class RailPhoto(val shown: ShownPhoto, val kind: WeatherKind, val isDay: Boolean, val calm: Boolean)
 
 /** Climas cuyas gotas, copos o relámpagos se dibujan encima de la foto del lugar. */
 private val PhotoParticles = setOf(WeatherKind.DRIZZLE, WeatherKind.RAIN, WeatherKind.STORM, WeatherKind.SNOW)
