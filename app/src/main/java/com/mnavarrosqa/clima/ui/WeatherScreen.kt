@@ -997,7 +997,7 @@ private fun WeatherPager(
                     }
                 }
             }
-            ShareButton(skySnapshot, Modifier.align(Alignment.CenterEnd))
+            ShareButton(skySnapshot, backdrop?.photo, Modifier.align(Alignment.CenterEnd))
         }
     }
 }
@@ -1008,42 +1008,21 @@ data class RailPhoto(val shown: ShownPhoto, val kind: WeatherKind, val isDay: Bo
 /** Climas cuyas gotas, copos o relámpagos se dibujan encima de la foto del lugar. */
 private val PhotoParticles = setOf(WeatherKind.DRIZZLE, WeatherKind.RAIN, WeatherKind.STORM, WeatherKind.SNOW)
 
-/** Compartir como imagen el pronóstico de la ciudad que se mira. */
+/** Compartir el pronóstico de la ciudad que se mira: abre la hoja con la vista previa y las opciones. */
 @Composable
-private fun ShareButton(snapshot: WeatherSnapshot?, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var sharing by remember { mutableStateOf(false) }
-    // Sin pronóstico no hay qué dibujar; mientras se arma la imagen, un toque basta.
-    val enabled = snapshot != null && !sharing
-    IconButton(
-        onClick = {
-            val shown = snapshot ?: return@IconButton
-            sharing = true
-            scope.launch {
-                try {
-                    ShareImage.share(context, shown)
-                } catch (cancel: kotlinx.coroutines.CancellationException) {
-                    throw cancel
-                } catch (_: Exception) {
-                    android.widget.Toast.makeText(
-                        context,
-                        tr("No pude armar la imagen", "Couldn't create the image"),
-                        android.widget.Toast.LENGTH_SHORT,
-                    ).show()
-                } finally {
-                    sharing = false
-                }
-            }
-        },
-        enabled = enabled,
-        modifier = modifier,
-    ) {
+private fun ShareButton(snapshot: WeatherSnapshot?, photo: PlacePhoto?, modifier: Modifier = Modifier) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    // Sin pronóstico no hay qué dibujar.
+    val enabled = snapshot != null
+    IconButton(onClick = { open = true }, enabled = enabled, modifier = modifier) {
         Icon(
             Icons.Rounded.Share,
             contentDescription = tr("Compartir pronóstico", "Share forecast"),
             tint = OnSky.copy(alpha = if (enabled) 1f else 0.5f),
         )
+    }
+    if (open && snapshot != null) {
+        ShareSheet(snapshot, photo, onDismiss = { open = false })
     }
 }
 
