@@ -148,19 +148,27 @@ fun CityCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (subtitle != null) {
-                        Text(
-                            subtitle,
-                            style = MaterialTheme.typography.bodySmall.merge(shadow),
-                            fontWeight = FontWeight.Medium,
-                            color = SkySurface.contentVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    if (note != null) {
-                        Spacer(Modifier.height(6.dp))
-                        NotePill(note)
+                    // La nota va en la misma línea que la hora: en una línea aparte, las tarjetas con
+                    // nota quedaban más altas que las otras y la lista se veía despareja.
+                    if (subtitle != null || note != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (subtitle != null) {
+                                Text(
+                                    subtitle,
+                                    style = MaterialTheme.typography.bodySmall.merge(shadow),
+                                    fontWeight = FontWeight.Medium,
+                                    color = SkySurface.contentVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    // Si no entra todo, se recorta la hora o el apodo, no la nota.
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                            }
+                            if (note != null) {
+                                if (subtitle != null) Spacer(Modifier.width(8.dp))
+                                NotePill(note)
+                            }
+                        }
                     }
                 }
                 snapshot?.let {
@@ -250,7 +258,7 @@ private fun NotePill(note: CityNote) {
     val content = if (note.level == CityNote.Level.RAIN) SkySurface.rain else Color.White
     Text(
         note.text,
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.SemiBold,
         color = content,
         maxLines = 1,
@@ -258,7 +266,7 @@ private fun NotePill(note: CityNote) {
         modifier = Modifier
             .clip(ClimaShapes.pill)
             .background(background)
-            .padding(horizontal = 10.dp, vertical = 3.dp),
+            .padding(horizontal = 8.dp, vertical = 2.dp),
     )
 }
 

@@ -1,0 +1,1 @@
+Ciudades: el aviso de lluvia o alerta va al lado de la hora, así todas las tarjetas tienen la misma altura.
