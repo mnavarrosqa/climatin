@@ -815,10 +815,9 @@ private fun WeatherPager(
         }
         if (photoLatitude == null || photoLongitude == null) return@LaunchedEffect
         val photo = PlacePhotos.photoFor(context, photoLatitude, photoLongitude, photoPlace)
-        // Desenfocada no hace falta a tamaño completo: alcanza con media pantalla.
+        // Nítida va al tamaño de la pantalla (la miniatura de Commons es de 1280 px de ancho).
         val metrics = view.resources.displayMetrics
-        val divisor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 2 else 1
-        val bitmap = photo?.let { PlacePhotos.bitmap(it, metrics.widthPixels / divisor, metrics.heightPixels / divisor) }
+        val bitmap = photo?.let { PlacePhotos.bitmap(it, metrics.widthPixels, metrics.heightPixels) }
         shownPhoto = if (photo != null && bitmap != null) ShownPhoto(skyId, photo, bitmap) else null
     }
     // Mientras baja, o si no hay foto libre cerca, queda el cielo animado.

@@ -2,7 +2,6 @@ package com.mnavarrosqa.clima.ui
 
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,7 +14,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -32,25 +30,20 @@ import com.mnavarrosqa.clima.data.tr
 /** La foto de fondo ya decodificada, con la página (ciudad) a la que pertenece. */
 class ShownPhoto(val placeId: String, val photo: PlacePhoto, val bitmap: ImageBitmap)
 
-/** El desenfoque solo existe desde Android 12: antes la foto queda nítida y hace falta más velo. */
-private val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-
 /**
  * Velo de la foto. Encima va además el velo propio del pronóstico y las tarjetas sobre foto usan un
- * vidrio más opaco (ver [SkySurface.card]): con 0.5 o más de velo, más el desenfoque, la foto
- * quedaba negra y no se reconocía la ciudad. Arriba, detrás de la temperatura grande, es más fuerte.
+ * vidrio más opaco (ver [SkySurface.card]). La foto va nítida (se pidió así: desenfocada no se
+ * reconocía la ciudad), así que el velo es algo más fuerte que con desenfoque para que los detalles
+ * no compitan con el texto. Arriba, detrás de la temperatura grande, es más fuerte.
  */
-private val PhotoVeil: Brush = run {
-    val extra = if (canBlur) 0f else 0.12f
-    Brush.verticalGradient(
-        0f to Color.Black.copy(alpha = 0.40f + extra),
-        0.35f to Color.Black.copy(alpha = 0.22f + extra),
-        1f to Color.Black.copy(alpha = 0.30f + extra),
-    )
-}
+private val PhotoVeil: Brush = Brush.verticalGradient(
+    0f to Color.Black.copy(alpha = 0.46f),
+    0.35f to Color.Black.copy(alpha = 0.28f),
+    1f to Color.Black.copy(alpha = 0.36f),
+)
 
 /**
- * La foto del lugar a pantalla completa, desenfocada y oscurecida: se adivina el lugar sin que
+ * La foto del lugar a pantalla completa, nítida y oscurecida: se reconoce el lugar sin que
  * compita con los datos. [particles] va entre la foto y el velo (la lluvia o la nieve del cielo).
  */
 @Composable
@@ -60,9 +53,7 @@ fun PhotoBackdrop(bitmap: ImageBitmap, modifier: Modifier = Modifier, particles:
             bitmap = bitmap,
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .blur(10.dp),
+            modifier = Modifier.fillMaxSize(),
         )
         particles()
         Box(Modifier.fillMaxSize().background(PhotoVeil))
