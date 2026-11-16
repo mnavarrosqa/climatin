@@ -44,7 +44,8 @@ data class PlacePhoto(
 object PlacePhotos {
     // Wikimedia pide un User-Agent que identifique la app y cómo contactar: a los genéricos les
     // responde 429 (demasiados pedidos).
-    private const val UA = "Climatin/1.38 (https://github.com/mnavarrosqa/climatin; app de clima para Android)"
+    // Wikimedia pide identificarse con la versión real; antes quedaba fija en 1.38.
+    private val UA = "Climatin/${com.mnavarrosqa.clima.BuildConfig.VERSION_NAME} (https://github.com/mnavarrosqa/climatin; app de clima para Android)"
     private const val DIR = "fotos"
 
     /** Grilla de la caché y de lo que se envía: unos 5 km, ni la ubicación exacta ni una foto por cuadra. */
