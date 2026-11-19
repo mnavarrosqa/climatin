@@ -1212,12 +1212,13 @@ fun ForecastContent(
     val nextRain = remember(snapshot, minute) { snapshot?.let(::nextHourRainForCard) }
     val headline = remember(snapshot, minute) { snapshot?.let { Insights.headline(it.copy(alerts = emptyList())) } }
     val ageLabel = remember(snapshot, minute) { snapshot?.let { ageText(it.fetchedAt) } }
+    val dataAge = remember(snapshot, minute) { snapshot?.let { com.mnavarrosqa.clima.data.dataAgeText(it.fetchedAt) } }
     // El aviso de arriba: sin red, en tono tranquilo; con error, el de error; si no, solo si es viejo.
     val status: StatusNotice? = when {
         snapshot == null -> null
-        offline && oldish -> StatusNotice(tr("Sin conexión · datos de ", "No connection · data from ") + ageLabel, null, isError = false, canRetry = false)
-        error != null && oldish -> StatusNotice(error, ageLabel?.let { tr("Mostrando datos de ", "Showing data from ") + it }, isError = true, canRetry = true)
-        stale -> StatusNotice(null, ageLabel?.let { tr("Mostrando datos de ", "Showing data from ") + it }, isError = false, canRetry = true)
+        offline && oldish -> StatusNotice(tr("Sin conexión · datos ", "No connection · data ") + dataAge, null, isError = false, canRetry = false)
+        error != null && oldish -> StatusNotice(error, dataAge?.let { tr("Mostrando datos ", "Showing data ") + it }, isError = true, canRetry = true)
+        stale -> StatusNotice(null, dataAge?.let { tr("Mostrando datos ", "Showing data ") + it }, isError = false, canRetry = true)
         else -> null
     }
     val heroIndex = listOfNotNull(banner, status).size

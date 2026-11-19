@@ -1,0 +1,1 @@
+Si no se puede actualizar el clima, el aviso ahora dice el motivo técnico, para poder arreglarlo. Corregido "Mostrando datos de el 16/11" (ahora "del 16/11").

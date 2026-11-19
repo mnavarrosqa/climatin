@@ -146,7 +146,15 @@ object OpenMeteo {
                 connection.connectTimeout = 15_000
                 connection.readTimeout = 15_000
                 val code = connection.responseCode
-                if (code !in 200..299) throw OpenMeteoHttpException(code)
+                if (code !in 200..299) {
+                    // El motivo ayuda a saber qué pasó (consulta rechazada, límite de pedidos...).
+                    val reason = runCatching {
+                        val text = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        (json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject)
+                            ?.get("reason")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                    }.getOrNull()
+                    throw OpenMeteoHttpException(code, reason?.take(160))
+                }
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
                 json.decodeFromString(deserializer, body)
             } finally {
@@ -348,4 +356,6 @@ data class GeocodingResult(
 )
 
 /** Open-Meteo respondió con un código de error. */
-class OpenMeteoHttpException(val code: Int) : Exception("Open-Meteo respondió $code")
+/** [reason] es el motivo que manda Open-Meteo en el cuerpo ({"reason": "..."}), si vino. */
+class OpenMeteoHttpException(val code: Int, val reason: String? = null) :
+    Exception("Open-Meteo respondió $code" + (reason?.let { ": $it" } ?: ""))

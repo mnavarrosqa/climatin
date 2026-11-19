@@ -67,5 +67,16 @@ fun ageText(epochMillis: Long, now: Long = System.currentTimeMillis()): String {
     }
 }
 
+/**
+ * Para "Mostrando datos …" y "Sin conexión · datos …": "de hace 3 h" o "del 16/11" ("from 3 h
+ * ago", "from 11/16"). Con ageText solo quedaba "datos de el 16/11".
+ */
+fun dataAgeText(epochMillis: Long, now: Long = System.currentTimeMillis()): String {
+    val minutes = (now - epochMillis) / 60_000
+    if (minutes < 24 * 60) return tr("de ", "from ") + ageText(epochMillis, now)
+    val date = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+    return tr("del ${date.dayOfMonth}/${date.monthValue}", "from ${date.monthValue}/${date.dayOfMonth}")
+}
+
 fun updatedAt(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(timeFormatter())

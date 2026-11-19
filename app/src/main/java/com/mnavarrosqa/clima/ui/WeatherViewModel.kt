@@ -284,12 +284,25 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** El error en una línea corta: "Open-Meteo HTTP 429: …" o "SocketTimeoutException: …". */
+    private fun errorDetail(error: Throwable): String {
+        val root = generateSequence(error) { it.cause }.last()
+        val text = when (root) {
+            is com.mnavarrosqa.clima.data.OpenMeteoHttpException -> "Open-Meteo HTTP ${root.code}" + (root.reason?.let { ": $it" } ?: "")
+            else -> root::class.java.simpleName + (root.message?.let { ": $it" } ?: "")
+        }
+        return "(" + text.take(140) + ")"
+    }
+
     /**
      * Los lugares que quedaron sin actualizar: todos se piden juntos, pero "donde estoy" puede
      * fallar sola (sin ubicación) y el resto llegar bien.
      */
     private fun failedPlaces(error: Throwable, startedAt: Long): Map<String, String> {
-        val generic = tr("No pude actualizar el clima. Revisá la conexión.", "Couldn't update the weather. Check your connection.")
+        // Con el motivo técnico abajo: "revisá la conexión" sola no ayudaba cuando la red andaba
+        // y fallaba otra cosa (Open-Meteo rechazando el pedido, un dato que no se pudo leer...).
+        val generic = tr("No pude actualizar el clima. Revisá la conexión.", "Couldn't update the weather. Check your connection.") +
+            "\n" + errorDetail(error)
         val ids = listOf(CURRENT_PLACE_ID) + places.value.map { it.id }
         return ids.filter { id -> (repository.cached(id)?.fetchedAt ?: 0L) < startedAt }.associateWith { id ->
             if (id == CURRENT_PLACE_ID && error is NoLocationException) error.message ?: generic else generic
