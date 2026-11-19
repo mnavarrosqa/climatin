@@ -17,6 +17,9 @@ import java.util.Locale
 /** Cliente mínimo de https://open-meteo.com (gratis, sin clave). */
 object OpenMeteo {
 
+    /** Lo pone la app al arrancar, con su versión ("Climatin/1.39.5 (...)"). */
+    @Volatile var userAgent: String = "Climatin (https://github.com/mnavarrosqa/climatin)"
+
     private val json = Json { ignoreUnknownKeys = true }
 
     private const val FORECAST_FIELDS =
@@ -145,14 +148,19 @@ object OpenMeteo {
             try {
                 connection.connectTimeout = 15_000
                 connection.readTimeout = 15_000
+                // Sin esto va el de Android ("Dalvik/2.1.0 ..."), que algunos cortafuegos tratan
+                // como un robot. Con el nombre de la app y dónde encontrarla.
+                connection.setRequestProperty("User-Agent", userAgent)
                 val code = connection.responseCode
                 if (code !in 200..299) {
                     // El motivo ayuda a saber qué pasó (consulta rechazada, límite de pedidos...).
+                    // Si no es JSON (un 403 de un cortafuegos, por ejemplo), el comienzo del texto
+                    // sin etiquetas: el título de la página suele decir quién lo bloqueó.
+                    val text = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty()
                     val reason = runCatching {
-                        val text = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                         (json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject)
                             ?.get("reason")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-                    }.getOrNull()
+                    }.getOrNull() ?: text.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim().takeIf { it.isNotEmpty() }
                     throw OpenMeteoHttpException(code, reason?.take(160))
                 }
                 val body = connection.inputStream.bufferedReader().use { it.readText() }

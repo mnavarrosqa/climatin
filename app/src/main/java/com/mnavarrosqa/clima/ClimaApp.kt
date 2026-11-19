@@ -32,6 +32,7 @@ class ClimaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashLog.install(this)
+        com.mnavarrosqa.clima.data.OpenMeteo.userAgent = "Climatin/${BuildConfig.VERSION_NAME} (Android; https://github.com/mnavarrosqa/climatin)"
         nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         RainNotifier.createChannel(this)
         AlertNotifier.createChannel(this)

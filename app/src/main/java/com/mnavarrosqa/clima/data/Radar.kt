@@ -294,7 +294,7 @@ object RainMap {
         try {
             connection.connectTimeout = 15_000
             connection.readTimeout = 20_000
-            connection.setRequestProperty("User-Agent", "Climatin (Android)")
+            connection.setRequestProperty("User-Agent", OpenMeteo.userAgent)
             val code = connection.responseCode
             if (code == 429) throw TooManyRequests()
             if (code !in 200..299) error("HTTP $code")

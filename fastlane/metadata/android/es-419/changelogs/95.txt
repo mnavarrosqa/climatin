@@ -1,0 +1,1 @@
+La app se identifica ante el servicio del clima con su nombre y versión, y si el servicio rechaza el pedido, el aviso muestra el detalle de quién lo bloqueó.
